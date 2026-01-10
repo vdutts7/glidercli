@@ -165,4 +165,4 @@ steps:
 [email]: https://img.shields.io/badge/Email-000000?style=for-the-badge&logo=Gmail&logoColor=white
 [email-url]: mailto:me@vd7.io
 [twitter]: https://img.shields.io/badge/Twitter-000000?style=for-the-badge&logo=Twitter&logoColor=white
-[twitter-url]: https://twitter.com/vaboratory
+[twitter-url]: https://x.com/vdutts7
