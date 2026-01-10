@@ -100,6 +100,7 @@ steps:
 
 ## 🔧Tools Used
 
+[![Claude][claude-badge]][claude-url]
 [![Node.js][nodejs-badge]][nodejs-url]
 [![Chrome DevTools Protocol][cdp-badge]][cdp-url]
 
@@ -113,6 +114,8 @@ steps:
 [github-url]: https://github.com/vdutts7/glidercli
 [npm]: https://img.shields.io/badge/npm-glidercli-CB3837?style=for-the-badge&logo=npm
 [npm-url]: https://www.npmjs.com/package/glidercli
+[claude-badge]: https://img.shields.io/badge/Claude-D97757?style=for-the-badge&logo=anthropic&logoColor=white
+[claude-url]: https://claude.ai
 [nodejs-badge]: https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white
 [nodejs-url]: https://nodejs.org
 [cdp-badge]: https://img.shields.io/badge/Chrome_DevTools_Protocol-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white
