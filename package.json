@@ -1,0 +1,37 @@
+{
+  "name": "@vd7/glider",
+  "version": "0.1.0",
+  "description": "Browser automation CLI with autonomous loop execution. Control Chrome via CDP, run YAML task files, execute in Ralph Wiggum loops.",
+  "main": "index.js",
+  "bin": {
+    "glider": "bin/glider.js"
+  },
+  "scripts": {
+    "test": "node bin/glider.js --help"
+  },
+  "keywords": [
+    "browser",
+    "automation",
+    "cdp",
+    "chrome",
+    "devtools",
+    "websocket",
+    "cli",
+    "loop",
+    "ralph-wiggum",
+    "autonomous"
+  ],
+  "author": "vdutts",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vdutts/glider-cli.git"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "yaml": "^2.7.0"
+  }
+}
