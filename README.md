@@ -42,26 +42,37 @@ Control Chrome from terminal. Run YAML tasks. Loop until complete (Ralph Wiggum 
 
 ```bash
 npm i -g glidercli
+glider install    # start daemon (runs forever, auto-restarts)
 ```
 
 ### Requirements
 
 1. **Node 18+**
 
-2. **Glider Chrome Extension** - [Source](https://github.com/vdutts7/glider) *(Chrome Web Store pending approval)*
-   - For now: clone repo, load unpacked in `chrome://extensions`
-
-3. **bserve relay server** - included with extension, auto-starts
+2. **Glider Chrome Extension** - [glider](https://github.com/vdutts/glider) *(Chrome Web Store pending)*
+   - Clone repo, load unpacked in `chrome://extensions`
 
 ## 🚀Usage
 
 ```bash
+glider connect                   # connect to browser
 glider status                    # check connection
 glider goto "https://x.com"      # navigate
 glider eval "document.title"     # run JS
 glider run task.yaml             # execute task file
 glider loop task.yaml -n 50      # autonomous loop
 ```
+
+### Daemon
+
+The daemon keeps the relay server running 24/7. Auto-restarts on crash.
+
+```bash
+glider install     # install daemon (runs at login)
+glider uninstall   # remove daemon
+```
+
+Logs: `~/.glider/daemon.log`
 
 ## 🔄The Loop
 
@@ -91,6 +102,9 @@ steps:
 
 | Command | What |
 |---------|------|
+| `glider install` | Install daemon (runs at login) |
+| `glider uninstall` | Remove daemon |
+| `glider connect` | Connect to browser |
 | `glider status` | Server/extension/tab status |
 | `glider start` | Start relay server |
 | `glider goto <url>` | Navigate |
@@ -98,8 +112,11 @@ steps:
 | `glider click <sel>` | Click element |
 | `glider type <sel> <text>` | Type into input |
 | `glider screenshot` | Capture page |
+| `glider html <sel>` | Get element HTML |
+| `glider title` | Get page title |
 | `glider run <file>` | Run YAML task |
 | `glider loop <file>` | Autonomous loop |
+| `glider test` | Run diagnostics |
 
 ## 🔧Tools Used
 
