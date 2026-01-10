@@ -48,15 +48,25 @@ const BOLD = '\x1b[1m';
 const DIM = '\x1b[2m';
 const NC = '\x1b[0m';
 
-// Banner - ASCII art with gradient colors
+// Gradient colors for rainbow effect
+const G1 = '\x1b[38;5;51m';   // cyan
+const G2 = '\x1b[38;5;45m';   // teal
+const G3 = '\x1b[38;5;39m';   // blue
+const G4 = '\x1b[38;5;33m';   // deeper blue
+const G5 = '\x1b[38;5;27m';   // indigo
+const G6 = '\x1b[38;5;21m';   // purple
+
+// Banner - simple ASCII, works everywhere
 const BANNER = `
-${CYAN}   ________    ${MAGENTA}________  ${BLUE}__________ ${NC}
-${CYAN}  / ____/ /   ${MAGENTA}/  _/ __ \\${BLUE}/ ____/ __ \\${NC}
-${CYAN} / / __/ /    ${MAGENTA}/ // / / /${BLUE} __/ / /_/ /${NC}
-${CYAN}/ /_/ / /____${MAGENTA}/ // /_/ /${BLUE} /___/ _, _/ ${NC}
-${CYAN}\\____/_____/${MAGENTA}___/_____/${BLUE}_____/_/ |_|  ${NC}
-${DIM}        Browser Automation CLI v${require('../package.json').version}${NC}
-${DIM}        github.com/vdutts7/glidercli${NC}
+${CYAN}  ------------------------------------------------------->${NC}
+${CYAN}       _____ ${BLUE}__    ${MAGENTA}__ ${CYAN}____  ${BLUE}_____ ${MAGENTA}____  ${NC}
+${CYAN}      / ____|${BLUE}| |   ${MAGENTA}| |${CYAN}|  _ \\${BLUE}| ____|${MAGENTA}|  _ \\ ${NC}
+${CYAN}     | |  __ ${BLUE}| |   ${MAGENTA}| |${CYAN}| | | ${BLUE}|  _| ${MAGENTA}| |_) |${NC}
+${CYAN}     | | |_ |${BLUE}| |   ${MAGENTA}| |${CYAN}| | | ${BLUE}| |___${MAGENTA}|  _ < ${NC}
+${CYAN}     | |__| |${BLUE}| |___${MAGENTA}| |${CYAN}| |_| ${BLUE}| ____|${MAGENTA}| | \\ \\${NC}
+${CYAN}      \\_____|${BLUE}|_____|${MAGENTA}__|${CYAN}|____/${BLUE}|_____|${MAGENTA}|_|  \\_\\${NC}
+${CYAN}  ------------------------------------------------------->${NC}
+${DIM}       Browser Automation CLI ${WHITE}v${require('../package.json').version}${NC}  ${DIM}|${NC}  ${CYAN}github.com/vdutts7/glidercli${NC}
 `;
 
 function showBanner() {
