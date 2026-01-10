@@ -1,0 +1,15 @@
+name: "google-search"
+description: "Search Google and screenshot results"
+steps:
+  - goto: "https://google.com"
+  - wait: 1
+  - type: ["input[name=q]", "browser automation tools 2026"]
+  - wait: 0.5
+  - eval: "document.querySelector('input[name=q]').form.submit()"
+  - wait: 2
+  - screenshot: "/tmp/google-results.png"
+  - eval: |
+      Array.from(document.querySelectorAll('h3'))
+        .slice(0, 5)
+        .map(h => h.textContent)
+  - log: "Search complete"

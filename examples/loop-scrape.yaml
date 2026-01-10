@@ -1,0 +1,22 @@
+name: "loop-scrape-feed"
+description: "Continuously scrape new posts until marker found"
+completion_marker: "LOOP_COMPLETE"
+steps:
+  - goto: "https://old.reddit.com/r/programming/new"
+  - wait: 2
+  - eval: |
+      const posts = Array.from(document.querySelectorAll('a.title')).slice(0, 5);
+      const titles = posts.map(a => a.textContent);
+      console.log('Found:', titles.length, 'posts');
+      
+      // Check if we found our target (example: post about Rust)
+      const found = titles.some(t => t.toLowerCase().includes('rust'));
+      if (found) {
+        return 'LOOP_COMPLETE';
+      }
+      
+      // Scroll to load more
+      window.scrollTo(0, document.body.scrollHeight);
+      return titles.join('\n');
+  - wait: 3
+  - log: "Iteration complete, checking for more..."
