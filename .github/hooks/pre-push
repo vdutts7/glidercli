@@ -1,0 +1,13 @@
+#!/bin/bash
+# pre-push hook - runs health check before push
+# Blocks push if large files or embedded repos detected
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+HEALTH_SCRIPT="$ROOT/.github/scripts/health-check.sh"
+
+if [[ -x "$HEALTH_SCRIPT" ]]; then
+    "$HEALTH_SCRIPT"
+    exit $?
+fi
+
+exit 0

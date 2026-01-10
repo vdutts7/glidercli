@@ -1,23 +1,54 @@
-# Dependencies
+# OS
+.DS_Store
+._*
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Deps
 node_modules/
 
 # Build
 dist/
+build/
 *.tgz
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
+*.o
+*.so
 
 # Env
 .env
+.env.*
 .env.local
+
+# Logs
+*.log
+logs/
+
+# Cache
+.cache/
+
+# Coverage
+coverage/
+.nyc_output/
+
+# AI/Agentic
+.cursor/*
+.claude/*
+.codeium/*
+.windsurf/*
+
+# Workflows
+_0
+_archive/
+_artifacts/
+_plans/
+
+# Assets (uploaded to Cloudinary, not committed)
+assets/icons/*
+!assets/icons/.gitkeep
+assets/social-preview.png
