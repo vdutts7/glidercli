@@ -1,6 +1,6 @@
 {
   "name": "glidercli",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "description": "Browser automation CLI with autonomous loop execution. Control Chrome via CDP, run YAML task files, execute in Ralph Wiggum loops.",
   "main": "index.js",
   "bin": {
@@ -33,5 +33,11 @@
   "dependencies": {
     "ws": "^8.18.0",
     "yaml": "^2.7.0"
-  }
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "index.js",
+    "README.md"
+  ]
 }
