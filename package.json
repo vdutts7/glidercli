@@ -25,7 +25,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/vdutts7/glider-cli.git"
+    "url": "https://github.com/vdutts7/glidercli.git"
   },
   "engines": {
     "node": ">=18.0.0"
