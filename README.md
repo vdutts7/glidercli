@@ -1,6 +1,7 @@
 <div align="center">
 
 <img src="assets/icons/glider-blue-squircle.webp" alt="glider" width="80" height="80" />
+<img src="assets/icons/chrome.webp" alt="chrome" width="80" height="80" />
 <img src="assets/icons/claude.webp" alt="claude" width="80" height="80" />
 <img src="assets/icons/ralph-wiggum.webp" alt="ralph" width="80" height="80" />
 
