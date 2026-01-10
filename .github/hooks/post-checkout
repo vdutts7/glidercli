@@ -1,0 +1,24 @@
+#!/bin/bash
+# Auto-prompt to set email on checkout if not set correctly
+# If allowed_emails is empty, skip check
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+CONFIG="$ROOT/repo.config.json"
+EMAIL=$(git config user.email 2>/dev/null)
+
+# Read allowed emails from config
+if [[ -f "$CONFIG" ]] && command -v jq &>/dev/null; then
+    ALLOWED=$(jq -r '.allowed_emails[]' "$CONFIG" 2>/dev/null)
+else
+    exit 0
+fi
+
+# If no emails configured, skip check
+[[ -z "$ALLOWED" ]] && exit 0
+
+echo "$ALLOWED" | grep -qx "$EMAIL" && exit 0
+
+echo ""
+echo "⚠ Git email not set. Pick one from repo.config.json:"
+echo "$ALLOWED" | sed 's/^/  git config user.email '\''/' | sed 's/$/'\''/'
+echo ""
