@@ -1,0 +1,68 @@
+{
+  "meta": {
+    "project": "glidercli",
+    "version": "0.2.0",
+    "updated": "2026-01-10",
+    "components": ["glidercli", "glider-crx", "bserve"]
+  },
+  "architecture": {
+    "flow": "glidercli -> bserve (ws:19988) -> chrome-extension -> chrome.debugger -> tab",
+    "relay_port": 19988,
+    "relay_host": "127.0.0.1",
+    "protocols": ["websocket", "http", "cdp"]
+  },
+  "requirements": {
+    "node": ">=18",
+    "browser": "Google Chrome",
+    "os": "macOS (tested), Linux (untested), Windows (untested)"
+  },
+  "install": {
+    "cli": "npm install -g glidercli",
+    "extension": {
+      "source": "https://github.com/vdutts7/glider-crx",
+      "method": "chrome://extensions -> Load unpacked -> select glider/ folder",
+      "chrome_store": "pending"
+    }
+  },
+  "endpoints": {
+    "http": {
+      "/status": {"method": "GET", "returns": {"extension": "bool", "targets": "int", "clients": "int"}},
+      "/targets": {"method": "GET", "returns": "array of target objects"},
+      "/attach": {"method": "POST", "returns": {"attached": "int"}, "action": "triggers extension to attach active tab"},
+      "/cdp": {"method": "POST", "body": {"method": "string", "params": "object"}, "returns": "cdp response"}
+    },
+    "websocket": {
+      "/extension": "chrome extension connects here",
+      "/cdp": "cli/clients connect here"
+    }
+  },
+  "extension_keepalive": {
+    "mechanisms": [
+      {"type": "offscreen_document", "interval_ms": 20000},
+      {"type": "chrome_alarms", "interval_ms": 30000},
+      {"type": "websocket_connection", "chrome_version": ">=116"}
+    ]
+  },
+  "auto_behaviors": {
+    "chrome_start": "extension connects to relay if running",
+    "relay_start": "extension reconnects within 3s",
+    "glider_connect": "starts relay, starts chrome, attaches tabs",
+    "tab_switch": "extension auto-attaches new active tab",
+    "chrome_quit": "extension disconnects, relay keeps running",
+    "relay_die": "extension retries every 3s"
+  },
+  "not_required": [
+    "pixel clicking",
+    "window positioning",
+    "extension icon clicking",
+    "devtools open",
+    "extension pinned",
+    "specific monitor"
+  ],
+  "config_paths": {
+    "domains": "~/.cursor/glider/domains.json"
+  },
+  "env_vars": {
+    "GLIDER_PORT": {"default": 19988, "description": "relay server port"}
+  }
+}

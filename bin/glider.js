@@ -31,10 +31,15 @@ const YAML = require('yaml');
 
 // Config
 const PORT = process.env.GLIDER_PORT || 19988;
+const DEBUG_PORT = process.env.GLIDER_DEBUG_PORT || 9222;
 const SERVER_URL = `http://127.0.0.1:${PORT}`;
+const DEBUG_URL = `http://127.0.0.1:${DEBUG_PORT}`;
 const LIB_DIR = path.join(__dirname, '..', 'lib');
 const STATE_FILE = '/tmp/glider-state.json';
 const LOG_FILE = '/tmp/glider.log';
+
+// Direct CDP module
+const { DirectCDP, checkChrome } = require(path.join(LIB_DIR, 'cdp-direct.js'));
 
 // Domain extensions - load from ~/.cursor/glider/domains.json or ~/.glider/domains.json
 const DOMAIN_CONFIG_PATHS = [
@@ -409,6 +414,166 @@ async function cmdRestart() {
   await cmdStop();
   await new Promise(r => setTimeout(r, 500));
   await cmdStart();
+}
+
+// Daemon management - runs forever, respawns on crash
+async function cmdInstallDaemon() {
+  const home = os.homedir();
+  const daemonScript = path.join(LIB_DIR, 'glider-daemon.sh');
+  const logDir = path.join(home, '.glider');
+  const pidFile = path.join(logDir, 'daemon.pid');
+  
+  // Create log directory
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir, { recursive: true });
+  }
+  
+  // Kill existing daemon
+  if (fs.existsSync(pidFile)) {
+    try {
+      const pid = fs.readFileSync(pidFile, 'utf8').trim();
+      execSync(`kill ${pid} 2>/dev/null || true`, { stdio: 'ignore' });
+    } catch {}
+  }
+  
+  // Start daemon in background, detached from terminal
+  const child = spawn('nohup', [daemonScript], {
+    detached: true,
+    stdio: ['ignore', 'ignore', 'ignore'],
+    cwd: home
+  });
+  child.unref();
+  
+  await new Promise(r => setTimeout(r, 1000));
+  
+  if (fs.existsSync(pidFile)) {
+    log.ok('Daemon started');
+    log.info('Relay will auto-restart on crash');
+    log.info(`Logs: ${logDir}/daemon.log`);
+    log.info(`PID: ${fs.readFileSync(pidFile, 'utf8').trim()}`);
+  } else {
+    log.fail('Daemon failed to start');
+  }
+}
+
+async function cmdUninstallDaemon() {
+  const home = os.homedir();
+  const pidFile = path.join(home, '.glider', 'daemon.pid');
+  
+  if (!fs.existsSync(pidFile)) {
+    log.info('Daemon not running');
+    return;
+  }
+  
+  try {
+    const pid = fs.readFileSync(pidFile, 'utf8').trim();
+    execSync(`kill ${pid}`, { stdio: 'ignore' });
+    fs.unlinkSync(pidFile);
+    log.ok('Daemon stopped');
+  } catch (e) {
+    log.fail(`Failed to stop: ${e.message}`);
+  }
+}
+
+async function cmdConnect() {
+  // Bulletproof connect: relay + Chrome + trigger attach via HTTP
+  log.info('Connecting...');
+  
+  // 1. Ensure relay is running
+  if (!await checkServer()) {
+    await cmdStart();
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  
+  // 2. Ensure Chrome is running
+  try {
+    execSync('pgrep -x "Google Chrome"', { stdio: 'ignore' });
+  } catch {
+    log.info('Starting Chrome...');
+    execSync('open -a "Google Chrome"');
+    await new Promise(r => setTimeout(r, 3000));
+  }
+  
+  // 3. Wait for extension to connect to relay
+  for (let i = 0; i < 10; i++) {
+    if (await checkExtension()) break;
+    await new Promise(r => setTimeout(r, 500));
+  }
+  
+  if (!await checkExtension()) {
+    log.fail('Extension not connected to relay');
+    log.info('Make sure Glider extension is installed in Chrome');
+    process.exit(1);
+  }
+  log.ok('Extension connected');
+  
+  // Wait for extension to fully initialize
+  await new Promise(r => setTimeout(r, 500));
+  
+  // 4. Check if already have targets
+  if (await checkTab()) {
+    log.ok('Already connected to tab(s)');
+    const targets = await getTargets();
+    targets.slice(0, 3).forEach(t => {
+      console.log(`  ${CYAN}${t.targetInfo?.url || 'unknown'}${NC}`);
+    });
+    return;
+  }
+  
+  // 5. Ensure we have a real tab (not chrome://)
+  try {
+    const tabUrl = execSync(`osascript -e 'tell application "Google Chrome" to return URL of active tab of front window'`).toString().trim();
+    if (tabUrl.startsWith('chrome://') || tabUrl.startsWith('chrome-extension://')) {
+      log.info('Creating new tab...');
+      execSync(`osascript -e 'tell application "Google Chrome" to make new tab at front window with properties {URL:"https://google.com"}'`);
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  } catch {
+    // No window, create one
+    log.info('Creating new window...');
+    execSync(`osascript -e 'tell application "Google Chrome" to make new window with properties {URL:"https://google.com"}'`);
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  
+  // 6. Trigger attach via HTTP endpoint (no pixel clicking needed!)
+  log.info('Attaching to tab...');
+  try {
+    const result = await fetch(`${SERVER_URL}/attach`, { method: 'POST' });
+    const data = await result.json();
+    
+    if (data.attached > 0) {
+      log.ok('Connected!');
+      const targets = await getTargets();
+      targets.slice(0, 3).forEach(t => {
+        console.log(`  ${CYAN}${t.targetInfo?.url || 'unknown'}${NC}`);
+      });
+      return;
+    }
+  } catch (e) {
+    log.warn(`Attach failed: ${e.message}`);
+  }
+  
+  // 7. Fallback: create fresh tab and retry
+  log.info('Creating fresh tab...');
+  execSync(`osascript -e 'tell application "Google Chrome" to make new tab at front window with properties {URL:"https://google.com"}'`);
+  await new Promise(r => setTimeout(r, 2000));
+  
+  try {
+    const result = await fetch(`${SERVER_URL}/attach`, { method: 'POST' });
+    const data = await result.json();
+    
+    if (data.attached > 0) {
+      log.ok('Connected!');
+      const targets = await getTargets();
+      targets.slice(0, 3).forEach(t => {
+        console.log(`  ${CYAN}${t.targetInfo?.url || 'unknown'}${NC}`);
+      });
+      return;
+    }
+  } catch {}
+  
+  log.fail('Could not attach to any tab');
+  log.info('Try reloading the Glider extension in chrome://extensions');
 }
 
 async function cmdTest() {
@@ -811,7 +976,10 @@ ${YELLOW}SERVER:${NC}
     start               Start relay server
     stop                Stop relay server
     restart             Stop then start relay server
+    connect             Auto-connect: start server, wake Chrome, attach tab
     test                Run connectivity test
+    install             Install as daemon (auto-start on login)
+    uninstall           Remove daemon
 
 ${YELLOW}NAVIGATION:${NC}
     goto <url>          Navigate current tab to URL
@@ -881,11 +1049,11 @@ ${YELLOW}DOMAIN EXTENSIONS:${NC}
     Then: glider mysite  ->  navigates to that URL
           glider mytool  ->  runs that script
 `);
-  
-  // Show loaded domains if any
+
+  // Show loaded domains if any (from local config)
   const domainKeys = Object.keys(DOMAINS);
   if (domainKeys.length > 0) {
-    console.log(`${YELLOW}LOADED DOMAINS:${NC} (from config)`);
+    console.log(`${YELLOW}LOADED DOMAINS:${NC} (from local config)`);
     for (const key of domainKeys) {
       const d = DOMAINS[key];
       const desc = d.description || d.url || d.script || '';
@@ -925,6 +1093,15 @@ async function main() {
       break;
     case 'restart':
       await cmdRestart();
+      break;
+    case 'install':
+      await cmdInstallDaemon();
+      break;
+    case 'uninstall':
+      await cmdUninstallDaemon();
+      break;
+    case 'connect':
+      await cmdConnect();
       break;
     case 'test':
       await cmdTest();
