@@ -46,9 +46,12 @@ npm i -g glidercli
 
 ### Requirements
 
-- Node 18+
-- Chrome with Glider extension
-- bserve relay server
+1. **Node 18+**
+
+2. **Glider Chrome Extension** - [Source](https://github.com/vdutts7/glider) *(Chrome Web Store pending approval)*
+   - For now: clone repo, load unpacked in `chrome://extensions`
+
+3. **bserve relay server** - included with extension, auto-starts
 
 ## 🚀Usage
 
