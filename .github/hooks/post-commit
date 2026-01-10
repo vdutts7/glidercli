@@ -1,0 +1,13 @@
+#!/bin/bash
+# post-commit hook - auto push tags after npm version creates them
+# npm version patch/minor/major creates a commit AND a tag
+
+# Check if the last commit was from npm version (has version in message)
+LAST_MSG=$(git log -1 --pretty=%B)
+
+if [[ "$LAST_MSG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "📦 Detected npm version commit: $LAST_MSG"
+    echo "🏷️  Pushing tag v$LAST_MSG..."
+    git push --tags 2>/dev/null &
+    echo "✓ Tag push triggered (background)"
+fi
