@@ -41,8 +41,27 @@ const RED = '\x1b[31m';
 const GREEN = '\x1b[32m';
 const YELLOW = '\x1b[33m';
 const BLUE = '\x1b[34m';
+const MAGENTA = '\x1b[35m';
 const CYAN = '\x1b[36m';
+const WHITE = '\x1b[37m';
+const BOLD = '\x1b[1m';
+const DIM = '\x1b[2m';
 const NC = '\x1b[0m';
+
+// Banner - ASCII art with gradient colors
+const BANNER = `
+${CYAN}   ________    ${MAGENTA}________  ${BLUE}__________ ${NC}
+${CYAN}  / ____/ /   ${MAGENTA}/  _/ __ \\${BLUE}/ ____/ __ \\${NC}
+${CYAN} / / __/ /    ${MAGENTA}/ // / / /${BLUE} __/ / /_/ /${NC}
+${CYAN}/ /_/ / /____${MAGENTA}/ // /_/ /${BLUE} /___/ _, _/ ${NC}
+${CYAN}\\____/_____/${MAGENTA}___/_____/${BLUE}_____/_/ |_|  ${NC}
+${DIM}        Browser Automation CLI v${require('../package.json').version}${NC}
+${DIM}        github.com/vdutts7/glidercli${NC}
+`;
+
+function showBanner() {
+  console.log(BANNER);
+}
 
 const log = {
   ok: (msg) => console.error(`${GREEN}✓${NC} ${msg}`),
@@ -134,8 +153,9 @@ async function getTargets() {
 
 // Commands
 async function cmdStatus() {
+  showBanner();
   console.log('═══════════════════════════════════════');
-  console.log('  GLIDER STATUS');
+  console.log('  STATUS');
   console.log('═══════════════════════════════════════');
   
   const serverOk = await checkServer();
@@ -611,9 +631,8 @@ async function cmdLoop(taskFileOrPrompt, options = {}) {
 
 // Help
 function showHelp() {
+  showBanner();
   console.log(`
-${CYAN}GLIDER${NC} - Browser Automation CLI with Autonomous Loop Execution
-
 ${YELLOW}USAGE:${NC}
     glider <command> [args]
 
