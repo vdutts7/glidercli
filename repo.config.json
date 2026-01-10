@@ -1,0 +1,31 @@
+{
+  "repo": {
+    "name": "glidercli",
+    "description": "Browser automation CLI with autonomous loop execution",
+    "homepage": "https://npmjs.com/package/glidercli",
+    "topics": ["ralph", "claude", "claude-code", "autonomous-agents", "browser-automation", "cdp", "chrome-devtools", "ralph-wiggum"]
+  },
+  "owner": {
+    "github_username": "vdutts7",
+    "website": "https://vd7.io",
+    "twitter": "vaboratory"
+  },
+  "allowed_emails": [
+    "github.relock416@passmail.net",
+    "me@vd7.io"
+  ],
+  "social_preview": {
+    "title": "glidercli",
+    "icons_dir": "assets/icons",
+    "icon_creator": "https://vd7.dev/icon-creator",
+    "dimensions": {
+      "width": 1280,
+      "height": 640
+    }
+  },
+  "npm": {
+    "package_name": "glidercli",
+    "alt_package": "@vd7/glider",
+    "bin_command": "glider"
+  }
+}
