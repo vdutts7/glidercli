@@ -572,8 +572,27 @@ async function cmdConnect() {
     }
   } catch {}
   
-  log.fail('Could not attach to any tab');
-  log.info('Try reloading the Glider extension in chrome://extensions');
+  // 8. Need manual click - open Chrome and show instructions
+  log.warn('Click the Glider extension icon in Chrome');
+  console.log(`  ${CYAN}(on any real webpage, not chrome:// pages)${NC}`);
+  execSync(`osascript -e 'tell application "Google Chrome" to activate'`);
+  
+  // Wait for user to click
+  log.info('Waiting for connection...');
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    if (await checkTab()) {
+      log.ok('Connected!');
+      const targets = await getTargets();
+      targets.slice(0, 3).forEach(t => {
+        console.log(`  ${CYAN}${t.targetInfo?.url || 'unknown'}${NC}`);
+      });
+      return;
+    }
+  }
+  
+  log.fail('Timed out waiting for connection');
+  log.info('Make sure you clicked the extension icon on a real webpage');
 }
 
 async function cmdTest() {
