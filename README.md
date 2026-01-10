@@ -1,112 +1,76 @@
-# 🚀 @vd7/glider
+# glidercli
 
-Browser automation CLI with autonomous loop execution. Control Chrome via CDP, run YAML task files, execute in Ralph Wiggum loops.
-
-## Install
+Browser automation with autonomous loops. Run tasks until done.
 
 ```bash
-npm install -g @vd7/glider
+npm i -g glidercli
 ```
 
-### Requirements
+## What it does
 
-- Node.js 18+
-- [bserve](https://github.com/vdutts/glider-crx) relay server
-- Glider Chrome extension
-
-## Quick Start
+Control Chrome from terminal. Run YAML tasks. Loop until complete (Ralph Wiggum pattern).
 
 ```bash
-# Check status
-glider status
+glider status                    # check connection
+glider goto "https://x.com"      # navigate
+glider eval "document.title"     # run JS
+glider run task.yaml             # execute task file
+glider loop task.yaml -n 50      # autonomous loop
+```
 
-# Navigate
-glider goto "https://google.com"
+## The Loop
 
-# Execute JavaScript
-glider eval "document.title"
+The `loop` command runs your task repeatedly until:
+- Completion marker found (`LOOP_COMPLETE` or `DONE`)
+- Max iterations reached
+- Timeout hit
 
-# Run a task file
-glider run mytask.yaml
+```bash
+glider loop scrape-feed.yaml -n 100 -t 3600
+```
 
-# Run in autonomous loop
-glider loop mytask.yaml -n 20
+Safety: max iterations, timeout, exponential backoff on errors, state persistence.
+
+## Task Files
+
+```yaml
+name: "Get timeline"
+steps:
+  - goto: "https://x.com/home"
+  - wait: 3
+  - eval: "document.querySelectorAll('article').length"
+  - screenshot: "/tmp/timeline.png"
 ```
 
 ## Commands
 
-### Server
-| Command | Description |
-|---------|-------------|
-| `glider status` | Check server, extension, tabs |
+| Command | What |
+|---------|------|
+| `glider status` | Server/extension/tab status |
 | `glider start` | Start relay server |
-| `glider stop` | Stop relay server |
-
-### Navigation
-| Command | Description |
-|---------|-------------|
-| `glider goto <url>` | Navigate to URL |
+| `glider goto <url>` | Navigate |
 | `glider eval <js>` | Execute JavaScript |
-| `glider click <selector>` | Click element |
+| `glider click <sel>` | Click element |
 | `glider type <sel> <text>` | Type into input |
-| `glider screenshot [path]` | Take screenshot |
-| `glider text` | Get page text |
+| `glider screenshot` | Capture page |
+| `glider run <file>` | Run YAML task |
+| `glider loop <file>` | Autonomous loop |
 
-### Automation
-| Command | Description |
-|---------|-------------|
-| `glider run <task.yaml>` | Execute YAML task file |
-| `glider loop <task> [opts]` | Run in Ralph Wiggum loop |
+## Requirements
 
-## Task File Format
+- Node 18+
+- Chrome with Glider extension
+- bserve relay server
 
-```yaml
-name: "Get page data"
-steps:
-  - goto: "https://example.com"
-  - wait: 2
-  - eval: "document.title"
-  - click: "button.submit"
-  - type: ["#input", "hello world"]
-  - screenshot: "/tmp/shot.png"
-  - assert: "document.title.includes('Example')"
-  - log: "Done"
-```
-
-## Ralph Wiggum Loop
-
-The `loop` command implements autonomous execution:
+## Install
 
 ```bash
-glider loop mytask.yaml -n 20 -t 600 -m "DONE"
+npm i -g glidercli
+# or
+npm i -g @vd7/glider
 ```
 
-Options:
-- `-n, --max-iterations N` - Max iterations (default: 10)
-- `-t, --timeout N` - Max runtime in seconds (default: 3600)
-- `-m, --marker STRING` - Completion marker (default: LOOP_COMPLETE)
-
-The loop:
-1. Executes task steps repeatedly
-2. Checks for completion marker in output or task file
-3. Stops when marker found or limits reached
-4. Saves state to `/tmp/glider-state.json`
-5. Implements exponential backoff on errors
-
-## Architecture
-
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  glider CLI │────▶│   bserve    │────▶│  Extension  │
-│  (this pkg) │     │  (relay)    │     │  (Chrome)   │
-└─────────────┘     └─────────────┘     └─────────────┘
-                          │
-                          ▼
-                    ┌─────────────┐
-                    │   Browser   │
-                    │    (CDP)    │
-                    └─────────────┘
-```
+Both install the `glider` command.
 
 ## License
 
