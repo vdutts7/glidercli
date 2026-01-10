@@ -1,0 +1,120 @@
+commands:
+  server:
+    status:
+      desc: "check server/extension/tabs"
+      usage: "glider status"
+    start:
+      desc: "start relay server"
+      usage: "glider start"
+    stop:
+      desc: "stop relay server"
+      usage: "glider stop"
+    restart:
+      desc: "stop then start"
+      usage: "glider restart"
+    connect:
+      desc: "auto-connect everything"
+      usage: "glider connect"
+      actions: ["start relay", "start chrome", "wait extension", "attach tabs"]
+    test:
+      desc: "connectivity test"
+      usage: "glider test"
+
+  navigation:
+    goto:
+      desc: "navigate to URL"
+      usage: "glider goto <url>"
+      example: "glider goto 'https://reddit.com'"
+    open:
+      desc: "alias for goto"
+      usage: "glider open <url>"
+
+  javascript:
+    eval:
+      desc: "execute JS, return result"
+      usage: "glider eval <js>"
+      examples:
+        - "glider eval 'document.title'"
+        - "glider eval 'document.querySelectorAll(\"a\").length'"
+        - "glider eval 'Array.from(document.querySelectorAll(\"h1\")).map(e => e.textContent)'"
+
+  page_info:
+    title:
+      desc: "get page title"
+      usage: "glider title"
+    url:
+      desc: "get current URL"
+      usage: "glider url"
+    html:
+      desc: "get HTML"
+      usage: "glider html [selector]"
+      examples:
+        - "glider html"
+        - "glider html 'div.main'"
+    text:
+      desc: "get text content"
+      usage: "glider text"
+    tabs:
+      desc: "list connected tabs"
+      usage: "glider tabs"
+
+  interaction:
+    click:
+      desc: "click element"
+      usage: "glider click <selector>"
+      example: "glider click 'button.submit'"
+    type:
+      desc: "type into input"
+      usage: "glider type <selector> <text>"
+      example: "glider type '#search' 'hello'"
+    screenshot:
+      desc: "capture page"
+      usage: "glider screenshot [path]"
+      example: "glider screenshot /tmp/shot.png"
+
+  automation:
+    run:
+      desc: "execute YAML task"
+      usage: "glider run <task.yaml>"
+    loop:
+      desc: "autonomous loop until complete"
+      usage: "glider loop <task.yaml> [options]"
+      options:
+        -n: {desc: "max iterations", default: 10}
+        -t: {desc: "timeout seconds", default: 3600}
+        -m: {desc: "completion marker", default: "LOOP_COMPLETE"}
+
+task_file_format:
+  structure:
+    name: "string"
+    steps: "array"
+  step_types:
+    goto: {arg: "url", example: "goto: 'https://example.com'"}
+    wait: {arg: "seconds", example: "wait: 2"}
+    eval: {arg: "js", example: "eval: 'document.title'"}
+    click: {arg: "selector", example: "click: 'button.submit'"}
+    type: {arg: "[selector, text]", example: "type: ['#input', 'hello']"}
+    screenshot: {arg: "path", example: "screenshot: '/tmp/shot.png'"}
+    assert: {arg: "js condition", example: "assert: 'document.title.includes(\"Example\")'"}
+    log: {arg: "message", example: "log: 'done'"}
+
+examples:
+  scrape_reddit:
+    - "glider goto 'https://old.reddit.com/r/programming'"
+    - "glider eval 'Array.from(document.querySelectorAll(\"a.title\")).slice(0,5).map(a => a.textContent)'"
+  
+  fill_form:
+    - "glider goto 'https://example.com/login'"
+    - "glider type '#email' 'user@example.com'"
+    - "glider type '#password' 'secret'"
+    - "glider click 'button[type=submit]'"
+  
+  screenshot_search:
+    - "glider goto 'https://google.com'"
+    - "glider type 'input[name=q]' 'browser automation'"
+    - "glider eval 'document.querySelector(\"input[name=q]\").form.submit()'"
+    - "glider screenshot ~/Desktop/results.png"
+  
+  reddit_json:
+    - "glider goto 'https://old.reddit.com/r/programming.json'"
+    - "glider eval 'JSON.parse(document.body.innerText)'"

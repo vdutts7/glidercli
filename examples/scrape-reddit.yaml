@@ -1,0 +1,11 @@
+name: "scrape-reddit-titles"
+description: "Get top 10 post titles from r/programming"
+steps:
+  - goto: "https://old.reddit.com/r/programming"
+  - wait: 2
+  - eval: |
+      Array.from(document.querySelectorAll('a.title'))
+        .slice(0, 10)
+        .map((a, i) => `${i+1}. ${a.textContent}`)
+        .join('\n')
+  - log: "Done scraping titles"
