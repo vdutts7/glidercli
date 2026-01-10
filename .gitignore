@@ -48,7 +48,5 @@ _archive/
 _artifacts/
 _plans/
 
-# Assets (uploaded to Cloudinary, not committed)
-assets/icons/*
-!assets/icons/.gitkeep
+# Assets (social preview uploaded separately)
 assets/social-preview.png

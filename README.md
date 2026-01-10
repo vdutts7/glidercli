@@ -1,15 +1,14 @@
 <div align="center">
 
-<img src="https://res.cloudinary.com/ddyc1es5v/image/upload/v1768050242/gh-repos/glidercli/code.png" alt="logo" width="80" height="80" />
-<img src="https://res.cloudinary.com/ddyc1es5v/image/upload/v1768050244/gh-repos/glidercli/github.png" alt="logo" width="80" height="80" />
+<img src="assets/icons/glider-blue-squircle.webp" alt="glider" width="80" height="80" />
+<img src="assets/icons/claude.webp" alt="claude" width="80" height="80" />
+<img src="assets/icons/ralph-wiggum.webp" alt="ralph" width="80" height="80" />
 
 <h1 align="center">glidercli</h1>
 <p align="center"><i><b>Browser automation CLI with autonomous loop execution.</b></i></p>
 
 [![Github][github]][github-url]
 [![npm][npm]][npm-url]
-
-<img src="https://res.cloudinary.com/ddyc1es5v/image/upload/v1768050244/gh-repos/glidercli/social-preview.png" />
 
 </div>
 
