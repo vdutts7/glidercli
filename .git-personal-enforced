@@ -1,0 +1,4 @@
+# This repository enforces personal git config only
+# DO NOT use git-amazon or any other corporate git configs
+ENFORCED_DATE=2026-01-10
+REQUIRED_CONFIG=personal
