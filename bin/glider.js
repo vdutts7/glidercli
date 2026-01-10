@@ -56,7 +56,7 @@ for (const cfgPath of DOMAIN_CONFIG_PATHS) {
   }
 }
 
-// Colors
+// Colors - matching the deep blue gradient logo
 const RED = '\x1b[31m';
 const GREEN = '\x1b[32m';
 const YELLOW = '\x1b[33m';
@@ -68,25 +68,30 @@ const BOLD = '\x1b[1m';
 const DIM = '\x1b[2m';
 const NC = '\x1b[0m';
 
-// Gradient colors for rainbow effect
-const G1 = '\x1b[38;5;51m';   // cyan
-const G2 = '\x1b[38;5;45m';   // teal
-const G3 = '\x1b[38;5;39m';   // blue
-const G4 = '\x1b[38;5;33m';   // deeper blue
-const G5 = '\x1b[38;5;27m';   // indigo
-const G6 = '\x1b[38;5;21m';   // purple
+// Deep blue gradient (matching logo)
+const B1 = '\x1b[38;5;17m';   // darkest navy
+const B2 = '\x1b[38;5;18m';   // dark navy
+const B3 = '\x1b[38;5;19m';   // navy
+const B4 = '\x1b[38;5;20m';   // blue
+const B5 = '\x1b[38;5;27m';   // bright blue
+const B6 = '\x1b[38;5;33m';   // sky blue
+const BW = '\x1b[38;5;255m';  // white (for glider icon)
 
-// Banner - simple ASCII, works everywhere
+// Banner - hang glider ASCII art matching logo
 const BANNER = `
-${CYAN}  ------------------------------------------------------->${NC}
-${CYAN}       _____ ${BLUE}__    ${MAGENTA}__ ${CYAN}____  ${BLUE}_____ ${MAGENTA}____  ${NC}
-${CYAN}      / ____|${BLUE}| |   ${MAGENTA}| |${CYAN}|  _ \\${BLUE}| ____|${MAGENTA}|  _ \\ ${NC}
-${CYAN}     | |  __ ${BLUE}| |   ${MAGENTA}| |${CYAN}| | | ${BLUE}|  _| ${MAGENTA}| |_) |${NC}
-${CYAN}     | | |_ |${BLUE}| |   ${MAGENTA}| |${CYAN}| | | ${BLUE}| |___${MAGENTA}|  _ < ${NC}
-${CYAN}     | |__| |${BLUE}| |___${MAGENTA}| |${CYAN}| |_| ${BLUE}| ____|${MAGENTA}| | \\ \\${NC}
-${CYAN}      \\_____|${BLUE}|_____|${MAGENTA}__|${CYAN}|____/${BLUE}|_____|${MAGENTA}|_|  \\_\\${NC}
-${CYAN}  ------------------------------------------------------->${NC}
-${DIM}       Browser Automation CLI ${WHITE}v${require('../package.json').version}${NC}  ${DIM}|${NC}  ${CYAN}github.com/vdutts7/glidercli${NC}
+${B1}    ╔══════════════════════════════════════════════════════════╗${NC}
+${B2}    ║${NC}                                                          ${B2}║${NC}
+${B3}    ║${NC}  ${BW}        ___________________________________${NC}             ${B3}║${NC}
+${B4}    ║${NC}  ${BW}       ╲                                   ╲${NC}            ${B4}║${NC}
+${B5}    ║${NC}  ${BW}        ╲___________________________________╲${NC}           ${B5}║${NC}
+${B5}    ║${NC}  ${BW}         ╲                                 ╱${NC}            ${B5}║${NC}
+${B6}    ║${NC}  ${BW}          ╲_______________________________╱${NC}             ${B6}║${NC}
+${B6}    ║${NC}                                                          ${B6}║${NC}
+${B5}    ║${NC}     ${BW}${BOLD}G L I D E R${NC}                                        ${B5}║${NC}
+${B4}    ║${NC}     ${DIM}Browser Automation CLI${NC}  ${B5}v${require('../package.json').version}${NC}                    ${B4}║${NC}
+${B3}    ║${NC}     ${DIM}github.com/vdutts7/glidercli${NC}                          ${B3}║${NC}
+${B2}    ║${NC}                                                          ${B2}║${NC}
+${B1}    ╚══════════════════════════════════════════════════════════╝${NC}
 `;
 
 function showBanner() {
@@ -96,11 +101,25 @@ function showBanner() {
 const log = {
   ok: (msg) => console.error(`${GREEN}✓${NC} ${msg}`),
   fail: (msg) => console.error(`${RED}✗${NC} ${msg}`),
-  info: (msg) => console.error(`${BLUE}→${NC} ${msg}`),
-  warn: (msg) => console.error(`${YELLOW}!${NC} ${msg}`),
-  step: (msg) => console.error(`${CYAN}[STEP]${NC} ${msg}`),
+  info: (msg) => console.error(`${B5}→${NC} ${msg}`),
+  warn: (msg) => console.error(`${YELLOW}⚠${NC} ${msg}`),
+  step: (msg) => console.error(`${B6}▸${NC} ${msg}`),
   result: (msg) => console.log(msg),
+  box: (title) => {
+    const line = '─'.repeat(50);
+    console.log(`${B3}┌${line}┐${NC}`);
+    console.log(`${B4}│${NC} ${BW}${BOLD}${title.padEnd(48)}${NC} ${B4}│${NC}`);
+    console.log(`${B5}└${line}┘${NC}`);
+  },
 };
+
+// macOS notification helper
+function notify(title, message, sound = false) {
+  try {
+    const soundFlag = sound ? 'sound name "Ping"' : '';
+    execSync(`osascript -e 'display notification "${message}" with title "${title}" ${soundFlag}'`, { stdio: 'ignore' });
+  } catch {}
+}
 
 // HTTP helpers
 function httpGet(urlPath) {
@@ -184,31 +203,32 @@ async function getTargets() {
 // Commands
 async function cmdStatus() {
   showBanner();
-  console.log('═══════════════════════════════════════');
-  console.log('  STATUS');
-  console.log('═══════════════════════════════════════');
+  log.box('STATUS');
   
   const serverOk = await checkServer();
-  console.log(serverOk ? `${GREEN}✓${NC} Server running on port ${PORT}` : `${RED}✗${NC} Server not running`);
+  console.log(serverOk ? `  ${GREEN}✓${NC} Server running on port ${PORT}` : `  ${RED}✗${NC} Server not running`);
   
   if (serverOk) {
     const extOk = await checkExtension();
-    console.log(extOk ? `${GREEN}✓${NC} Extension connected` : `${RED}✗${NC} Extension not connected`);
+    console.log(extOk ? `  ${GREEN}✓${NC} Extension connected` : `  ${RED}✗${NC} Extension not connected`);
     
     if (extOk) {
       const targets = await getTargets();
       if (targets.length > 0) {
-        console.log(`${GREEN}✓${NC} ${targets.length} tab(s) connected:`);
+        console.log(`  ${GREEN}✓${NC} ${targets.length} tab(s) connected:`);
         targets.forEach(t => {
           const url = t.targetInfo?.url || 'unknown';
-          console.log(`      ${CYAN}${url}${NC}`);
+          console.log(`      ${B5}${url}${NC}`);
         });
       } else {
-        console.log(`${YELLOW}!${NC} No tabs connected`);
+        console.log(`  ${YELLOW}⚠${NC} No tabs connected`);
+        console.log(`      ${DIM}Run: glider connect${NC}`);
       }
     }
+  } else {
+    console.log(`      ${DIM}Run: glider install${NC}`);
   }
-  console.log('═══════════════════════════════════════');
+  console.log();
 }
 
 async function cmdStart() {
@@ -574,8 +594,11 @@ async function cmdConnect() {
   
   // 8. Need manual click - open Chrome and show instructions
   log.warn('Click the Glider extension icon in Chrome');
-  console.log(`  ${CYAN}(on any real webpage, not chrome:// pages)${NC}`);
+  console.log(`  ${B5}(on any real webpage, not chrome:// pages)${NC}`);
   execSync(`osascript -e 'tell application "Google Chrome" to activate'`);
+  
+  // Send macOS notification so user sees it even if not looking at terminal
+  notify('Glider', 'Click the extension icon in Chrome to connect', true);
   
   // Wait for user to click
   log.info('Waiting for connection...');
@@ -583,27 +606,27 @@ async function cmdConnect() {
     await new Promise(r => setTimeout(r, 1000));
     if (await checkTab()) {
       log.ok('Connected!');
+      notify('Glider', 'Connected to browser');
       const targets = await getTargets();
       targets.slice(0, 3).forEach(t => {
-        console.log(`  ${CYAN}${t.targetInfo?.url || 'unknown'}${NC}`);
+        console.log(`  ${B5}${t.targetInfo?.url || 'unknown'}${NC}`);
       });
       return;
     }
   }
   
   log.fail('Timed out waiting for connection');
+  notify('Glider', 'Connection timed out - click extension icon', true);
   log.info('Make sure you clicked the extension icon on a real webpage');
 }
 
 async function cmdTest() {
   showBanner();
-  console.log('═══════════════════════════════════════');
-  console.log('  GLIDER TEST');
-  console.log('═══════════════════════════════════════');
+  log.box('DIAGNOSTICS');
   
   // Test 1: Server
   const serverOk = await checkServer();
-  console.log(serverOk ? `${GREEN}[1/4]${NC} Server: OK` : `${RED}[1/4]${NC} Server: FAIL`);
+  console.log(serverOk ? `  ${GREEN}✓${NC} ${B5}[1/4]${NC} Server` : `  ${RED}✗${NC} ${B5}[1/4]${NC} Server`);
   if (!serverOk) {
     log.info('Starting server...');
     await cmdStart();
@@ -611,11 +634,11 @@ async function cmdTest() {
   
   // Test 2: Extension
   const extOk = await checkExtension();
-  console.log(extOk ? `${GREEN}[2/4]${NC} Extension: OK` : `${RED}[2/4]${NC} Extension: NOT CONNECTED`);
+  console.log(extOk ? `  ${GREEN}✓${NC} ${B5}[2/4]${NC} Extension` : `  ${RED}✗${NC} ${B5}[2/4]${NC} Extension`);
   
   // Test 3: Tab
   const tabOk = await checkTab();
-  console.log(tabOk ? `${GREEN}[3/4]${NC} Tab: OK` : `${RED}[3/4]${NC} Tab: NO TABS`);
+  console.log(tabOk ? `  ${GREEN}✓${NC} ${B5}[3/4]${NC} Tab attached` : `  ${RED}✗${NC} ${B5}[3/4]${NC} No tabs`);
   
   // Test 4: CDP command
   if (tabOk) {
@@ -987,45 +1010,48 @@ async function cmdLoop(taskFileOrPrompt, options = {}) {
 function showHelp() {
   showBanner();
   console.log(`
-${YELLOW}USAGE:${NC}
+${B5}USAGE${NC}
     glider <command> [args]
 
-${YELLOW}SERVER:${NC}
-    status              Check server, extension, tabs
-    start               Start relay server
-    stop                Stop relay server
-    restart             Stop then start relay server
-    connect             Auto-connect: start server, wake Chrome, attach tab
-    test                Run connectivity test
-    install             Install as daemon (auto-start on login)
-    uninstall           Remove daemon
+${B5}SETUP${NC}
+    ${BW}install${NC}             Install daemon ${DIM}(runs at login, auto-restarts)${NC}
+    ${BW}uninstall${NC}           Remove daemon
+    ${BW}connect${NC}             Connect to browser ${DIM}(run once per Chrome session)${NC}
 
-${YELLOW}NAVIGATION:${NC}
-    goto <url>          Navigate current tab to URL
-    open <url>          Open URL in default browser
-    eval <js>           Execute JavaScript, return result
-    click <selector>    Click element
-    type <sel> <text>   Type into input
-    screenshot [path]   Take screenshot
+${B5}STATUS${NC}
+    ${BW}status${NC}              Check server, extension, tabs
+    ${BW}test${NC}                Run diagnostics
 
-${YELLOW}PAGE INFO:${NC}
-    text                Get page text content
-    html [selector]     Get page HTML (or element HTML)
-    title               Get page title
-    url                 Get current URL
-    tabs                List connected tabs
+${B5}NAVIGATION${NC}
+    ${BW}goto${NC} <url>          Navigate to URL
+    ${BW}eval${NC} <js>           Execute JavaScript
+    ${BW}click${NC} <selector>    Click element
+    ${BW}type${NC} <sel> <text>   Type into input
+    ${BW}screenshot${NC} [path]   Take screenshot
 
-${YELLOW}AUTOMATION:${NC}
-    run <task.yaml>     Execute YAML task file
-    loop <task> [opts]  Run in Ralph Wiggum loop until complete
+${B5}PAGE INFO${NC}
+    ${BW}text${NC}                Get page text
+    ${BW}html${NC} [selector]     Get HTML
+    ${BW}title${NC}               Get page title
+    ${BW}url${NC}                 Get current URL
+    ${BW}tabs${NC}                List connected tabs
 
-${YELLOW}CONFIG:${NC}
-    domains             List configured domain shortcuts
+${B5}AUTOMATION${NC}
+    ${BW}run${NC} <task.yaml>     Execute YAML task file
+    ${BW}loop${NC} <task> [opts]  Ralph Wiggum loop ${DIM}(run until complete)${NC}
 
-${YELLOW}LOOP OPTIONS:${NC}
-    -n, --max-iterations N   Max iterations (default: 10)
-    -t, --timeout N          Max runtime in seconds (default: 3600)
-    -m, --marker STRING      Completion marker (default: LOOP_COMPLETE)
+${B5}LOOP OPTIONS${NC}
+    -n, --max-iterations N   Max iterations ${DIM}(default: 10)${NC}
+    -t, --timeout N          Timeout in seconds ${DIM}(default: 3600)${NC}
+    -m, --marker STRING      Completion marker ${DIM}(default: LOOP_COMPLETE)${NC}
+
+${B5}EXAMPLES${NC}
+    ${DIM}$${NC} glider install              ${DIM}# one-time setup${NC}
+    ${DIM}$${NC} glider connect              ${DIM}# connect to Chrome${NC}
+    ${DIM}$${NC} glider goto "https://x.com" ${DIM}# navigate${NC}
+    ${DIM}$${NC} glider eval "document.title"${DIM}# run JS${NC}
+    ${DIM}$${NC} glider run scrape.yaml      ${DIM}# run task${NC}
+    ${DIM}$${NC} glider loop task.yaml -n 50 ${DIM}# autonomous loop${NC}
 
 ${YELLOW}TASK FILE FORMAT:${NC}
     name: "Task name"
@@ -1101,6 +1127,11 @@ async function main() {
   }
   
   switch (cmd) {
+    case 'help':
+    case '--help':
+    case '-h':
+      showHelp();
+      break;
     case 'status':
       await cmdStatus();
       break;
