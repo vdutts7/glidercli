@@ -23,6 +23,7 @@
     <a href="#the-loop">🔄 The Loop</a><br/>
     <a href="#task-files">📄 Task Files</a><br/>
     <a href="#commands">⚡ Commands</a><br/>
+    <a href="#roadmap">🗺️ Roadmap</a><br/>
     <a href="#tools-used">🔧 Tools used</a><br/>
     <a href="#contact">👤 Contact</a>
 </ol>
@@ -76,13 +77,14 @@ Logs: `~/.glider/daemon.log`
 
 ## 🔄The Loop
 
-The `loop` command runs your task repeatedly until:
+The `loop` (or `ralph`) command runs your task repeatedly until:
 - Completion marker found (`LOOP_COMPLETE` or `DONE`)
 - Max iterations reached
 - Timeout hit
 
 ```bash
 glider loop scrape-feed.yaml -n 100 -t 3600
+glider ralph task.yaml  # same thing
 ```
 
 Safety: max iterations, timeout, exponential backoff on errors, state persistence.
@@ -116,7 +118,26 @@ steps:
 | `glider title` | Get page title |
 | `glider run <file>` | Run YAML task |
 | `glider loop <file>` | Autonomous loop |
+| `glider ralph <file>` | Alias for loop |
 | `glider test` | Run diagnostics |
+
+## 🗺️Roadmap
+
+- [x] CDP-based browser control via relay
+- [x] YAML task file execution
+- [x] Ralph Wiggum autonomous loop pattern
+- [x] Daemon mode (auto-start, auto-restart)
+- [x] macOS notifications
+- [ ] Chrome Web Store extension publish
+- [ ] Linux support
+- [ ] Windows support
+- [ ] Headless mode
+- [ ] Multi-tab orchestration
+- [ ] Task chaining (output of one -> input of next)
+- [ ] Built-in scraping templates
+- [ ] Session recording/playback
+- [ ] AI-assisted task generation
+- [ ] Web dashboard for monitoring loops
 
 ## 🔧Tools Used
 

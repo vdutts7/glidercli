@@ -1038,7 +1038,8 @@ ${B5}PAGE INFO${NC}
 
 ${B5}AUTOMATION${NC}
     ${BW}run${NC} <task.yaml>     Execute YAML task file
-    ${BW}loop${NC} <task> [opts]  Ralph Wiggum loop ${DIM}(run until complete)${NC}
+    ${BW}loop${NC} <task> [opts]  Autonomous loop ${DIM}(run until complete)${NC}
+    ${BW}ralph${NC} <task>        ${DIM}Alias for loop${NC}
 
 ${B5}LOOP OPTIONS${NC}
     -n, --max-iterations N   Max iterations ${DIM}(default: 10)${NC}
@@ -1198,6 +1199,7 @@ async function main() {
       await cmdRun(args[1]);
       break;
     case 'loop':
+    case 'ralph':  // alias for loop - Ralph Wiggum pattern
       // Parse loop options
       const loopOpts = {
         maxIterations: 10,
