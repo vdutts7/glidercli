@@ -36,6 +36,21 @@ const SCRIPTS_DIR = process.env.SCRIPTS || path.join(os.homedir(), 'scripts');
 const STATE_FILE = '/tmp/glider-state.json';
 const LOG_FILE = '/tmp/glider.log';
 
+// Domain extensions - load from ~/.cursor/glider/domains.json or ~/.glider/domains.json
+const DOMAIN_CONFIG_PATHS = [
+  path.join(os.homedir(), '.cursor', 'glider', 'domains.json'),
+  path.join(os.homedir(), '.glider', 'domains.json'),
+];
+let DOMAINS = {};
+for (const cfgPath of DOMAIN_CONFIG_PATHS) {
+  if (fs.existsSync(cfgPath)) {
+    try {
+      DOMAINS = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+      break;
+    } catch (e) { /* ignore parse errors */ }
+  }
+}
+
 // Colors
 const RED = '\x1b[31m';
 const GREEN = '\x1b[32m';
@@ -699,7 +714,28 @@ ${YELLOW}REQUIREMENTS:${NC}
     - Node.js 18+
     - bserve relay server (~/scripts/bserve)
     - Glider Chrome extension connected
+
+${YELLOW}DOMAIN EXTENSIONS:${NC}
+    Add custom domain commands via ~/.cursor/glider/domains.json:
+    {
+      "mysite": { "url": "https://mysite.com/dashboard" },
+      "mytool": { "script": "~/.cursor/tools/scripts/mytool.sh" }
+    }
+    Then: glider mysite  →  navigates to that URL
+          glider mytool  →  runs that script
 `);
+  
+  // Show loaded domains if any
+  const domainKeys = Object.keys(DOMAINS);
+  if (domainKeys.length > 0) {
+    console.log(`${YELLOW}LOADED DOMAINS:${NC} (from config)`);
+    for (const key of domainKeys) {
+      const d = DOMAINS[key];
+      const desc = d.description || d.url || d.script || '';
+      console.log(`    ${GREEN}${key}${NC}  ${DIM}${desc}${NC}`);
+    }
+    console.log('');
+  }
 }
 
 // Main
@@ -773,6 +809,29 @@ async function main() {
       await cmdLoop(taskArg, loopOpts);
       break;
     default:
+      // Check if it's a domain command from config
+      if (DOMAINS[cmd]) {
+        const domain = DOMAINS[cmd];
+        if (domain.script) {
+          // Execute external script
+          const scriptPath = domain.script.replace(/^~/, os.homedir());
+          if (fs.existsSync(scriptPath)) {
+            const { execSync } = require('child_process');
+            try {
+              execSync(`"${scriptPath}" ${args.slice(1).map(a => `"${a}"`).join(' ')}`, { stdio: 'inherit' });
+            } catch (e) {
+              process.exit(e.status || 1);
+            }
+          } else {
+            log.fail(`Domain script not found: ${scriptPath}`);
+            process.exit(1);
+          }
+        } else if (domain.url) {
+          // Navigate to domain URL
+          await cmdGoto(domain.url);
+        }
+        break;
+      }
       log.fail(`Unknown command: ${cmd}`);
       showHelp();
       process.exit(1);
