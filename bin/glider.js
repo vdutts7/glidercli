@@ -32,7 +32,7 @@ const YAML = require('yaml');
 // Config
 const PORT = process.env.GLIDER_PORT || 19988;
 const SERVER_URL = `http://127.0.0.1:${PORT}`;
-const SCRIPTS_DIR = process.env.SCRIPTS || path.join(os.homedir(), 'scripts');
+const LIB_DIR = path.join(__dirname, '..', 'lib');
 const STATE_FILE = '/tmp/glider-state.json';
 const LOG_FILE = '/tmp/glider.log';
 
@@ -213,7 +213,7 @@ async function cmdStart() {
   }
   
   log.info('Starting glider server...');
-  const bserve = path.join(SCRIPTS_DIR, 'bserve');
+  const bserve = path.join(LIB_DIR, 'bserve.js');
   
   if (!fs.existsSync(bserve)) {
     log.fail(`bserve not found at ${bserve}`);
@@ -397,6 +397,151 @@ async function cmdText() {
     console.log(result.result?.value || '');
   } catch (e) {
     log.fail(`Text extraction failed: ${e.message}`);
+    process.exit(1);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// NEW COMMANDS: restart, test, tabs, domains, open, html, title, url
+// ═══════════════════════════════════════════════════════════════════
+
+async function cmdRestart() {
+  await cmdStop();
+  await new Promise(r => setTimeout(r, 500));
+  await cmdStart();
+}
+
+async function cmdTest() {
+  showBanner();
+  console.log('═══════════════════════════════════════');
+  console.log('  GLIDER TEST');
+  console.log('═══════════════════════════════════════');
+  
+  // Test 1: Server
+  const serverOk = await checkServer();
+  console.log(serverOk ? `${GREEN}[1/4]${NC} Server: OK` : `${RED}[1/4]${NC} Server: FAIL`);
+  if (!serverOk) {
+    log.info('Starting server...');
+    await cmdStart();
+  }
+  
+  // Test 2: Extension
+  const extOk = await checkExtension();
+  console.log(extOk ? `${GREEN}[2/4]${NC} Extension: OK` : `${RED}[2/4]${NC} Extension: NOT CONNECTED`);
+  
+  // Test 3: Tab
+  const tabOk = await checkTab();
+  console.log(tabOk ? `${GREEN}[3/4]${NC} Tab: OK` : `${RED}[3/4]${NC} Tab: NO TABS`);
+  
+  // Test 4: CDP command
+  if (tabOk) {
+    try {
+      const result = await httpPost('/cdp', {
+        method: 'Runtime.evaluate',
+        params: { expression: '1+1', returnByValue: true }
+      });
+      const cdpOk = result.result?.value === 2;
+      console.log(cdpOk ? `${GREEN}[4/4]${NC} CDP: OK` : `${RED}[4/4]${NC} CDP: FAIL`);
+    } catch {
+      console.log(`${RED}[4/4]${NC} CDP: FAIL`);
+    }
+  } else {
+    console.log(`${YELLOW}[4/4]${NC} CDP: SKIPPED (no tab)`);
+  }
+  
+  console.log('═══════════════════════════════════════');
+}
+
+async function cmdTabs() {
+  const targets = await getTargets();
+  if (targets.length === 0) {
+    log.warn('No tabs connected');
+    return;
+  }
+  console.log(`${GREEN}${targets.length}${NC} tab(s) connected:\n`);
+  targets.forEach((t, i) => {
+    const url = t.targetInfo?.url || 'unknown';
+    const title = t.targetInfo?.title || '';
+    console.log(`  ${CYAN}[${i + 1}]${NC} ${title}`);
+    console.log(`      ${DIM}${url}${NC}`);
+  });
+}
+
+async function cmdDomains() {
+  const domainKeys = Object.keys(DOMAINS);
+  if (domainKeys.length === 0) {
+    log.warn('No domains configured');
+    log.info('Add domains to ~/.cursor/glider/domains.json or ~/.glider/domains.json');
+    return;
+  }
+  console.log(`${GREEN}${domainKeys.length}${NC} domain(s) configured:\n`);
+  for (const key of domainKeys) {
+    const d = DOMAINS[key];
+    const type = d.script ? 'script' : 'url';
+    const target = d.script || d.url || '';
+    console.log(`  ${CYAN}${key}${NC} ${DIM}(${type})${NC}`);
+    if (d.description) console.log(`      ${d.description}`);
+    console.log(`      ${DIM}${target}${NC}`);
+  }
+}
+
+async function cmdOpen(url) {
+  if (!url) {
+    log.fail('Usage: glider open <url>');
+    process.exit(1);
+  }
+  
+  // Open URL in default browser (not in connected tab)
+  const { exec } = require('child_process');
+  const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+  exec(`${cmd} "${url}"`, (err) => {
+    if (err) {
+      log.fail(`Failed to open: ${err.message}`);
+      process.exit(1);
+    }
+    log.ok(`Opened: ${url}`);
+  });
+}
+
+async function cmdHtml(selector) {
+  try {
+    const expression = selector 
+      ? `document.querySelector('${selector.replace(/'/g, "\\'")}')?.outerHTML || 'Element not found'`
+      : 'document.documentElement.outerHTML';
+    
+    const result = await httpPost('/cdp', {
+      method: 'Runtime.evaluate',
+      params: { expression, returnByValue: true }
+    });
+    console.log(result.result?.value || '');
+  } catch (e) {
+    log.fail(`HTML extraction failed: ${e.message}`);
+    process.exit(1);
+  }
+}
+
+async function cmdTitle() {
+  try {
+    const result = await httpPost('/cdp', {
+      method: 'Runtime.evaluate',
+      params: { expression: 'document.title', returnByValue: true }
+    });
+    console.log(result.result?.value || '');
+  } catch (e) {
+    log.fail(`Title extraction failed: ${e.message}`);
+    process.exit(1);
+  }
+}
+
+async function cmdUrl() {
+  try {
+    const result = await httpPost('/cdp', {
+      method: 'Runtime.evaluate',
+      params: { expression: 'window.location.href', returnByValue: true }
+    });
+    console.log(result.result?.value || '');
+  } catch (e) {
+    log.fail(`URL extraction failed: ${e.message}`);
     process.exit(1);
   }
 }
@@ -665,18 +810,30 @@ ${YELLOW}SERVER:${NC}
     status              Check server, extension, tabs
     start               Start relay server
     stop                Stop relay server
+    restart             Stop then start relay server
+    test                Run connectivity test
 
 ${YELLOW}NAVIGATION:${NC}
     goto <url>          Navigate current tab to URL
+    open <url>          Open URL in default browser
     eval <js>           Execute JavaScript, return result
     click <selector>    Click element
     type <sel> <text>   Type into input
     screenshot [path]   Take screenshot
+
+${YELLOW}PAGE INFO:${NC}
     text                Get page text content
+    html [selector]     Get page HTML (or element HTML)
+    title               Get page title
+    url                 Get current URL
+    tabs                List connected tabs
 
 ${YELLOW}AUTOMATION:${NC}
     run <task.yaml>     Execute YAML task file
     loop <task> [opts]  Run in Ralph Wiggum loop until complete
+
+${YELLOW}CONFIG:${NC}
+    domains             List configured domain shortcuts
 
 ${YELLOW}LOOP OPTIONS:${NC}
     -n, --max-iterations N   Max iterations (default: 10)
@@ -700,6 +857,7 @@ ${YELLOW}EXAMPLES:${NC}
     glider start
     glider goto "https://google.com"
     glider eval "document.title"
+    glider html "div.main"
     glider run mytask.yaml
     glider loop mytask.yaml -n 20 -t 600
 
@@ -712,7 +870,6 @@ ${YELLOW}RALPH WIGGUM PATTERN:${NC}
 
 ${YELLOW}REQUIREMENTS:${NC}
     - Node.js 18+
-    - bserve relay server (~/scripts/bserve)
     - Glider Chrome extension connected
 
 ${YELLOW}DOMAIN EXTENSIONS:${NC}
@@ -721,8 +878,8 @@ ${YELLOW}DOMAIN EXTENSIONS:${NC}
       "mysite": { "url": "https://mysite.com/dashboard" },
       "mytool": { "script": "~/.cursor/tools/scripts/mytool.sh" }
     }
-    Then: glider mysite  →  navigates to that URL
-          glider mytool  →  runs that script
+    Then: glider mysite  ->  navigates to that URL
+          glider mytool  ->  runs that script
 `);
   
   // Show loaded domains if any
@@ -766,9 +923,24 @@ async function main() {
     case 'stop':
       await cmdStop();
       break;
+    case 'restart':
+      await cmdRestart();
+      break;
+    case 'test':
+      await cmdTest();
+      break;
+    case 'tabs':
+      await cmdTabs();
+      break;
+    case 'domains':
+      await cmdDomains();
+      break;
     case 'goto':
     case 'navigate':
       await cmdGoto(args[1]);
+      break;
+    case 'open':
+      await cmdOpen(args[1]);
       break;
     case 'eval':
     case 'js':
@@ -785,6 +957,15 @@ async function main() {
       break;
     case 'text':
       await cmdText();
+      break;
+    case 'html':
+      await cmdHtml(args[1]);
+      break;
+    case 'title':
+      await cmdTitle();
+      break;
+    case 'url':
+      await cmdUrl();
       break;
     case 'run':
       await cmdRun(args[1]);
