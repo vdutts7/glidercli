@@ -753,6 +753,197 @@ async function cmdUrl() {
   }
 }
 
+// Fetch URL using browser session (authenticated)
+async function cmdFetch(url, opts = []) {
+  if (!url) {
+    log.fail('Usage: glider fetch <url> [--output file]');
+    process.exit(1);
+  }
+  
+  log.info(`Fetching: ${url}`);
+  
+  let outputFile = null;
+  for (let i = 0; i < opts.length; i++) {
+    if (opts[i] === '--output' || opts[i] === '-o') {
+      outputFile = opts[++i];
+    }
+  }
+  
+  try {
+    const result = await httpPost('/cdp', {
+      method: 'Runtime.evaluate',
+      params: {
+        expression: `
+          (async () => {
+            const resp = await fetch(${JSON.stringify(url)});
+            const text = await resp.text();
+            try { return JSON.parse(text); } catch { return text; }
+          })()
+        `,
+        awaitPromise: true,
+        returnByValue: true
+      }
+    });
+    
+    const data = result?.result?.value;
+    const output = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
+    
+    if (outputFile) {
+      fs.writeFileSync(outputFile, output);
+      log.ok(`Saved to ${outputFile}`);
+    } else {
+      console.log(output);
+    }
+  } catch (e) {
+    log.fail(`Fetch failed: ${e.message}`);
+    process.exit(1);
+  }
+}
+
+// Spawn multiple tabs
+async function cmdSpawn(urls) {
+  if (!urls || urls.length === 0) {
+    log.fail('Usage: glider spawn <url1> <url2> ...');
+    process.exit(1);
+  }
+  
+  // Handle file input
+  if (urls[0] === '-f' && urls[1]) {
+    const content = fs.readFileSync(urls[1], 'utf8');
+    urls = content.split('\n').filter(u => u.trim());
+  }
+  
+  log.info(`Spawning ${urls.length} tab(s)...`);
+  
+  const results = [];
+  for (const url of urls) {
+    try {
+      const result = await httpPost('/cdp', {
+        method: 'Target.createTarget',
+        params: { url }
+      });
+      results.push({ url, targetId: result?.targetId });
+      log.ok(`Spawned: ${url}`);
+    } catch (e) {
+      log.warn(`Failed: ${url} - ${e.message}`);
+    }
+  }
+  
+  console.log(JSON.stringify(results, null, 2));
+}
+
+// Extract from multiple tabs
+async function cmdExtract(opts = []) {
+  let js = 'document.body.innerText';
+  let selector = null;
+  let limit = 10000;
+  let asJson = false;
+  
+  for (let i = 0; i < opts.length; i++) {
+    if (opts[i] === '--js') js = opts[++i];
+    else if (opts[i] === '--selector' || opts[i] === '-s') selector = opts[++i];
+    else if (opts[i] === '--limit' || opts[i] === '-l') limit = parseInt(opts[++i], 10);
+    else if (opts[i] === '--json') asJson = true;
+  }
+  
+  if (selector) {
+    js = `document.querySelector(${JSON.stringify(selector)})?.innerText || ''`;
+  }
+  
+  log.info('Extracting from connected tabs...');
+  
+  try {
+    const targets = await getTargets();
+    if (targets.length === 0) {
+      log.warn('No tabs connected');
+      return;
+    }
+    
+    const results = [];
+    for (const target of targets) {
+      const url = target.targetInfo?.url || 'unknown';
+      try {
+        const result = await httpPost('/cdp', {
+          method: 'Runtime.evaluate',
+          params: {
+            expression: js,
+            returnByValue: true
+          }
+        });
+        const text = String(result?.result?.value || '').slice(0, limit);
+        results.push({ url, text });
+        if (!asJson) {
+          console.log(`\n--- ${url} ---`);
+          console.log(text);
+        }
+      } catch (e) {
+        results.push({ url, error: e.message });
+      }
+    }
+    
+    if (asJson) {
+      console.log(JSON.stringify(results, null, 2));
+    }
+  } catch (e) {
+    log.fail(`Extract failed: ${e.message}`);
+    process.exit(1);
+  }
+}
+
+// Explore site (clicks around, captures network)
+async function cmdExplore(url, opts = []) {
+  if (!url) {
+    log.fail('Usage: glider explore <url> [--depth N] [--output dir]');
+    process.exit(1);
+  }
+  
+  let depth = 2;
+  let outputDir = '/tmp/glider-explore';
+  
+  for (let i = 0; i < opts.length; i++) {
+    if (opts[i] === '--depth' || opts[i] === '-d') depth = parseInt(opts[++i], 10);
+    else if (opts[i] === '--output' || opts[i] === '-o') outputDir = opts[++i];
+  }
+  
+  log.info(`Exploring: ${url} (depth: ${depth})`);
+  
+  // Use the bexplore.js library
+  const bexplorePath = path.join(LIB_DIR, 'bexplore.js');
+  if (fs.existsSync(bexplorePath)) {
+    const { spawn } = require('child_process');
+    const child = spawn('node', [bexplorePath, url, '--depth', String(depth), '--output', outputDir], {
+      stdio: 'inherit'
+    });
+    await new Promise((resolve, reject) => {
+      child.on('close', code => code === 0 ? resolve() : reject(new Error(`Exit code: ${code}`)));
+    });
+  } else {
+    // Fallback: simple exploration
+    await cmdGoto(url);
+    await new Promise(r => setTimeout(r, 2000));
+    
+    // Get all links
+    const result = await httpPost('/cdp', {
+      method: 'Runtime.evaluate',
+      params: {
+        expression: `Array.from(document.querySelectorAll('a[href]')).map(a => a.href).filter(h => h.startsWith('http'))`,
+        returnByValue: true
+      }
+    });
+    
+    const links = result?.result?.value || [];
+    log.ok(`Found ${links.length} links`);
+    
+    fs.mkdirSync(outputDir, { recursive: true });
+    fs.writeFileSync(path.join(outputDir, 'links.json'), JSON.stringify(links, null, 2));
+    
+    // Screenshot
+    await cmdScreenshot(path.join(outputDir, 'screenshot.png'));
+    
+    log.ok(`Output saved to ${outputDir}`);
+  }
+}
+
 // YAML Task Runner
 async function cmdRun(taskFile) {
   if (!taskFile || !fs.existsSync(taskFile)) {
@@ -1036,6 +1227,12 @@ ${B5}PAGE INFO${NC}
     ${BW}url${NC}                 Get current URL
     ${BW}tabs${NC}                List connected tabs
 
+${B5}MULTI-TAB${NC}
+    ${BW}fetch${NC} <url>         Fetch URL with browser session ${DIM}(auth)${NC}
+    ${BW}spawn${NC} <urls...>     Open multiple tabs
+    ${BW}extract${NC} [opts]      Extract from all tabs
+    ${BW}explore${NC} <url>       Crawl site, capture network
+
 ${B5}AUTOMATION${NC}
     ${BW}run${NC} <task.yaml>     Execute YAML task file
     ${BW}loop${NC} <task> [opts]  Autonomous loop ${DIM}(run until complete)${NC}
@@ -1197,6 +1394,18 @@ async function main() {
       break;
     case 'run':
       await cmdRun(args[1]);
+      break;
+    case 'fetch':
+      await cmdFetch(args[1], args.slice(2));
+      break;
+    case 'spawn':
+      await cmdSpawn(args.slice(1));
+      break;
+    case 'extract':
+      await cmdExtract(args.slice(1));
+      break;
+    case 'explore':
+      await cmdExplore(args[1], args.slice(2));
       break;
     case 'loop':
     case 'ralph':  // alias for loop - Ralph Wiggum pattern

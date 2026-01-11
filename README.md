@@ -103,13 +103,18 @@ steps:
 
 ## ⚡Commands
 
+### Setup
 | Command | What |
 |---------|------|
 | `glider install` | Install daemon (runs at login) |
 | `glider uninstall` | Remove daemon |
 | `glider connect` | Connect to browser |
 | `glider status` | Server/extension/tab status |
-| `glider start` | Start relay server |
+| `glider test` | Run diagnostics |
+
+### Navigation
+| Command | What |
+|---------|------|
 | `glider goto <url>` | Navigate |
 | `glider eval <js>` | Execute JavaScript |
 | `glider click <sel>` | Click element |
@@ -117,10 +122,22 @@ steps:
 | `glider screenshot` | Capture page |
 | `glider html <sel>` | Get element HTML |
 | `glider title` | Get page title |
+| `glider text` | Get page text |
+
+### Multi-Tab
+| Command | What |
+|---------|------|
+| `glider fetch <url>` | Fetch URL with browser session (authenticated) |
+| `glider spawn <urls...>` | Open multiple tabs |
+| `glider extract [opts]` | Extract content from all connected tabs |
+| `glider explore <url>` | Crawl site, capture links/network |
+
+### Automation
+| Command | What |
+|---------|------|
 | `glider run <file>` | Run YAML task |
 | `glider loop <file>` | Autonomous loop |
 | `glider ralph <file>` | Alias for loop |
-| `glider test` | Run diagnostics |
 
 ## 🗺️Roadmap
 
@@ -129,11 +146,13 @@ steps:
 - [x] Ralph Wiggum autonomous loop pattern
 - [x] Daemon mode (auto-start, auto-restart)
 - [x] macOS notifications
+- [x] Multi-tab orchestration (spawn, extract)
+- [x] Authenticated fetch via browser session
+- [x] Site exploration/crawling
 - [ ] Chrome Web Store extension publish
 - [ ] Linux support
 - [ ] Windows support
 - [ ] Headless mode
-- [ ] Multi-tab orchestration
 - [ ] Task chaining (output of one -> input of next)
 - [ ] Built-in scraping templates
 - [ ] Session recording/playback
@@ -154,7 +173,7 @@ steps:
 <!-- BADGES -->
 [github]: https://img.shields.io/badge/💻_glidercli-000000?style=for-the-badge
 [github-url]: https://github.com/vdutts7/glidercli
-[npm]: https://img.shields.io/badge/npm-glidercli-CB3837?style=for-the-badge&logo=npm
+[npm]: https://img.shields.io/badge/npm_i_--g_glidercli-CB3837?style=for-the-badge&logo=npm
 [npm-url]: https://www.npmjs.com/package/glidercli
 [claude-badge]: https://img.shields.io/badge/Claude-D97757?style=for-the-badge&logo=anthropic&logoColor=white
 [claude-url]: https://claude.ai
