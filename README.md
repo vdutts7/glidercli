@@ -161,6 +161,7 @@ steps:
 
 ## 🔧Tools Used
 
+[![Claude Code][claudecode-badge]][claudecode-url]
 [![Claude][claude-badge]][claude-url]
 [![Node.js][nodejs-badge]][nodejs-url]
 [![Chrome DevTools Protocol][cdp-badge]][cdp-url]
@@ -171,10 +172,12 @@ steps:
 [![Twitter][twitter]][twitter-url]
 
 <!-- BADGES -->
-[github]: https://img.shields.io/badge/💻_glidercli-000000?style=for-the-badge
+[github]: https://img.shields.io/badge/glidercli-000000?style=for-the-badge&logo=github
 [github-url]: https://github.com/vdutts7/glidercli
-[npm]: https://img.shields.io/badge/npm_i_--g_glidercli-CB3837?style=for-the-badge&logo=npm
+[npm]: https://img.shields.io/badge/npm%20i%20--g%20glidercli-CB3837?style=for-the-badge&logo=npm
 [npm-url]: https://www.npmjs.com/package/glidercli
+[claudecode-badge]: https://img.shields.io/badge/Claude_Code-D97757?style=for-the-badge&logo=anthropic&logoColor=white
+[claudecode-url]: https://claude.ai/code
 [claude-badge]: https://img.shields.io/badge/Claude-D97757?style=for-the-badge&logo=anthropic&logoColor=white
 [claude-url]: https://claude.ai
 [nodejs-badge]: https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white
