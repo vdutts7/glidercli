@@ -893,16 +893,18 @@ async function cmdExtract(opts = []) {
 // Explore site (clicks around, captures network)
 async function cmdExplore(url, opts = []) {
   if (!url) {
-    log.fail('Usage: glider explore <url> [--depth N] [--output dir]');
+    log.fail('Usage: glider explore <url> [--depth N] [--output dir] [--har file]');
     process.exit(1);
   }
   
   let depth = 2;
   let outputDir = '/tmp/glider-explore';
+  let harFile = null;
   
   for (let i = 0; i < opts.length; i++) {
     if (opts[i] === '--depth' || opts[i] === '-d') depth = parseInt(opts[++i], 10);
     else if (opts[i] === '--output' || opts[i] === '-o') outputDir = opts[++i];
+    else if (opts[i] === '--har') harFile = opts[++i];
   }
   
   log.info(`Exploring: ${url} (depth: ${depth})`);
@@ -911,7 +913,10 @@ async function cmdExplore(url, opts = []) {
   const bexplorePath = path.join(LIB_DIR, 'bexplore.js');
   if (fs.existsSync(bexplorePath)) {
     const { spawn } = require('child_process');
-    const child = spawn('node', [bexplorePath, url, '--depth', String(depth), '--output', outputDir], {
+    const spawnArgs = [bexplorePath, url, '--depth', String(depth), '--output', outputDir];
+    if (harFile) spawnArgs.push('--har', harFile);
+    
+    const child = spawn('node', spawnArgs, {
       stdio: 'inherit'
     });
     await new Promise((resolve, reject) => {
