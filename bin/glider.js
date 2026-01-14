@@ -674,6 +674,98 @@ async function cmdTabs() {
   });
 }
 
+async function cmdWindow(args) {
+  const { WindowManager } = require(path.join(LIB_DIR, 'bwindow.js'));
+  const wm = new WindowManager();
+  
+  try {
+    await wm.connect();
+    await wm.init();
+    
+    const subcmd = args[0] || 'list';
+    
+    switch (subcmd) {
+      case 'new':
+      case 'create': {
+        const url = args[1] || 'about:blank';
+        log.info(`Creating new window: ${url}`);
+        const result = await wm.createWindow(url);
+        log.ok(`Window created: ${result.targetId}`);
+        console.log(JSON.stringify(result, null, 2));
+        break;
+      }
+      
+      case 'tab': {
+        const url = args[1] || 'about:blank';
+        log.info(`Creating new tab: ${url}`);
+        const result = await wm.createTab(url);
+        log.ok(`Tab created: ${result.targetId}`);
+        console.log(JSON.stringify(result, null, 2));
+        break;
+      }
+      
+      case 'close': {
+        const targetId = args[1];
+        if (!targetId) {
+          log.fail('targetId required');
+          return;
+        }
+        log.info(`Closing: ${targetId}`);
+        const result = await wm.closeTarget(targetId);
+        if (result.success) {
+          log.ok(`Closed: ${targetId}`);
+        } else {
+          log.fail(`Failed to close: ${result.error}`);
+        }
+        break;
+      }
+      
+      case 'closeall': {
+        log.info('Closing all Glider-created tabs...');
+        const results = await wm.closeAll();
+        const success = results.filter(r => r.success).length;
+        log.ok(`Closed ${success}/${results.length} tabs`);
+        break;
+      }
+      
+      case 'focus': {
+        const targetId = args[1];
+        if (!targetId) {
+          log.fail('targetId required');
+          return;
+        }
+        const result = await wm.focusTarget(targetId);
+        if (result.success) {
+          log.ok(`Focused: ${targetId}`);
+        } else {
+          log.fail(`Failed to focus: ${result.error}`);
+        }
+        break;
+      }
+      
+      case 'list':
+      default: {
+        const targets = wm.list();
+        if (targets.length === 0) {
+          log.warn('No windows/tabs tracked');
+        } else {
+          console.log(`${GREEN}${targets.length}${NC} target(s):\n`);
+          targets.forEach((t, i) => {
+            const marker = t.createdByGlider ? `${GREEN}●${NC}` : `${DIM}○${NC}`;
+            console.log(`  ${marker} ${CYAN}${t.targetId.substring(0, 16)}...${NC}`);
+            console.log(`      ${DIM}${t.url || 'unknown'}${NC}`);
+          });
+        }
+        break;
+      }
+    }
+  } catch (err) {
+    log.fail(err.message);
+  } finally {
+    wm.close();
+  }
+}
+
 async function cmdDomains() {
   const domainKeys = Object.keys(DOMAINS);
   if (domainKeys.length === 0) {
@@ -1232,6 +1324,14 @@ ${B5}PAGE INFO${NC}
     ${BW}url${NC}                 Get current URL
     ${BW}tabs${NC}                List connected tabs
 
+${B5}MULTI-WINDOW${NC}
+    ${BW}window new${NC} [url]    Create new browser window ${DIM}(closeable)${NC}
+    ${BW}window tab${NC} [url]    Create tab in current window
+    ${BW}window close${NC} <id>   Close specific tab/window
+    ${BW}window closeall${NC}     Close all Glider-created tabs
+    ${BW}window focus${NC} <id>   Bring tab to foreground
+    ${BW}window list${NC}         List all windows/tabs
+
 ${B5}MULTI-TAB${NC}
     ${BW}fetch${NC} <url>         Fetch URL with browser session ${DIM}(auth)${NC}
     ${BW}spawn${NC} <urls...>     Open multiple tabs
@@ -1361,6 +1461,10 @@ async function main() {
       break;
     case 'tabs':
       await cmdTabs();
+      break;
+    case 'window':
+    case 'win':
+      await cmdWindow(args.slice(1));
       break;
     case 'domains':
       await cmdDomains();
