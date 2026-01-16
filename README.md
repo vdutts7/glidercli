@@ -51,8 +51,7 @@ glider install    # start daemon (runs forever, auto-restarts)
 
 1. **Node 18+**
 
-2. **Glider Chrome Extension** - [glider](https://github.com/vdutts/glider) *(Chrome Web Store pending)*
-   - Clone repo, load unpacked in `chrome://extensions`
+2. **Glider Chrome Extension** - [Install from Chrome Web Store](https://chromewebstore.google.com/detail/glider/njbidokkffhgpofcejgcfcgcinmeoalj)
 
 ## 🚀Usage
 
@@ -149,7 +148,7 @@ steps:
 - [x] Multi-tab orchestration (spawn, extract)
 - [x] Authenticated fetch via browser session
 - [x] Site exploration/crawling
-- [ ] Chrome Web Store extension publish
+- [x] Chrome Web Store extension publish
 - [ ] Linux support
 - [ ] Windows support
 - [ ] Headless mode
