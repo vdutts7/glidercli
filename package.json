@@ -1,6 +1,6 @@
 {
   "name": "glidercli",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Browser automation CLI. Control Chrome from terminal via CDP, run YAML task files, autonomous loops until completion.",
   "main": "index.js",
   "bin": {
