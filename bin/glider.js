@@ -37,6 +37,15 @@ const DEBUG_URL = `http://127.0.0.1:${DEBUG_PORT}`;
 const LIB_DIR = path.join(__dirname, '..', 'lib');
 const STATE_FILE = '/tmp/glider-state.json';
 const LOG_FILE = '/tmp/glider.log';
+const REGISTRY_FILE = path.join(LIB_DIR, 'registry.json');
+
+// Load pattern registry
+let REGISTRY = {};
+if (fs.existsSync(REGISTRY_FILE)) {
+  try {
+    REGISTRY = JSON.parse(fs.readFileSync(REGISTRY_FILE, 'utf8'));
+  } catch (e) { /* ignore parse errors */ }
+}
 
 // Direct CDP module
 const { DirectCDP, checkChrome } = require(path.join(LIB_DIR, 'cdp-direct.js'));
@@ -982,6 +991,164 @@ async function cmdExtract(opts = []) {
   }
 }
 
+// Registry pattern execution - bulletproof extraction using predefined patterns
+async function cmdRegistry(patternName, opts = []) {
+  if (!patternName) {
+    // List all patterns
+    const patterns = Object.keys(REGISTRY);
+    if (patterns.length === 0) {
+      log.warn('No patterns in registry');
+      return;
+    }
+    console.log(`${GREEN}${patterns.length}${NC} pattern(s) available:\n`);
+    for (const name of patterns) {
+      const p = REGISTRY[name];
+      console.log(`  ${CYAN}${name}${NC}`);
+      console.log(`      ${DIM}${p.description || 'No description'}${NC}`);
+    }
+    return;
+  }
+
+  const pattern = REGISTRY[patternName];
+  if (!pattern) {
+    log.fail(`Pattern not found: ${patternName}`);
+    log.info('Run "glider registry" to see available patterns');
+    process.exit(1);
+  }
+
+  // Parse options - for favicon: glider favicon [output.webp]
+  // The first arg that looks like a file path is output, anything else is URL
+  let outputFile = null;
+  let url = null;
+  for (let i = 0; i < opts.length; i++) {
+    const arg = opts[i];
+    if (arg === '--output' || arg === '-o') {
+      outputFile = opts[++i];
+    } else if (arg.startsWith('-')) {
+      // skip flags
+    } else if (arg.includes('/') && !arg.startsWith('http') && (arg.endsWith('.webp') || arg.endsWith('.png') || arg.endsWith('.ico'))) {
+      // Looks like a file path
+      outputFile = arg;
+    } else if (!url) {
+      url = arg;
+    }
+  }
+
+  // If URL provided, navigate first
+  if (url) {
+    if (!url.startsWith('http')) url = 'https://' + url;
+    log.info(`Navigating to: ${url}`);
+    await cmdGoto(url);
+    await new Promise(r => setTimeout(r, 2000));
+  }
+
+  log.info(`Running pattern: ${patternName}`);
+
+  try {
+    const result = await httpPost('/cdp', {
+      method: 'Runtime.evaluate',
+      params: {
+        expression: pattern.pattern,
+        returnByValue: true,
+        awaitPromise: true,
+      }
+    });
+
+    let value = result?.result?.value;
+    
+    if (value === undefined || value === null) {
+      log.fail('Pattern returned no value');
+      process.exit(1);
+    }
+
+    // Handle postprocessing for favicon
+    if (patternName === 'favicon' && pattern.postprocess) {
+      const base64 = value;
+      if (!base64 || base64.length < 50) {
+        log.fail('No favicon data received');
+        process.exit(1);
+      }
+
+      // Determine output path
+      if (!outputFile) {
+        const currentUrl = await httpPost('/cdp', {
+          method: 'Runtime.evaluate',
+          params: { expression: 'window.location.hostname', returnByValue: true }
+        });
+        const hostname = currentUrl?.result?.value?.replace(/^www\./, '').split('.')[0] || 'favicon';
+        outputFile = `/tmp/${hostname}-favicon.webp`;
+      }
+
+      // Save and convert
+      const tempFile = `/tmp/favicon-temp-${Date.now()}`;
+      const buffer = Buffer.from(base64, 'base64');
+      
+      // Detect if ICO
+      const isIco = buffer[0] === 0 && buffer[1] === 0 && buffer[2] === 1;
+      const tempPath = isIco ? `${tempFile}.ico` : `${tempFile}.png`;
+      fs.writeFileSync(tempPath, buffer);
+      log.ok(`Downloaded: ${buffer.length} bytes`);
+
+      // Convert to webp
+      if (outputFile.endsWith('.webp')) {
+        try {
+          let pngPath = tempPath;
+          if (isIco) {
+            pngPath = `${tempFile}.png`;
+            execSync(`magick "${tempPath}[0]" -resize 32x32 "${pngPath}" 2>/dev/null || convert "${tempPath}[0]" -resize 32x32 "${pngPath}" 2>/dev/null`);
+          }
+          execSync(`cwebp "${pngPath}" -o "${outputFile}" -q 90 2>/dev/null`);
+          log.ok(`Saved: ${outputFile}`);
+          
+          // Cleanup
+          try { fs.unlinkSync(tempPath); } catch {}
+          if (pngPath !== tempPath) try { fs.unlinkSync(pngPath); } catch {}
+        } catch (e) {
+          // Fallback - save as-is
+          const fallback = outputFile.replace('.webp', isIco ? '.ico' : '.png');
+          fs.copyFileSync(tempPath, fallback);
+          log.warn(`Conversion failed, saved as: ${fallback}`);
+          outputFile = fallback;
+        }
+      } else {
+        fs.copyFileSync(tempPath, outputFile);
+        log.ok(`Saved: ${outputFile}`);
+      }
+
+      // Also copy to dist if in spoonfeeder project
+      const distPath = outputFile.replace('/public/', '/dist/web/');
+      if (distPath !== outputFile && fs.existsSync(outputFile)) {
+        try {
+          const distDir = path.dirname(distPath);
+          if (fs.existsSync(distDir)) {
+            fs.copyFileSync(outputFile, distPath);
+            log.ok(`Copied to dist: ${distPath}`);
+          }
+        } catch {}
+      }
+
+      console.log(outputFile);
+      return;
+    }
+
+    // Standard output
+    if (outputFile) {
+      const output = typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
+      fs.writeFileSync(outputFile, output);
+      log.ok(`Saved to ${outputFile}`);
+    } else {
+      if (typeof value === 'object') {
+        console.log(JSON.stringify(value, null, 2));
+      } else {
+        console.log(value);
+      }
+    }
+  } catch (e) {
+    log.fail(`Pattern failed: ${e.message}`);
+    process.exit(1);
+  }
+}
+
 // Explore site (clicks around, captures network)
 async function cmdExplore(url, opts = []) {
   if (!url) {
@@ -1337,6 +1504,7 @@ ${B5}MULTI-TAB${NC}
     ${BW}spawn${NC} <urls...>     Open multiple tabs
     ${BW}extract${NC} [opts]      Extract from all tabs
     ${BW}explore${NC} <url>       Crawl site, capture network
+    ${BW}favicon${NC} <url> [out] Extract favicon from site ${DIM}(webp)${NC}
 
 ${B5}AUTOMATION${NC}
     ${BW}run${NC} <task.yaml>     Execute YAML task file
@@ -1515,6 +1683,15 @@ async function main() {
       break;
     case 'explore':
       await cmdExplore(args[1], args.slice(2));
+      break;
+    case 'favicon':
+      // Use registry pattern - bulletproof method
+      await cmdRegistry('favicon', args.slice(1));
+      break;
+    case 'registry':
+    case 'reg':
+      // Run a registry pattern
+      await cmdRegistry(args[1], args.slice(2));
       break;
     case 'loop':
     case 'ralph':  // alias for loop - Ralph Wiggum pattern

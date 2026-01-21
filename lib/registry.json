@@ -1,0 +1,73 @@
+{
+  "favicon": {
+    "description": "Extract favicon from current page using browser session",
+    "pattern": "(async () => { const resp = await fetch(document.querySelector('link[rel*=icon]')?.href || window.location.origin + '/favicon.ico', { credentials: 'include' }); const blob = await resp.blob(); const reader = new FileReader(); return await new Promise(resolve => { reader.onload = () => resolve(reader.result.split(',')[1]); reader.readAsDataURL(blob); }); })()",
+    "output": "base64",
+    "postprocess": ["base64-decode", "convert-webp"]
+  },
+  "favicon-all": {
+    "description": "Get all favicon URLs from current page",
+    "pattern": "(() => { const urls = []; document.querySelectorAll('link[rel*=icon]').forEach(l => urls.push(l.href)); if (urls.length === 0) urls.push(window.location.origin + '/favicon.ico'); return urls; })()",
+    "output": "json"
+  },
+  "title": {
+    "description": "Get page title",
+    "pattern": "document.title",
+    "output": "string"
+  },
+  "url": {
+    "description": "Get current URL",
+    "pattern": "window.location.href",
+    "output": "string"
+  },
+  "links": {
+    "description": "Get all links on page",
+    "pattern": "Array.from(document.querySelectorAll('a[href]')).map(a => ({ text: a.innerText.trim(), href: a.href })).filter(l => l.href.startsWith('http'))",
+    "output": "json"
+  },
+  "images": {
+    "description": "Get all image URLs",
+    "pattern": "Array.from(document.querySelectorAll('img[src]')).map(i => i.src)",
+    "output": "json"
+  },
+  "text": {
+    "description": "Get page text content",
+    "pattern": "document.body.innerText",
+    "output": "string"
+  },
+  "meta": {
+    "description": "Get all meta tags",
+    "pattern": "Array.from(document.querySelectorAll('meta')).map(m => ({ name: m.name || m.property, content: m.content })).filter(m => m.content)",
+    "output": "json"
+  },
+  "og": {
+    "description": "Get Open Graph metadata",
+    "pattern": "(() => { const og = {}; document.querySelectorAll('meta[property^=\"og:\"]').forEach(m => og[m.property.replace('og:','')] = m.content); return og; })()",
+    "output": "json"
+  },
+  "forms": {
+    "description": "Get all forms and their inputs",
+    "pattern": "Array.from(document.querySelectorAll('form')).map(f => ({ action: f.action, method: f.method, inputs: Array.from(f.querySelectorAll('input,select,textarea')).map(i => ({ name: i.name, type: i.type, id: i.id })) }))",
+    "output": "json"
+  },
+  "cookies": {
+    "description": "Get all cookies",
+    "pattern": "document.cookie.split(';').map(c => c.trim()).filter(c => c).map(c => { const [k,...v] = c.split('='); return { name: k, value: v.join('=') }; })",
+    "output": "json"
+  },
+  "storage": {
+    "description": "Get localStorage keys",
+    "pattern": "Object.keys(localStorage)",
+    "output": "json"
+  },
+  "scripts": {
+    "description": "Get all script sources",
+    "pattern": "Array.from(document.querySelectorAll('script[src]')).map(s => s.src)",
+    "output": "json"
+  },
+  "styles": {
+    "description": "Get all stylesheet links",
+    "pattern": "Array.from(document.querySelectorAll('link[rel=stylesheet]')).map(l => l.href)",
+    "output": "json"
+  }
+}
