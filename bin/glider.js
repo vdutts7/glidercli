@@ -209,6 +209,91 @@ async function getTargets() {
   }
 }
 
+// Auto-connect helper - ensures Chrome is running and connected before commands
+async function ensureConnected() {
+  // Check if already connected
+  if (await checkTab()) {
+    return true;
+  }
+  
+  // Check if server is running
+  if (!await checkServer()) {
+    log.info('Server not running, starting...');
+    await cmdStart();
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  
+  // Check if Chrome is running
+  try {
+    execSync('pgrep -x "Google Chrome"', { stdio: 'ignore' });
+  } catch {
+    log.info('Chrome not running, launching...');
+    // Open Chrome with a new window to google.com
+    execSync('open -na "Google Chrome" --args --new-window "https://www.google.com"');
+    await new Promise(r => setTimeout(r, 3000));
+  }
+  
+  // Wait for extension to connect
+  for (let i = 0; i < 10; i++) {
+    if (await checkExtension()) break;
+    await new Promise(r => setTimeout(r, 500));
+  }
+  
+  if (!await checkExtension()) {
+    log.fail('Extension not connected - make sure Glider extension is installed');
+    log.info('Install from: chrome://extensions → Load unpacked → ~/glider-crx/glider/');
+    return false;
+  }
+  
+  // Check if we have tabs now
+  if (await checkTab()) {
+    log.ok('Auto-connected to existing tab');
+    return true;
+  }
+  
+  // Need to create/attach to a tab
+  try {
+    const tabUrl = execSync(`osascript -e 'tell application "Google Chrome" to return URL of active tab of front window'`).toString().trim();
+    if (tabUrl.startsWith('chrome://') || tabUrl.startsWith('chrome-extension://')) {
+      log.info('Creating new tab (current is chrome://)...');
+      execSync(`osascript -e 'tell application "Google Chrome" to make new tab at front window with properties {URL:"https://www.google.com"}'`);
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  } catch {
+    // No window exists, create one
+    log.info('Creating new Chrome window...');
+    execSync(`osascript -e 'tell application "Google Chrome" to make new window with properties {URL:"https://www.google.com"}'`);
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  
+  // Trigger attach via HTTP
+  try {
+    const result = await fetch(`${SERVER_URL}/attach`, { method: 'POST' });
+    const data = await result.json();
+    if (data.attached > 0) {
+      log.ok('Auto-connected!');
+      return true;
+    }
+  } catch {}
+  
+  // Final fallback - create fresh tab
+  log.info('Creating fresh tab...');
+  execSync(`osascript -e 'tell application "Google Chrome" to make new tab at front window with properties {URL:"https://www.google.com"}'`);
+  await new Promise(r => setTimeout(r, 2000));
+  
+  try {
+    const result = await fetch(`${SERVER_URL}/attach`, { method: 'POST' });
+    const data = await result.json();
+    if (data.attached > 0) {
+      log.ok('Auto-connected!');
+      return true;
+    }
+  } catch {}
+  
+  log.fail('Could not auto-connect');
+  return false;
+}
+
 // Commands
 async function cmdStatus() {
   showBanner();
@@ -287,6 +372,11 @@ async function cmdGoto(url) {
     process.exit(1);
   }
   
+  // Auto-connect if not connected
+  if (!await ensureConnected()) {
+    process.exit(1);
+  }
+  
   log.info(`Navigating to: ${url}`);
   
   try {
@@ -305,6 +395,11 @@ async function cmdGoto(url) {
 async function cmdEval(js) {
   if (!js) {
     log.fail('Usage: glider eval <javascript>');
+    process.exit(1);
+  }
+  
+  // Auto-connect if not connected
+  if (!await ensureConnected()) {
     process.exit(1);
   }
   
@@ -334,6 +429,11 @@ async function cmdEval(js) {
 async function cmdClick(selector) {
   if (!selector) {
     log.fail('Usage: glider click <selector>');
+    process.exit(1);
+  }
+  
+  // Auto-connect if not connected
+  if (!await ensureConnected()) {
     process.exit(1);
   }
   
@@ -369,6 +469,11 @@ async function cmdType(selector, text) {
     process.exit(1);
   }
   
+  // Auto-connect if not connected
+  if (!await ensureConnected()) {
+    process.exit(1);
+  }
+  
   const js = `
     (() => {
       const el = document.querySelector('${selector.replace(/'/g, "\\'")}');
@@ -400,6 +505,11 @@ async function cmdType(selector, text) {
 async function cmdScreenshot(outputPath) {
   const filePath = outputPath || `/tmp/glider-screenshot-${Date.now()}.png`;
   
+  // Auto-connect if not connected
+  if (!await ensureConnected()) {
+    process.exit(1);
+  }
+  
   try {
     const result = await httpPost('/cdp', {
       method: 'Page.captureScreenshot',
@@ -420,6 +530,11 @@ async function cmdScreenshot(outputPath) {
 }
 
 async function cmdText() {
+  // Auto-connect if not connected
+  if (!await ensureConnected()) {
+    process.exit(1);
+  }
+  
   try {
     const result = await httpPost('/cdp', {
       method: 'Runtime.evaluate',
@@ -812,6 +927,11 @@ async function cmdOpen(url) {
 }
 
 async function cmdHtml(selector) {
+  // Auto-connect if not connected
+  if (!await ensureConnected()) {
+    process.exit(1);
+  }
+  
   try {
     const expression = selector 
       ? `document.querySelector('${selector.replace(/'/g, "\\'")}')?.outerHTML || 'Element not found'`
@@ -829,6 +949,11 @@ async function cmdHtml(selector) {
 }
 
 async function cmdTitle() {
+  // Auto-connect if not connected
+  if (!await ensureConnected()) {
+    process.exit(1);
+  }
+  
   try {
     const result = await httpPost('/cdp', {
       method: 'Runtime.evaluate',
@@ -842,6 +967,11 @@ async function cmdTitle() {
 }
 
 async function cmdUrl() {
+  // Auto-connect if not connected
+  if (!await ensureConnected()) {
+    process.exit(1);
+  }
+  
   try {
     const result = await httpPost('/cdp', {
       method: 'Runtime.evaluate',
@@ -897,6 +1027,58 @@ async function cmdFetch(url, opts = []) {
     }
   } catch (e) {
     log.fail(`Fetch failed: ${e.message}`);
+    process.exit(1);
+  }
+}
+
+// CORS-bypassing fetch via extension context
+async function cmdCorsFetch(url, opts = []) {
+  if (!url) {
+    log.fail('Usage: glider cfetch <url> [--output file] [--method POST] [--body JSON]');
+    process.exit(1);
+  }
+  
+  log.info(`CORS Fetch: ${url}`);
+  
+  let outputFile = null;
+  let method = 'GET';
+  let body = null;
+  
+  for (let i = 0; i < opts.length; i++) {
+    if (opts[i] === '--output' || opts[i] === '-o') {
+      outputFile = opts[++i];
+    } else if (opts[i] === '--method' || opts[i] === '-X') {
+      method = opts[++i];
+    } else if (opts[i] === '--body' || opts[i] === '-d') {
+      body = opts[++i];
+    }
+  }
+  
+  try {
+    const result = await httpPost('/extension', {
+      method: 'corsFetch',
+      params: {
+        url,
+        options: { method, body, headers: { 'Accept': 'application/json' } }
+      }
+    });
+    
+    if (result?.error) {
+      log.fail(`Fetch error: ${result.error}`);
+      process.exit(1);
+    }
+    
+    const data = result?.result?.data;
+    const output = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
+    
+    if (outputFile) {
+      fs.writeFileSync(outputFile, output);
+      log.ok(`Saved to ${outputFile} (status: ${result?.result?.status})`);
+    } else {
+      console.log(output);
+    }
+  } catch (e) {
+    log.fail(`CORS Fetch failed: ${e.message}`);
     process.exit(1);
   }
 }
@@ -1471,6 +1653,7 @@ ${B5}USAGE${NC}
 ${B5}SETUP${NC}
     ${BW}install${NC}             Install daemon ${DIM}(runs at login, auto-restarts)${NC}
     ${BW}uninstall${NC}           Remove daemon
+    ${BW}update${NC}              Update to latest version
     ${BW}connect${NC}             Connect to browser ${DIM}(run once per Chrome session)${NC}
 
 ${B5}STATUS${NC}
@@ -1505,6 +1688,17 @@ ${B5}MULTI-TAB${NC}
     ${BW}extract${NC} [opts]      Extract from all tabs
     ${BW}explore${NC} <url>       Crawl site, capture network
     ${BW}favicon${NC} <url> [out] Extract favicon from site ${DIM}(webp)${NC}
+
+${B5}EXTRACTION PATTERNS${NC} ${DIM}(bulletproof, domain-agnostic)${NC}
+    ${BW}reg${NC}                 List all patterns
+    ${BW}reg table${NC}           Extract table as JSON ${DIM}(headers → keys)${NC}
+    ${BW}reg table-csv${NC}       Extract table as CSV
+    ${BW}reg table-paginated${NC} Get pagination info ${DIM}(hasNextPage, rowCount)${NC}
+    ${BW}reg buttons${NC}         List all buttons ${DIM}(text, aria-label)${NC}
+    ${BW}reg inputs${NC}          List all input fields
+    ${BW}reg loading${NC}         Check for loading spinners
+    ${BW}reg errors${NC}          Find error messages
+    ${BW}reg data-attrs${NC}      Find data-testid elements ${DIM}(stable selectors)${NC}
 
 ${B5}AUTOMATION${NC}
     ${BW}run${NC} <task.yaml>     Execute YAML task file
@@ -1579,6 +1773,61 @@ ${YELLOW}DOMAIN EXTENSIONS:${NC}
   }
 }
 
+// Version check - non-blocking, runs in background
+async function checkForUpdates() {
+  try {
+    const https = require('https');
+    const pkg = require('../package.json');
+    const current = pkg.version;
+    
+    const data = await new Promise((resolve, reject) => {
+      https.get('https://registry.npmjs.org/glidercli/latest', { timeout: 2000 }, (res) => {
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => resolve(JSON.parse(body)));
+      }).on('error', reject);
+    });
+    
+    const latest = data.version;
+    if (latest && latest !== current) {
+      console.error(`${YELLOW}⬆${NC}  Update available: ${DIM}${current}${NC} → ${GREEN}${latest}${NC}  ${DIM}(run: glider update)${NC}`);
+    }
+  } catch {} // Silent fail - don't block CLI
+}
+
+// Update command
+async function cmdUpdate() {
+  log.info('Checking for updates...');
+  try {
+    const pkg = require('../package.json');
+    const current = pkg.version;
+    
+    // Check latest
+    const https = require('https');
+    const data = await new Promise((resolve, reject) => {
+      https.get('https://registry.npmjs.org/glidercli/latest', { timeout: 5000 }, (res) => {
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => resolve(JSON.parse(body)));
+      }).on('error', reject);
+    });
+    
+    const latest = data.version;
+    if (latest === current) {
+      log.ok(`Already on latest version (${current})`);
+      return;
+    }
+    
+    log.info(`Updating ${current} → ${latest}...`);
+    execSync('npm update -g glidercli', { stdio: 'inherit' });
+    log.ok(`Updated to ${latest}`);
+  } catch (e) {
+    log.fail(`Update failed: ${e.message}`);
+    log.info('Try manually: npm update -g glidercli');
+    process.exit(1);
+  }
+}
+
 // Main
 async function main() {
   const args = process.argv.slice(2);
@@ -1589,8 +1838,13 @@ async function main() {
     process.exit(0);
   }
   
+  // Background version check (non-blocking) - skip for update/version commands
+  if (!['update', 'version', '-v', '--version'].includes(cmd)) {
+    checkForUpdates();
+  }
+  
   // Ensure server is running for most commands
-  if (!['start', 'stop', 'help', '--help', '-h'].includes(cmd)) {
+  if (!['start', 'stop', 'help', '--help', '-h', 'update', 'version', '-v', '--version'].includes(cmd)) {
     if (!await checkServer()) {
       log.info('Server not running, starting...');
       await cmdStart();
@@ -1620,6 +1874,14 @@ async function main() {
       break;
     case 'uninstall':
       await cmdUninstallDaemon();
+      break;
+    case 'update':
+      await cmdUpdate();
+      break;
+    case 'version':
+    case '-v':
+    case '--version':
+      console.log(require('../package.json').version);
       break;
     case 'connect':
       await cmdConnect();
@@ -1674,6 +1936,9 @@ async function main() {
       break;
     case 'fetch':
       await cmdFetch(args[1], args.slice(2));
+      break;
+    case 'cfetch':
+      await cmdCorsFetch(args[1], args.slice(2));
       break;
     case 'spawn':
       await cmdSpawn(args.slice(1));
