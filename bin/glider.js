@@ -50,10 +50,11 @@ if (fs.existsSync(REGISTRY_FILE)) {
 // Direct CDP module
 const { DirectCDP, checkChrome } = require(path.join(LIB_DIR, 'cdp-direct.js'));
 
-// Domain extensions - load from ~/.glider/config/domains.json or ~/.glider/domains.json
+// Domain extensions - load from ~/.glider/config/domains.json (primary) or legacy paths
 const DOMAIN_CONFIG_PATHS = [
-  ***REMOVED***
+  path.join(os.homedir(), '.glider', 'config', 'domains.json'),
   path.join(os.homedir(), '.glider', 'domains.json'),
+  ***REMOVED***
 ];
 let DOMAINS = {};
 for (const cfgPath of DOMAIN_CONFIG_PATHS) {
@@ -894,7 +895,7 @@ async function cmdDomains() {
   const domainKeys = Object.keys(DOMAINS);
   if (domainKeys.length === 0) {
     log.warn('No domains configured');
-    log.info('Add domains to ~/.glider/config/domains.json or ~/.glider/domains.json');
+    log.info('Add domains to ~/.glider/config/domains.json');
     return;
   }
   console.log(`${GREEN}${domainKeys.length}${NC} domain(s) configured:\n`);
