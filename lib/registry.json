@@ -1,4 +1,107 @@
 {
+  "_meta": {
+    "description": "Glider extraction patterns - domain-agnostic, bulletproof",
+    "version": "2.0.0",
+    "updated": "2026-01-31"
+  },
+
+  "table": {
+    "description": "Extract first table as JSON array of objects (headers become keys)",
+    "pattern": "(() => { const t = document.querySelector('table'); if (!t) return {error: 'No table found'}; const headers = Array.from(t.querySelectorAll('thead th, tr:first-child th, tr:first-child td')).map(h => h.textContent.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')); const rows = Array.from(t.querySelectorAll('tbody tr, tr:not(:first-child)')); return rows.map(row => { const cells = Array.from(row.querySelectorAll('td')); const obj = {}; cells.forEach((c, i) => { obj[headers[i] || `col_${i}`] = c.textContent.trim(); }); return obj; }); })()",
+    "output": "json"
+  },
+
+  "table-all": {
+    "description": "Extract ALL tables on page as array of table objects",
+    "pattern": "(() => { const tables = Array.from(document.querySelectorAll('table')); return tables.map((t, idx) => { const headers = Array.from(t.querySelectorAll('thead th, tr:first-child th, tr:first-child td')).map(h => h.textContent.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')); const rows = Array.from(t.querySelectorAll('tbody tr, tr:not(:first-child)')); const data = rows.map(row => { const cells = Array.from(row.querySelectorAll('td')); const obj = {}; cells.forEach((c, i) => { obj[headers[i] || `col_${i}`] = c.textContent.trim(); }); return obj; }); return { tableIndex: idx, headers, rowCount: data.length, data }; }); })()",
+    "output": "json"
+  },
+
+  "table-raw": {
+    "description": "Extract first table as 2D array (no header processing)",
+    "pattern": "(() => { const t = document.querySelector('table'); if (!t) return []; return Array.from(t.querySelectorAll('tr')).map(row => Array.from(row.querySelectorAll('th, td')).map(c => c.textContent.trim())); })()",
+    "output": "json"
+  },
+
+  "table-csv": {
+    "description": "Extract first table as CSV string",
+    "pattern": "(() => { const t = document.querySelector('table'); if (!t) return ''; return Array.from(t.querySelectorAll('tr')).map(row => Array.from(row.querySelectorAll('th, td')).map(c => '\"' + c.textContent.trim().replace(/\"/g, '\"\"') + '\"').join(',')).join('\\n'); })()",
+    "output": "string"
+  },
+
+  "table-paginated": {
+    "description": "Get table info including pagination details",
+    "pattern": "(() => { const t = document.querySelector('table'); if (!t) return {error: 'No table found'}; const headers = Array.from(t.querySelectorAll('thead th')).map(h => h.textContent.trim()); const rowCount = t.querySelectorAll('tbody tr').length; const pagination = document.body.innerText.match(/(\\d+)\\s*[-–]\\s*(\\d+)\\s*of\\s*(\\d+)/i) || document.body.innerText.match(/page\\s*(\\d+)\\s*of\\s*(\\d+)/i); const nextBtn = document.querySelector('[aria-label*=\"Next\"], [aria-label*=\"next\"], button:has(svg[class*=\"right\"])'); return { headers, rowsOnPage: rowCount, pagination: pagination ? pagination[0] : null, hasNextPage: !!nextBtn && !nextBtn.disabled }; })()",
+    "output": "json"
+  },
+
+  "buttons": {
+    "description": "List all buttons with text and attributes",
+    "pattern": "Array.from(document.querySelectorAll('button, [role=\"button\"], input[type=\"button\"], input[type=\"submit\"]')).map(b => ({ text: b.textContent?.trim()?.substring(0, 100), ariaLabel: b.getAttribute('aria-label'), disabled: b.disabled, className: b.className?.substring(0, 50) }))",
+    "output": "json"
+  },
+
+  "button-click": {
+    "description": "Find and click button by text content (case-insensitive)",
+    "pattern": "(() => { const text = '{TEXT}'; const btn = Array.from(document.querySelectorAll('button, [role=\"button\"]')).find(b => b.textContent.toLowerCase().includes(text.toLowerCase())); if (btn) { btn.click(); return { clicked: true, text: btn.textContent.trim() }; } return { clicked: false, error: 'Button not found' }; })()",
+    "output": "json",
+    "params": ["TEXT"]
+  },
+
+  "dropdown-options": {
+    "description": "Get all options from select/dropdown elements",
+    "pattern": "(() => { const selects = Array.from(document.querySelectorAll('select')); const customs = Array.from(document.querySelectorAll('[role=\"listbox\"], [role=\"menu\"], [class*=\"dropdown\"] [class*=\"option\"]')); return { native: selects.map(s => ({ name: s.name, options: Array.from(s.options).map(o => ({ value: o.value, text: o.text })) })), custom: customs.map(c => c.textContent.trim()) }; })()",
+    "output": "json"
+  },
+
+  "inputs": {
+    "description": "Get all input fields with their current values",
+    "pattern": "Array.from(document.querySelectorAll('input, textarea, select')).map(i => ({ type: i.type || i.tagName.toLowerCase(), name: i.name, id: i.id, placeholder: i.placeholder, value: i.type === 'password' ? '***' : i.value?.substring(0, 100), required: i.required }))",
+    "output": "json"
+  },
+
+  "modals": {
+    "description": "Detect open modals/dialogs",
+    "pattern": "(() => { const modals = Array.from(document.querySelectorAll('[role=\"dialog\"], [class*=\"modal\"], [class*=\"Modal\"], [aria-modal=\"true\"]')); return modals.filter(m => m.offsetParent !== null).map(m => ({ text: m.textContent?.substring(0, 500), className: m.className?.substring(0, 100) })); })()",
+    "output": "json"
+  },
+
+  "loading": {
+    "description": "Check if page has loading indicators",
+    "pattern": "(() => { const indicators = document.querySelectorAll('[class*=\"loading\"], [class*=\"Loading\"], [class*=\"spinner\"], [class*=\"Spinner\"], [aria-busy=\"true\"]'); const visible = Array.from(indicators).filter(i => i.offsetParent !== null); return { isLoading: visible.length > 0, count: visible.length }; })()",
+    "output": "json"
+  },
+
+  "errors": {
+    "description": "Find error messages on page",
+    "pattern": "(() => { const errorSelectors = '[class*=\"error\"], [class*=\"Error\"], [role=\"alert\"], [class*=\"warning\"], [class*=\"Warning\"]'; const errors = Array.from(document.querySelectorAll(errorSelectors)).filter(e => e.offsetParent !== null && e.textContent.trim()); return errors.map(e => e.textContent.trim().substring(0, 200)); })()",
+    "output": "json"
+  },
+
+  "nav": {
+    "description": "Extract navigation structure",
+    "pattern": "(() => { const navs = document.querySelectorAll('nav, [role=\"navigation\"]'); return Array.from(navs).map(n => Array.from(n.querySelectorAll('a')).map(a => ({ text: a.textContent.trim(), href: a.href }))); })()",
+    "output": "json"
+  },
+
+  "tabs": {
+    "description": "Get tab/tablist elements and their states",
+    "pattern": "(() => { const tabs = Array.from(document.querySelectorAll('[role=\"tab\"], [class*=\"tab\"]')); return tabs.map(t => ({ text: t.textContent.trim(), selected: t.getAttribute('aria-selected') === 'true' || t.classList.contains('active') || t.classList.contains('selected'), href: t.href || t.getAttribute('data-href') })); })()",
+    "output": "json"
+  },
+
+  "data-attrs": {
+    "description": "Find elements with data-* attributes (useful for scraping)",
+    "pattern": "(() => { const els = document.querySelectorAll('[data-testid], [data-id], [data-value], [data-key]'); return Array.from(els).slice(0, 50).map(e => ({ tag: e.tagName, testid: e.dataset.testid, id: e.dataset.id, value: e.dataset.value, text: e.textContent?.trim()?.substring(0, 50) })); })()",
+    "output": "json"
+  },
+
+  "aria": {
+    "description": "Find elements with aria-label (stable selectors)",
+    "pattern": "Array.from(document.querySelectorAll('[aria-label]')).slice(0, 50).map(e => ({ tag: e.tagName, label: e.getAttribute('aria-label'), role: e.getAttribute('role') }))",
+    "output": "json"
+  },
+
   "favicon": {
     "description": "Extract favicon from current page using browser session",
     "pattern": "(async () => { const resp = await fetch(document.querySelector('link[rel*=icon]')?.href || window.location.origin + '/favicon.ico', { credentials: 'include' }); const blob = await resp.blob(); const reader = new FileReader(); return await new Promise(resolve => { reader.onload = () => resolve(reader.result.split(',')[1]); reader.readAsDataURL(blob); }); })()",
