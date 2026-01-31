@@ -42,9 +42,20 @@ Control Chrome from terminal. Run YAML tasks. Loop until complete (Ralph Wiggum 
 
 ## Install
 
+**One-liner:**
 ```bash
-npm i -g glidercli
+npm i -g glidercli && open "https://chromewebstore.google.com/detail/glider/njbidokkffhgpofcejgcfcgcinmeoalj"
+```
+
+**Then:**
+```bash
 glider install    # start daemon (runs forever, auto-restarts)
+glider connect    # connect to Chrome
+```
+
+**Update anytime:**
+```bash
+glider update     # pulls latest from npm
 ```
 
 ### Requirements
@@ -107,6 +118,7 @@ steps:
 |---------|------|
 | `glider install` | Install daemon (runs at login) |
 | `glider uninstall` | Remove daemon |
+| `glider update` | Update to latest version |
 | `glider connect` | Connect to browser |
 | `glider status` | Server/extension/tab status |
 | `glider test` | Run diagnostics |
