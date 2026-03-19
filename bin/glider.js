@@ -50,11 +50,10 @@ if (fs.existsSync(REGISTRY_FILE)) {
 // Direct CDP module
 const { DirectCDP, checkChrome } = require(path.join(LIB_DIR, 'cdp-direct.js'));
 
-// Domain extensions - load from ~/.glider/config/domains.json (primary) or legacy paths
+// Domain extensions - load from ~/.glider/config/domains.json
 const DOMAIN_CONFIG_PATHS = [
   path.join(os.homedir(), '.glider', 'config', 'domains.json'),
   path.join(os.homedir(), '.glider', 'domains.json'),
-  *
 ];
 let DOMAINS = {};
 for (const cfgPath of DOMAIN_CONFIG_PATHS) {
@@ -64,6 +63,56 @@ for (const cfgPath of DOMAIN_CONFIG_PATHS) {
       break;
     } catch (e) { /* ignore parse errors */ }
   }
+}
+
+// Browser config - which browser to launch/use (must be Chromium-based, see docs/BROWSERS.md)
+const BROWSER_CONFIG_PATHS = [
+  path.join(os.homedir(), '.glider', 'config', 'browser.json'),
+  path.join(os.homedir(), '.glider', 'browser.json'),
+];
+let BROWSER_CONFIG = {};
+for (const cfgPath of BROWSER_CONFIG_PATHS) {
+  if (fs.existsSync(cfgPath)) {
+    try {
+      BROWSER_CONFIG = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+      break;
+    } catch (e) { /* ignore parse errors */ }
+  }
+}
+
+// Browsers registry - key → { name, path, processName }. Used when browser.json has "use": "<key>"
+const BROWSERS_REGISTRY_PATHS = [
+  process.env.GLIDER_BROWSERS_REGISTRY,
+*
+  path.join(os.homedir(), '.glider', 'config', 'browsers-registry.json'),
+].filter(Boolean);
+let BROWSERS_REGISTRY = {};
+for (const regPath of BROWSERS_REGISTRY_PATHS) {
+  if (regPath && fs.existsSync(regPath)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(regPath, 'utf8'));
+      BROWSERS_REGISTRY = data.registry || data;
+      break;
+    } catch (e) { /* ignore */ }
+  }
+}
+
+function getBrowserConfig() {
+  let name = process.env.GLIDER_BROWSER || BROWSER_CONFIG.name;
+  let pathOrNull = process.env.GLIDER_BROWSER_PATH || BROWSER_CONFIG.path || null;
+  let processName = process.env.GLIDER_BROWSER_PROCESS || BROWSER_CONFIG.processName;
+
+  // Key-based lookup: browser.json has { "use": "arc" } → resolve from registry
+  if (!name && BROWSER_CONFIG.use && BROWSERS_REGISTRY[BROWSER_CONFIG.use]) {
+    const entry = BROWSERS_REGISTRY[BROWSER_CONFIG.use];
+    name = entry.name;
+    pathOrNull = entry.path != null ? entry.path : null;
+    processName = entry.processName || entry.name;
+  }
+
+  name = name || 'Google Chrome';
+  processName = processName || name;
+  return { name, path: pathOrNull, processName };
 }
 
 // Colors - matching the deep blue gradient logo
@@ -242,7 +291,7 @@ async function ensureConnected() {
   
   if (!await checkExtension()) {
     log.fail('Extension not connected - make sure Glider extension is installed');
-    log.info('Install from: chrome://extensions → Load unpacked → ~/glider-crx/glider/');
+    log.info('Install extension from Chrome Web Store: https://chromewebstore.google.com/detail/glider/njbidokkffhgpofcejgcfcgcinmeoalj');
     return false;
   }
   
@@ -621,7 +670,7 @@ async function cmdUninstallDaemon() {
 }
 
 async function cmdConnect() {
-  // Bulletproof connect: relay + Chrome + trigger attach via HTTP
+  // Bulletproof connect: relay + browser + trigger attach via HTTP
   log.info('Connecting...');
   
   // 1. Ensure relay is running
@@ -630,12 +679,17 @@ async function cmdConnect() {
     await new Promise(r => setTimeout(r, 1000));
   }
   
-  // 2. Ensure Chrome is running
+  // 2. Ensure browser is running (see getBrowserConfig + docs/BROWSERS.md)
+  const browser = getBrowserConfig();
   try {
-    execSync('pgrep -x "Google Chrome"', { stdio: 'ignore' });
+    execSync(`pgrep -x "${browser.processName}"`, { stdio: 'ignore' });
   } catch {
-    log.info('Starting Chrome...');
-    execSync('open -a "Google Chrome"');
+    log.info(`Starting ${browser.name}...`);
+    if (browser.path) {
+      execSync(`open "${browser.path}"`, { stdio: 'ignore' });
+    } else {
+      execSync(`open -a "${browser.name}"`);
+    }
     await new Promise(r => setTimeout(r, 3000));
   }
   
@@ -647,7 +701,7 @@ async function cmdConnect() {
   
   if (!await checkExtension()) {
     log.fail('Extension not connected to relay');
-    log.info('Make sure Glider extension is installed in Chrome');
+    log.info(`Make sure Glider extension is installed in ${browser.name} (Chromium-based only; see glider docs/BROWSERS.md)`);
     process.exit(1);
   }
   log.ok('Extension connected');
@@ -665,18 +719,18 @@ async function cmdConnect() {
     return;
   }
   
-  // 5. Ensure we have a real tab (not chrome://)
+  // 5. Ensure we have a real tab (not chrome:// or arc://)
   try {
-    const tabUrl = execSync(`osascript -e 'tell application "Google Chrome" to return URL of active tab of front window'`).toString().trim();
-    if (tabUrl.startsWith('chrome://') || tabUrl.startsWith('chrome-extension://')) {
+    const tabUrl = execSync(`osascript -e 'tell application "${browser.name}" to return URL of active tab of front window'`).toString().trim();
+    if (tabUrl.startsWith('chrome://') || tabUrl.startsWith('chrome-extension://') || tabUrl.startsWith('arc://')) {
       log.info('Creating new tab...');
-      execSync(`osascript -e 'tell application "Google Chrome" to make new tab at front window with properties {URL:"https://google.com"}'`);
+      execSync(`osascript -e 'tell application "${browser.name}" to make new tab at front window with properties {URL:"https://google.com"}'`);
       await new Promise(r => setTimeout(r, 2000));
     }
   } catch {
     // No window, create one
     log.info('Creating new window...');
-    execSync(`osascript -e 'tell application "Google Chrome" to make new window with properties {URL:"https://google.com"}'`);
+    execSync(`osascript -e 'tell application "${browser.name}" to make new window with properties {URL:"https://google.com"}'`);
     await new Promise(r => setTimeout(r, 2000));
   }
   
@@ -700,7 +754,7 @@ async function cmdConnect() {
   
   // 7. Fallback: create fresh tab and retry
   log.info('Creating fresh tab...');
-  execSync(`osascript -e 'tell application "Google Chrome" to make new tab at front window with properties {URL:"https://google.com"}'`);
+  execSync(`osascript -e 'tell application "${browser.name}" to make new tab at front window with properties {URL:"https://google.com"}'`);
   await new Promise(r => setTimeout(r, 2000));
   
   try {
@@ -717,13 +771,13 @@ async function cmdConnect() {
     }
   } catch {}
   
-  // 8. Need manual click - open Chrome and show instructions
-  log.warn('Click the Glider extension icon in Chrome');
-  console.log(`  ${B5}(on any real webpage, not chrome:// pages)${NC}`);
-  execSync(`osascript -e 'tell application "Google Chrome" to activate'`);
+  // 8. Need manual click - activate browser and show instructions
+  log.warn(`Click the Glider extension icon in ${browser.name}`);
+  console.log(`  ${B5}(on any real webpage, not chrome:// or arc:// pages)${NC}`);
+  execSync(`osascript -e 'tell application "${browser.name}" to activate'`);
   
   // Send macOS notification so user sees it even if not looking at terminal
-  notify('Glider', 'Click the extension icon in Chrome to connect', true);
+  notify('Glider', `Click the extension icon in ${browser.name} to connect`, true);
   
   // Wait for user to click
   log.info('Waiting for connection...');
@@ -743,6 +797,40 @@ async function cmdConnect() {
   log.fail('Timed out waiting for connection');
   notify('Glider', 'Connection timed out - click extension icon', true);
   log.info('Make sure you clicked the extension icon on a real webpage');
+}
+
+function cmdBrowser() {
+  const b = getBrowserConfig();
+  console.log('Browser config (used by glider connect):');
+  console.log(`  name:         ${b.name}`);
+  console.log(`  path:         ${b.path || '(default launch via name)'}`);
+  console.log(`  processName:  ${b.processName}`);
+  if (BROWSER_CONFIG.use) {
+    console.log(`  use:          ${BROWSER_CONFIG.use} ${DIM}(from registry)${NC}`);
+  }
+  console.log('');
+  console.log('Source: GLIDER_BROWSER* env → ~/.glider/config/browser.json { "use": "<key>" } or { name, path } → default "Google Chrome"');
+  console.log('Registry: GLIDER_BROWSERS_REGISTRY or ~/.glider/config/browsers-registry.json. Keys: ' + Object.keys(BROWSERS_REGISTRY).join(', ') || '(none loaded)');
+  console.log('See docs/BROWSERS.md for compatibility and examples.');
+}
+
+function cmdUse(key) {
+  if (!key) {
+    console.log('Usage: glider use <key>');
+    console.log('Keys in registry: ' + (Object.keys(BROWSERS_REGISTRY).length ? Object.keys(BROWSERS_REGISTRY).join(', ') : '(no registry loaded)'));
+    if (BROWSER_CONFIG.use) console.log('Current: ' + BROWSER_CONFIG.use);
+    return;
+  }
+  if (!BROWSERS_REGISTRY[key]) {
+    console.error('Unknown key: ' + key + '. Available: ' + Object.keys(BROWSERS_REGISTRY).join(', '));
+    process.exit(1);
+  }
+  const configDir = path.join(os.homedir(), '.glider', 'config');
+  const browserPath = path.join(configDir, 'browser.json');
+  if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
+  fs.writeFileSync(browserPath, JSON.stringify({ use: key }, null, 2) + '\n');
+  console.log('Set browser to: ' + key + ' → ' + BROWSERS_REGISTRY[key].name);
+  console.log('Run: glider connect');
 }
 
 async function cmdTest() {
@@ -1342,11 +1430,13 @@ async function cmdExplore(url, opts = []) {
   let depth = 2;
   let outputDir = '/tmp/glider-explore';
   let harFile = null;
+  let sessionId = null;
   
   for (let i = 0; i < opts.length; i++) {
     if (opts[i] === '--depth' || opts[i] === '-d') depth = parseInt(opts[++i], 10);
     else if (opts[i] === '--output' || opts[i] === '-o') outputDir = opts[++i];
     else if (opts[i] === '--har') harFile = opts[++i];
+    else if (opts[i] === '--session-id') sessionId = opts[++i];
   }
   
   log.info(`Exploring: ${url} (depth: ${depth})`);
@@ -1357,6 +1447,7 @@ async function cmdExplore(url, opts = []) {
     const { spawn } = require('child_process');
     const spawnArgs = [bexplorePath, url, '--depth', String(depth), '--output', outputDir];
     if (harFile) spawnArgs.push('--har', harFile);
+    if (sessionId) spawnArgs.push('--session-id', sessionId);
     
     const child = spawn('node', spawnArgs, {
       stdio: 'inherit'
@@ -1659,6 +1750,8 @@ ${B5}SETUP${NC}
 
 ${B5}STATUS${NC}
     ${BW}status${NC}              Check server, extension, tabs
+    ${BW}browser${NC}             Show browser config ${DIM}(name, path, processName, or use key)${NC}
+    ${BW}use${NC} <key>           Set browser by registry key ${DIM}(e.g. arc, brave, chrome)${NC}
     ${BW}test${NC}                Run diagnostics
 
 ${B5}NAVIGATION${NC}
@@ -1755,7 +1848,7 @@ ${YELLOW}DOMAIN EXTENSIONS:${NC}
     Add custom domain commands via ~/.glider/config/domains.json:
     {
       "mysite": { "url": "https://mysite.com/dashboard" },
-      "mytool": { "script": "~/.glider/bin/mytool.sh" }
+      "mytool": { "script": "~/scripts/mytool.sh" }
     }
     Then: glider mysite  ->  navigates to that URL
           glider mytool  ->  runs that script
@@ -1886,6 +1979,12 @@ async function main() {
       break;
     case 'connect':
       await cmdConnect();
+      break;
+    case 'browser':
+      cmdBrowser();
+      break;
+    case 'use':
+      cmdUse(args[1]);
       break;
     case 'test':
       await cmdTest();

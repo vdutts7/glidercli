@@ -37,6 +37,8 @@
   "files": [
     "bin/",
     "lib/",
+    "docs/",
+    "config/",
     "index.js",
     "README.md"
   ]

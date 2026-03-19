@@ -10,7 +10,7 @@
   },
   "requirements": {
     "node": ">=18",
-    "browser": "Google Chrome",
+    "browser": "Chromium-based (Chrome, Arc, Edge, Brave, etc.); see docs/BROWSERS.md",
     "os": "macOS (tested), Linux (untested), Windows (untested)"
   },
   "install": {
@@ -33,6 +33,7 @@
   },
   "config_paths": {
     "domains": "~/.glider/config/domains.json",
+    "browser": "~/.glider/config/browser.json",
     "daemon_log": "~/.glider/daemon.log"
   },
   "discovery": "glider --help"
