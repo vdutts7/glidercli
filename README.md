@@ -1,16 +1,16 @@
 <div align="center">
 
 <img src="assets/icons/glider-blue-squircle.webp" alt="glider" width="80" height="80" />
-<img src="assets/icons/chrome.webp" alt="chrome" width="80" height="80" />
-<img src="assets/icons/claude.webp" alt="claude" width="80" height="80" />
-<img src="assets/icons/ralph-wiggum.webp" alt="ralph" width="80" height="80" />
+<img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chrome.webp" alt="chrome" width="80" height="80" />
+<img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/claude.webp" alt="claude" width="80" height="80" />
+<img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/ralph-wiggum.webp" alt="ralph" width="80" height="80" />
 
-<h1 align="center">glidercli</h1>
-<p align="center"><i><b>Browser automation CLI with autonomous loop execution.</b></i></p>
+<h1 align="center">glider CLI</h1>
+<p align="center"><i><b>Browser automation CLI with autonomous loop execution</b></i></p>
 
 [![Github][github]][github-url]
 [![npm][npm]][npm-url]
-
+s
 </div>
 
 <br/>
@@ -19,7 +19,7 @@
 
 | | |
 |---|---|
-| **What** | Control a Chromium-based browser from the terminal via CDP; run YAML tasks; loop until done (Ralph Wiggum pattern). |
+| **What** | Control a **Chromium-based** browser from the terminal via CDP; run YAML tasks; loop until done (Ralph Wiggum pattern). |
 | **CDP** | Chrome DevTools Protocol via relay + browser extension |
 | **Tasks** | Declarative steps: `goto`, `click`, `explore`, `eval`, `screenshot` |
 | **Loops** | Run until completion marker or max iterations / timeout |
