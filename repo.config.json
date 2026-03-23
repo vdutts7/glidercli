@@ -26,6 +26,7 @@
   "npm": {
     "package_name": "glidercli",
     "alt_package": "@vd7/glider",
-    "bin_command": "glider"
+    "bin_command": "glider",
+    "version": "0.3.7"
   }
 }

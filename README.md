@@ -10,6 +10,8 @@
 
 [![Github][github]][github-url]
 [![npm][npm]][npm-url]
+[![npm][npm-version]][npm-version-url]
+
 </div>
 
 <br/>
@@ -260,10 +262,11 @@ Full list: `glider --help`
 
 ## Roadmap
 
-| Status | Area |
-|--------|------|
-| Done | CDP relay + extension, YAML tasks, loop, daemon, multi-tab |
-| Todo | Linux / Windows, headless, task chaining, scraping templates |
+- [x] CDP relay + extension, YAML tasks, loop, daemon, multi-tab
+- [ ] Linux / Windows
+- [ ] headless (cloud)
+- [ ] task chaining
+- [ ] crawling templates
 
 ---
 
@@ -277,3 +280,5 @@ Full list: `glider --help`
 [github-url]: https://github.com/vdutts7/glidercli
 [npm]: https://img.shields.io/badge/npm%20i%20--g%20glidercli-CB3837?style=for-the-badge&logo=npm
 [npm-url]: https://www.npmjs.com/package/glidercli
+[npm-version]: https://img.shields.io/npm/v/glidercli?style=for-the-badge&logo=npm&label=npm
+[npm-version-url]: https://www.npmjs.com/package/glidercli
