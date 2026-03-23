@@ -9,18 +9,50 @@
 
 ## Browser support
 
+Icons: `https://raw.githubusercontent.com/vdutts7/squircle/main/webp/{slug}.webp` ([squircle](https://github.com/vdutts7/squircle)).
+
+**Extension:** Install [Glider](https://chromewebstore.google.com/detail/glider/njbidokkffhgpofcejgcfcgcinmeoalj) from the Chrome Web Store — same for every browser in this table.
+
 | | Browser | Config |
 |:---:|--------|--------|
-| ✅ | Google Chrome | Default. Install extension from [Chrome Web Store](https://chromewebstore.google.com/detail/glider/njbidokkffhgpofcejgcfcgcinmeoalj). |
-| ✅ | Arc | `GLIDER_BROWSER=Arc` or [browser.json](../config/browser.json.example). Install extension from Chrome Web Store. |
-| ✅ | Microsoft Edge | Install extension from Chrome Web Store. |
-| ✅ | Brave | Install extension from Chrome Web Store. |
-| ✅ | Opera | Install extension from Chrome Web Store. |
-| ✅ | Vivaldi | Install extension from Chrome Web Store. |
-| ✅ | DuckDuckGo Desktop | Install extension from Chrome Web Store. |
-| ✅ | Other Chromium | Must support Chrome Web Store extensions. |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chrome.webp" width="16" alt=""> | Google Chrome | Default for `glider connect`. |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/arc.webp" width="16" alt=""> | Arc | `GLIDER_BROWSER=Arc` or [browser.json](../config/browser.json.example). |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/microsoft/microsoft-edge.webp" width="16" alt=""> | Microsoft Edge | — |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/brave.webp" width="16" alt=""> | Brave | — |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/opera-gx.webp" width="16" alt=""> | Opera | — |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/vivaldi.webp" width="16" alt=""> | Vivaldi | — |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/duckduckgo.webp" width="16" alt=""> | DuckDuckGo Desktop | — |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chromium.webp" width="16" alt=""> | Other Chromium | Must support installing extensions from the Chrome Web Store. |
 
-Chromium-based only; Firefox and Safari are not supported.
+See **[Future](#future)** for browsers not supported today.
+
+---
+
+## Future
+
+Not supported today: Glider needs a **Chromium-based** browser that can install the extension from the **Chrome Web Store**. No timeline implied; listed for clarity.
+
+Same icon base as above: `https://raw.githubusercontent.com/vdutts7/squircle/main/webp/{slug}.webp`.
+
+| | Browser | Notes |
+|:---:|--------|--------|
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/firefox.webp" width="16" alt=""> | Firefox | **Gecko** (Firefox engine). Not Chromium; Glider uses a Chrome Web Store extension + CDP. |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/librewolf.webp" width="16" alt=""> | LibreWolf | Gecko — same constraints as Firefox. |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/waterfox.webp" width="16" alt=""> | Waterfox | Gecko — same constraints as Firefox. |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/zen.webp" width="16" alt=""> | Zen | Gecko — same constraints as Firefox. |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/floorp.webp" width="16" alt=""> | Floorp | Gecko — same constraints as Firefox. |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/tor-browser.webp" width="16" alt=""> | Tor Browser | Gecko — same constraints as Firefox. |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/mullvad-browser.webp" width="16" alt=""> | Mullvad Browser | Gecko — same constraints as Firefox. |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/icecat.webp" width="16" alt=""> | IceCat | Gecko — same constraints as Firefox. |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/firefox-focus.webp" width="16" alt=""> | Firefox Focus | Gecko — same constraints as Firefox. |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/firefox.webp" width="16" alt=""> | Firefox Klar | Gecko (Focus branding in some regions) — same constraints as Firefox. |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/safari.webp" width="16" alt="">  | Safari | WebKit (Apple desktop). Not Chromium. |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/orion.webp" width="16" alt=""> | Orion | WebKit-based desktop browser. Not Chromium. |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chatgpt-atlas.webp" width="16" alt=""> | ChatGPT Atlas | AI-first browser; not in Glider’s supported Chromium + CWS model today. |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/perplexity-comet.webp" width="16" alt=""> | Perplexity Comet | AI-first browser; not in Glider’s supported Chromium + CWS model today. |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/bromite.webp" width="16" alt=""> | Bromite | Chromium-derived; no practical Chrome Web Store path for Glider. |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chromium.webp" width="16" alt=""> | Chromite | Chromium-derived; no practical Chrome Web Store path for Glider. |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/grapheneos.webp" width="16" alt=""> | Vanadium | Chromium-derived (GrapheneOS); no practical Chrome Web Store path for Glider. |
 
 ---
 
@@ -43,7 +75,7 @@ Chromium-based only; Firefox and Safari are not supported.
 | Arc | `export GLIDER_BROWSER=Arc` then `glider connect` |
 | Custom Chrome path | `export GLIDER_BROWSER="Google Chrome"` and `export GLIDER_BROWSER_PATH="/Applications/My Apps/Google Chrome.app"` |
 
-### Config file: `~/.glider/config/browser.json`
+### Config file: `$HOME/.glider/config/browser.json`
 
 Same keys as env, or use a **registry key**. Env overrides file.
 
@@ -57,7 +89,7 @@ Set browser by key from the browsers registry. Run `glider use <key>` to write t
 }
 ```
 
-Registry is loaded from (first found): `GLIDER_BROWSERS_REGISTRY` env, `~/.glider/config/browsers-registry.json`, `~/.glider/config/browsers-registry.json`. Keys are predefined (e.g. `arc`, `brave`, `chrome`, `edge`, `opera`, `vivaldi`, `duckduckgo`, `chromium`). Edit the registry to add or change paths.
+Registry is loaded from (first found): `GLIDER_BROWSERS_REGISTRY` env, `$HOME/.glider/config/browsers-registry.json`, `$HOME/.glider/config/browsers-registry.json`. Keys are predefined (e.g. `arc`, `brave`, `chrome`, `edge`, `opera`, `vivaldi`, `duckduckgo`, `chromium`). Edit the registry to add or change paths.
 
 **Option B — Explicit name/path:**
 
@@ -99,8 +131,8 @@ A single registry file can define all Chromium browsers; Glider picks one by key
 **Registry location (first found):**
 
 - `GLIDER_BROWSERS_REGISTRY` (env, path to JSON file)
-- `~/.glider/config/browsers-registry.json`
-- `~/.glider/config/browsers-registry.json`
+- `$HOME/.glider/config/browsers-registry.json`
+- `$HOME/.glider/config/browsers-registry.json`
 
 **Registry format:**
 
@@ -120,7 +152,7 @@ A single registry file can define all Chromium browsers; Glider picks one by key
 
 | Command | Effect |
 |---------|--------|
-| `glider use arc` | Set `~/.glider/config/browser.json` to `{ "use": "arc" }` (resolved from registry). |
+| `glider use arc` | Set `$HOME/.glider/config/browser.json` to `{ "use": "arc" }` (resolved from registry). |
 | `glider use brave` | Switch to Brave. |
 | `glider use` | Show current key and list of registry keys. |
 | `glider browser` | Show resolved name, path, processName (and `use` key if set). |
@@ -143,8 +175,8 @@ Add or edit entries in the registry to match your machine (e.g. custom install p
 | Topic | Detail |
 |-------|--------|
 | Supported | Chromium-based + Chrome Web Store extension (see table above). |
-| Not supported | Firefox, Safari, non-Chromium. |
-| Configure | `~/.glider/config/browser.json` (use key or name/path) and/or `GLIDER_BROWSER*`. Registry: `~/.glider/config/browsers-registry.json` or `GLIDER_BROWSERS_REGISTRY`. |
+| Not supported | See [Future](#future). |
+| Configure | `$HOME/.glider/config/browser.json` (use key or name/path) and/or `GLIDER_BROWSER*`. Registry: `$HOME/.glider/config/browsers-registry.json` or `GLIDER_BROWSERS_REGISTRY`. |
 | Switch | `glider use <key>` (e.g. `glider use arc`, `glider use brave`). |
 | Path | Optional; use when app is not in default location. |
 
