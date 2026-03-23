@@ -58,6 +58,7 @@
 | | Browser | Config |
 |:---:|--------|--------|
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chrome.webp" width="16" alt=""> | Google Chrome | Default for `glider connect`|
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chrome-canary.webp" width="16" alt=""> | Chrome Canary | n/a |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/arc.webp" width="16" alt=""> | Arc | [browser.json](config/browser.json.example) (`{ "use": "arc" }`) |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/microsoft/microsoft-edge.webp" width="16" alt=""> | Microsoft Edge | n/a |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/brave.webp" width="16" alt=""> | Brave | n/a |
@@ -85,9 +86,13 @@
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/mullvad-browser.webp" width="16" alt=""> | Mullvad Browser | Gecko- same constraints as Firefox |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/icecat.webp" width="16" alt=""> | IceCat | Gecko- same constraints as Firefox |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/safari.webp" width="16" alt=""> | Safari | WebKit (Apple desktop). Not Chromium |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/safari-technology-preview.webp" width="16" alt=""> | Safari Technology Preview | WebKit preview channel (Apple desktop). Not Chromium |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/orion.webp" width="16" alt=""> | Orion | WebKit-based desktop browser. Not Chromium |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/dia-browser.webp" width="16" alt=""> | Dia | AI-first browser, not in Glider’s supported Chromium + CWS model today |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chatgpt-atlas.webp" width="16" alt=""> | ChatGPT Atlas | AI-first browser, not in Glider’s supported Chromium + CWS model today |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/perplexity-comet.webp" width="16" alt=""> | Perplexity Comet | AI-first browser, not in Glider’s supported Chromium + CWS model today |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/whale-browser.webp" width="16" alt=""> | Whale Browser | Chromium-based, support not implemented in Glider today |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/yandex-browser.webp" width="16" alt=""> | Yandex Browser | Chromium-based, support not implemented in Glider today |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/bromite.webp" width="16" alt=""> | Bromite | Chromium-derived, no practical Chrome Web Store path for Glider |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chromium.webp" width="16" alt=""> | Chromite | Chromium-derived, no practical Chrome Web Store path for Glider |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/grapheneos.webp" width="16" alt=""> | Vanadium | Chromium-derived (GrapheneOS), no practical Chrome Web Store path for Glider |
