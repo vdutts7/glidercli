@@ -10,7 +10,7 @@
   },
   "requirements": {
     "node": ">=18",
-    "browser": "Chromium-based (Chrome, Arc, Edge, Brave, etc.); see docs/BROWSERS.md",
+    "browser": "Chromium-based (Chrome, Arc, Edge, Brave, etc.); see README Browsers section",
     "os": "macOS (tested), Linux (untested), Windows (untested)"
   },
   "install": {

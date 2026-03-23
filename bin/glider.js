@@ -82,7 +82,6 @@ for (const cfgPath of BROWSER_CONFIG_PATHS) {
 
 // Browsers registry - key → { name, path, processName }. Used when browser.json has "use": "<key>"
 const BROWSERS_REGISTRY_PATHS = [
-  process.env.GLIDER_BROWSERS_REGISTRY,
 ***REMOVED***
   path.join(os.homedir(), '.glider', 'config', 'browsers-registry.json'),
 ].filter(Boolean);
@@ -98,9 +97,9 @@ for (const regPath of BROWSERS_REGISTRY_PATHS) {
 }
 
 function getBrowserConfig() {
-  let name = process.env.GLIDER_BROWSER || BROWSER_CONFIG.name;
-  let pathOrNull = process.env.GLIDER_BROWSER_PATH || BROWSER_CONFIG.path || null;
-  let processName = process.env.GLIDER_BROWSER_PROCESS || BROWSER_CONFIG.processName;
+  let name = BROWSER_CONFIG.name || null;
+  let pathOrNull = BROWSER_CONFIG.path || null;
+  let processName = BROWSER_CONFIG.processName || null;
 
   // Key-based lookup: browser.json has { "use": "arc" } → resolve from registry
   if (!name && BROWSER_CONFIG.use && BROWSERS_REGISTRY[BROWSER_CONFIG.use]) {
@@ -809,9 +808,9 @@ function cmdBrowser() {
     console.log(`  use:          ${BROWSER_CONFIG.use} ${DIM}(from registry)${NC}`);
   }
   console.log('');
-  console.log('Source: GLIDER_BROWSER* env → ~/.glider/config/browser.json { "use": "<key>" } or { name, path } → default "Google Chrome"');
-  console.log('Registry: GLIDER_BROWSERS_REGISTRY or ~/.glider/config/browsers-registry.json. Keys: ' + Object.keys(BROWSERS_REGISTRY).join(', ') || '(none loaded)');
-  console.log('See docs/BROWSERS.md for compatibility and examples.');
+  console.log('Source: ~/.glider/config/browser.json { "use": "<key>" } or { name, path } → default "Google Chrome"');
+  console.log('Registry: ~/.glider/config/browsers-registry.json. Keys: ' + (Object.keys(BROWSERS_REGISTRY).join(', ') || '(none loaded)'));
+  console.log('See README.md#browsers for compatibility and examples.');
 }
 
 function cmdUse(key) {
