@@ -61,7 +61,7 @@
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/arc.webp" width="16" alt=""> | Arc | [browser.json](config/browser.json.example) (`{ "use": "arc" }`) |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/microsoft/microsoft-edge.webp" width="16" alt=""> | Microsoft Edge | n/a |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/brave.webp" width="16" alt=""> | Brave | n/a |
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/opera-gx.webp" width="16" alt=""> | Opera | n/a |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/operagx.webp" width="16" alt=""> | Opera | n/a |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/vivaldi.webp" width="16" alt=""> | Vivaldi | n/a |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chromium.webp" width="16" alt=""> | Other Chromium | Must support installing extensions from the Chrome Web Store. |
 
@@ -84,7 +84,7 @@
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/tor-browser.webp" width="16" alt=""> | Tor Browser | Gecko- same constraints as Firefox |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/mullvad-browser.webp" width="16" alt=""> | Mullvad Browser | Gecko- same constraints as Firefox |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/icecat.webp" width="16" alt=""> | IceCat | Gecko- same constraints as Firefox |
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/safari.webp" width="16" alt="">  | Safari | WebKit (Apple desktop). Not Chromium |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/safari.webp" width="16" alt=""> | Safari | WebKit (Apple desktop). Not Chromium |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/orion.webp" width="16" alt=""> | Orion | WebKit-based desktop browser. Not Chromium |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chatgpt-atlas.webp" width="16" alt=""> | ChatGPT Atlas | AI-first browser, not in Glider’s supported Chromium + CWS model today |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/perplexity-comet.webp" width="16" alt=""> | Perplexity Comet | AI-first browser, not in Glider’s supported Chromium + CWS model today |
