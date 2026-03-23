@@ -65,7 +65,7 @@ for (const cfgPath of DOMAIN_CONFIG_PATHS) {
   }
 }
 
-// Browser config - which browser to launch/use (must be Chromium-based, see docs/BROWSERS.md)
+// Browser config- which browser to launch/use (must be Chromium-based, see README.md#Browsers)
 const BROWSER_CONFIG_PATHS = [
   path.join(os.homedir(), '.glider', 'config', 'browser.json'),
   path.join(os.homedir(), '.glider', 'browser.json'),
@@ -678,7 +678,7 @@ async function cmdConnect() {
     await new Promise(r => setTimeout(r, 1000));
   }
   
-  // 2. Ensure browser is running (see getBrowserConfig + docs/BROWSERS.md)
+  // 2. Ensure browser is running (see getBrowserConfig + README.md#Browsers)
   const browser = getBrowserConfig();
   try {
     execSync(`pgrep -x "${browser.processName}"`, { stdio: 'ignore' });
@@ -700,7 +700,7 @@ async function cmdConnect() {
   
   if (!await checkExtension()) {
     log.fail('Extension not connected to relay');
-    log.info(`Make sure Glider extension is installed in ${browser.name} (Chromium-based only; see glider docs/BROWSERS.md)`);
+    log.info(`Make sure Glider extension is installed in ${browser.name} (Chromium-based only; see glider README.md#Browsers)`);
     process.exit(1);
   }
   log.ok('Extension connected');
