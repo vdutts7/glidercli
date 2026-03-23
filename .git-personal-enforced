@@ -1,4 +1,0 @@
-# This repository enforces personal git config only
-# DO NOT use corporate git configs
-ENFORCED_DATE=2026-01-10
-REQUIRED_CONFIG=personal
