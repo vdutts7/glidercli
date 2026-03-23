@@ -8,9 +8,7 @@
 <h1 align="center">glider CLI</h1>
 <p align="center"><i><b>Browser automation CLI with autonomous loop execution</b></i></p>
 
-[![Github][github]][github-url]
-[![npm][npm]][npm-url]
-[![npm][npm-version]][npm-version-url]
+<a href="https://github.com/vdutts7/glidercli"><img src="./assets/badges/github.badge.svg" alt="GitHub" height="34" /></a> &nbsp; <a href="https://www.npmjs.com/package/glidercli"><img src="./assets/badges/npm.badge.svg" alt="npm install" height="34" /></a>
 
 </div>
 
@@ -54,8 +52,6 @@
 | **How it works** | Chrome extension → WebSocket relay → CDP. Browser must support that extension (Chromium-based). |
 
 ### Browser support
-
-Icons: `https://raw.githubusercontent.com/vdutts7/squircle/main/webp/{slug}.webp` ([squircle](https://github.com/vdutts7/squircle)).
 
 **Extension:** Install [Glider](https://chromewebstore.google.com/detail/glider/njbidokkffhgpofcejgcfcgcinmeoalj) from the Chrome Web Store in each browser/profile you plan to automate
 
@@ -149,7 +145,7 @@ Check app name in Finder/Spotlight, process name: `ps aux | grep -i <name>`
 
 ### Browser registry (keymap)
 
-A single registry file can define all Chromium browsers, Glider picks one by key
+A single registry file can define all Chromium browsers, Glider picks one by **key**
 
 **Registry location (first found):**
 
@@ -273,12 +269,3 @@ Full list: `glider --help`
 ## Contact
 
 <a href="https://vd7.io"><img src="https://res.cloudinary.com/ddyc1es5v/image/upload/v1773910810/readme-badges/readme-badge-vd7.png" alt="vd7.io" height="40" /></a> &nbsp; <a href="https://x.com/vdutts7"><img src="https://res.cloudinary.com/ddyc1es5v/image/upload/v1773910817/readme-badges/readme-badge-x.png" alt="/vdutts7" height="40" /></a>
-
-
-<!-- BADGES -->
-[github]: https://img.shields.io/badge/glidercli-000000?style=for-the-badge&logo=github
-[github-url]: https://github.com/vdutts7/glidercli
-[npm]: https://img.shields.io/badge/npm%20i%20--g%20glidercli-CB3837?style=for-the-badge&logo=npm
-[npm-url]: https://www.npmjs.com/package/glidercli
-[npm-version]: https://img.shields.io/npm/v/glidercli?style=for-the-badge&logo=npm&label=npm
-[npm-version-url]: https://www.npmjs.com/package/glidercli
