@@ -116,7 +116,7 @@ Set browser by key from the browsers registry. Run `glider use <key>` to write t
 }
 ```
 
-Registry is loaded from (first found): `$HOME/.glider/config/browsers-registry.json`, `$HOME/.glider/config/browsers-registry.json`. Keys are predefined (e.g. `arc`, `brave`, `chrome`, `edge`, `opera`, `vivaldi`, `chromium`). Edit the registry to add or change paths
+Registry is loaded from: `$HOME/.glider/config/browsers-registry.json`. Keys are predefined (e.g. `arc`, `brave`, `chrome`, `edge`, `opera`, `vivaldi`, `chromium`). Edit the registry to add or change paths
 
 **Option B- Explicit name/path:**
 
@@ -152,9 +152,8 @@ Check app name in Finder/Spotlight, process name: `ps aux | grep -i <name>`
 
 A single registry file can define all Chromium browsers, Glider picks one by **key**
 
-**Registry location (first found):**
+**Registry location:**
 
-- `$HOME/.glider/config/browsers-registry.json`
 - `$HOME/.glider/config/browsers-registry.json`
 
 **Registry format:**
@@ -195,7 +194,7 @@ Add or edit entries in the registry to match your machine (e.g. custom install p
 |-------|--------|
 | Supported | Chromium-based + Chrome Web Store extension (see table above). |
 | Not supported | See **Future** in this README. |
-| Configure | `$HOME/.glider/config/browser.json` (use key or name/path). Registry: `$HOME/.glider/config/browsers-registry.json` or `$HOME/.glider/config/browsers-registry.json` |
+| Configure | `$HOME/.glider/config/browser.json` (use key or name/path). Registry: `$HOME/.glider/config/browsers-registry.json` |
 | Switch | `glider use <key>` (e.g. `glider use arc`, `glider use brave`). |
 | Path | Optional, use when app is not in default location |
 
