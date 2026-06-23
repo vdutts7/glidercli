@@ -3,7 +3,7 @@
 # If allowed_emails is empty, skip check
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
-CONFIG="$ROOT/repo.config.json"
+CONFIG="$ROOT/repo.spine.json"
 EMAIL=$(git config user.email 2>/dev/null)
 
 # Read allowed emails from config
@@ -19,6 +19,6 @@ fi
 echo "$ALLOWED" | grep -qx "$EMAIL" && exit 0
 
 echo ""
-echo "⚠ Git email not set. Pick one from repo.config.json:"
+echo "⚠ Git email not set. Pick one from repo.spine.json:"
 echo "$ALLOWED" | sed 's/^/  git config user.email '\''/' | sed 's/$/'\''/'
 echo ""
