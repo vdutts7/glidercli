@@ -41,6 +41,11 @@ const REGISTRY_FILE = path.join(LIB_DIR, 'registry.json');
 
 // Active CDP session (multi-tab). Env or --session / --session-id on CLI.
 let activeSessionId = process.env.GLIDER_SESSION_ID || null;
+let jsonOutput = false;
+let allowedDomainList = null;
+const SESSION_STORE = path.join(os.homedir(), '.glider', 'config', 'active-session.json');
+const { resolveAllowedDomains, assertUrlAllowed, urlAllowed } = require(path.join(LIB_DIR, 'guard.js'));
+const { buildSnapshotExpression, formatSnapshotText } = require(path.join(LIB_DIR, 'bsnapshot.js'));
 
 // Load pattern registry
 let REGISTRY = {};
@@ -200,16 +205,52 @@ function httpGet(urlPath) {
   });
 }
 
+function loadPersistedSession() {
+  if (activeSessionId) return;
+  if (!fs.existsSync(SESSION_STORE)) return;
+  try {
+    const data = JSON.parse(fs.readFileSync(SESSION_STORE, 'utf8'));
+    if (data.sessionId) activeSessionId = data.sessionId;
+  } catch { /* ignore */ }
+}
+
+function persistSession(sessionId) {
+  activeSessionId = sessionId;
+  fs.mkdirSync(path.dirname(SESSION_STORE), { recursive: true });
+  fs.writeFileSync(SESSION_STORE, JSON.stringify({ sessionId, updated: new Date().toISOString() }, null, 2));
+}
+
+function emitJson(ok, observation, error = null, warnings = []) {
+  console.log(JSON.stringify({ ok, observation, error, warnings }, null, 2));
+  if (!ok) process.exit(1);
+}
+
+async function assertCurrentUrlAllowed(action) {
+  if (!allowedDomainList) return;
+  const result = await httpPost('/cdp', {
+    method: 'Runtime.evaluate',
+    params: { expression: 'location.href', returnByValue: true },
+  });
+  const url = result?.result?.value;
+  if (url) assertUrlAllowed(url, allowedDomainList, action);
+}
+
 function parseGlobalFlags(argv) {
   const rest = [];
+  const cliDomains = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if ((a === '--session' || a === '--session-id') && argv[i + 1]) {
       activeSessionId = argv[++i];
+    } else if (a === '--json') {
+      jsonOutput = true;
+    } else if (a === '--allowed-domains' && argv[i + 1]) {
+      cliDomains.push(...String(argv[++i]).split(',').map((s) => s.trim()).filter(Boolean));
     } else {
       rest.push(a);
     }
   }
+  allowedDomainList = resolveAllowedDomains(cliDomains);
   return rest;
 }
 
@@ -441,21 +482,33 @@ async function cmdGoto(url) {
     process.exit(1);
   }
   
-  // Auto-connect if not connected
   if (!await ensureConnected()) {
     process.exit(1);
   }
+
+  try {
+    assertUrlAllowed(url, allowedDomainList, 'goto');
+  } catch (e) {
+    if (jsonOutput) emitJson(false, null, e.message);
+    log.fail(e.message);
+    process.exit(1);
+  }
   
-  log.info(`Navigating to: ${url}`);
+  if (!jsonOutput) log.info(`Navigating to: ${url}`);
   
   try {
     const result = await httpPost('/cdp', {
       method: 'Page.navigate',
       params: { url }
     });
-    console.log(JSON.stringify(result));
-    log.ok('Navigated');
+    if (jsonOutput) {
+      emitJson(true, { url, navigate: result });
+    } else {
+      console.log(JSON.stringify(result));
+      log.ok('Navigated');
+    }
   } catch (e) {
+    if (jsonOutput) emitJson(false, null, e.message);
     log.fail(`Navigation failed: ${e.message}`);
     process.exit(1);
   }
@@ -482,14 +535,18 @@ async function cmdEval(js) {
       }
     });
     
-    if (result.result?.value !== undefined) {
-      console.log(JSON.stringify(result.result.value));
+    const value = result.result?.value;
+    if (jsonOutput) {
+      emitJson(true, value !== undefined ? value : result.result);
+    } else if (value !== undefined) {
+      console.log(JSON.stringify(value));
     } else if (result.result?.description) {
       console.log(result.result.description);
     } else {
       console.log(JSON.stringify(result));
     }
   } catch (e) {
+    if (jsonOutput) emitJson(false, null, e.message);
     log.fail(`Eval failed: ${e.message}`);
     process.exit(1);
   }
@@ -501,8 +558,15 @@ async function cmdClick(selector) {
     process.exit(1);
   }
   
-  // Auto-connect if not connected
   if (!await ensureConnected()) {
+    process.exit(1);
+  }
+
+  try {
+    await assertCurrentUrlAllowed('click');
+  } catch (e) {
+    if (jsonOutput) emitJson(false, null, e.message);
+    log.fail(e.message);
     process.exit(1);
   }
   
@@ -522,11 +586,17 @@ async function cmdClick(selector) {
     });
     
     if (result.result?.value?.error) {
+      if (jsonOutput) emitJson(false, null, result.result.value.error);
       log.fail(result.result.value.error);
       process.exit(1);
     }
-    log.ok(`Clicked: ${selector}`);
+    if (jsonOutput) {
+      emitJson(true, { selector, clicked: true });
+    } else {
+      log.ok(`Clicked: ${selector}`);
+    }
   } catch (e) {
+    if (jsonOutput) emitJson(false, null, e.message);
     log.fail(`Click failed: ${e.message}`);
     process.exit(1);
   }
@@ -1075,7 +1145,6 @@ async function cmdTitle() {
 }
 
 async function cmdUrl() {
-  // Auto-connect if not connected
   if (!await ensureConnected()) {
     process.exit(1);
   }
@@ -1085,10 +1154,103 @@ async function cmdUrl() {
       method: 'Runtime.evaluate',
       params: { expression: 'window.location.href', returnByValue: true }
     });
-    console.log(result.result?.value || '');
+    const url = result.result?.value || '';
+    if (jsonOutput) emitJson(true, { url });
+    else console.log(url);
   } catch (e) {
+    if (jsonOutput) emitJson(false, null, e.message);
     log.fail(`URL extraction failed: ${e.message}`);
     process.exit(1);
+  }
+}
+
+async function cmdSnapshot(opts = []) {
+  let interactiveOnly = false;
+  for (const o of opts) {
+    if (o === '--interactive-only' || o === '-i') interactiveOnly = true;
+  }
+  if (!await ensureConnected()) process.exit(1);
+  try {
+    const result = await httpPost('/cdp', {
+      method: 'Runtime.evaluate',
+      params: {
+        expression: buildSnapshotExpression(interactiveOnly),
+        returnByValue: true,
+        awaitPromise: true,
+      },
+    });
+    const data = result?.result?.value;
+    if (!data || data.error) {
+      const err = data?.error || 'snapshot failed';
+      if (jsonOutput) emitJson(false, null, err);
+      log.fail(err);
+      process.exit(1);
+    }
+    if (jsonOutput) {
+      emitJson(true, data);
+    } else {
+      console.log(formatSnapshotText(data));
+    }
+  } catch (e) {
+    if (jsonOutput) emitJson(false, null, e.message);
+    log.fail(`Snapshot failed: ${e.message}`);
+    process.exit(1);
+  }
+}
+
+async function cmdTargets() {
+  const raw = await httpGet('/targets');
+  const targets = (Array.isArray(raw) ? raw : []).map((t) => ({
+    sessionId: t.sessionId,
+    targetId: t.targetId,
+    title: t.title || t.targetInfo?.title || '',
+    url: t.url || t.targetInfo?.url || '',
+  }));
+  if (jsonOutput) {
+    emitJson(true, { targets, activeSessionId });
+  } else {
+    if (!targets.length) {
+      log.warn('No targets');
+      return;
+    }
+    console.log(`${GREEN}${targets.length}${NC} target(s):\n`);
+    for (const t of targets) {
+      const mark = t.sessionId === activeSessionId ? `${GREEN}*${NC} ` : '  ';
+      console.log(`${mark}${CYAN}${t.sessionId}${NC}  ${t.title}`);
+      console.log(`      ${DIM}${t.url}${NC}`);
+    }
+  }
+}
+
+async function cmdUseSession(arg, opts = []) {
+  let sessionId = arg;
+  const urlIdx = opts.indexOf('--url');
+  if (urlIdx >= 0 && opts[urlIdx + 1]) {
+    const needle = opts[urlIdx + 1];
+    const raw = await httpGet('/targets');
+    const targets = Array.isArray(raw) ? raw : [];
+    const hit = targets.find((t) => {
+      const u = t.url || t.targetInfo?.url || '';
+      return u.includes(needle);
+    });
+    if (!hit) {
+      const msg = `no target matching --url ${needle}`;
+      if (jsonOutput) emitJson(false, null, msg);
+      log.fail(msg);
+      process.exit(1);
+    }
+    sessionId = hit.sessionId;
+  }
+  if (!sessionId) {
+    log.fail('Usage: glider use-session <sessionId> | glider use-session --url <host-fragment>');
+    process.exit(1);
+  }
+  persistSession(sessionId);
+  if (jsonOutput) {
+    emitJson(true, { sessionId, persisted: SESSION_STORE });
+  } else {
+    log.ok(`Active session: ${sessionId}`);
+    console.log(SESSION_STORE);
   }
 }
 
@@ -1099,7 +1261,15 @@ async function cmdFetch(url, opts = []) {
     process.exit(1);
   }
   
-  log.info(`Fetching: ${url}`);
+  try {
+    assertUrlAllowed(url, allowedDomainList, 'fetch');
+  } catch (e) {
+    if (jsonOutput) emitJson(false, null, e.message);
+    log.fail(e.message);
+    process.exit(1);
+  }
+
+  if (!jsonOutput) log.info(`Fetching: ${url}`);
   
   let outputFile = null;
   for (let i = 0; i < opts.length; i++) {
@@ -1127,13 +1297,16 @@ async function cmdFetch(url, opts = []) {
     const data = result?.result?.value;
     const output = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
     
-    if (outputFile) {
+    if (jsonOutput) {
+      emitJson(true, { url, data });
+    } else if (outputFile) {
       fs.writeFileSync(outputFile, output);
       log.ok(`Saved to ${outputFile}`);
     } else {
       console.log(output);
     }
   } catch (e) {
+    if (jsonOutput) emitJson(false, null, e.message);
     log.fail(`Fetch failed: ${e.message}`);
     process.exit(1);
   }
@@ -1458,6 +1631,14 @@ async function cmdExplore(url, opts = []) {
     else if (opts[i] === '--session-id' || opts[i] === '--session') sessionId = opts[++i];
   }
   if (!sessionId && activeSessionId) sessionId = activeSessionId;
+
+  try {
+    assertUrlAllowed(url, allowedDomainList, 'explore');
+  } catch (e) {
+    if (jsonOutput) emitJson(false, null, e.message);
+    log.fail(e.message);
+    process.exit(1);
+  }
   
   log.info(`Exploring: ${url} (depth: ${depth})`);
   
@@ -1760,7 +1941,7 @@ function showHelp() {
   showBanner();
   console.log(`
 ${B5}USAGE${NC}
-    glider [--session <id>] <command> [args]
+    glider [--session <id>] [--json] [--allowed-domains 'host,*'] <command> [args]
     ${DIM}GLIDER_SESSION_ID=session-N${NC}  ${DIM}pin tab for all /cdp commands${NC}
 
 ${B5}SETUP${NC}
@@ -1783,6 +1964,7 @@ ${B5}NAVIGATION${NC}
     ${BW}screenshot${NC} [path]   Take screenshot
 
 ${B5}PAGE INFO${NC}
+    ${BW}snapshot${NC} [opts]      Page index for agents ${DIM}(--json, --interactive-only)${NC}
     ${BW}text${NC}                Get page text
     ${BW}html${NC} [selector]     Get HTML
     ${BW}title${NC}               Get page title
@@ -1798,6 +1980,8 @@ ${B5}MULTI-WINDOW${NC}
     ${BW}window list${NC}         List all windows/tabs
 
 ${B5}MULTI-TAB${NC}
+    ${BW}targets${NC}             List targets ${DIM}(sessionId, title, url)${NC}
+    ${BW}use-session${NC} <id>    Pin session ${DIM}(or --url host-fragment)${NC}
     ${BW}fetch${NC} <url>         Fetch URL with browser session ${DIM}(auth)${NC}
     ${BW}spawn${NC} <urls...>     Open multiple tabs
     ${BW}extract${NC} [opts]      Extract from all tabs
@@ -1946,6 +2130,7 @@ async function cmdUpdate() {
 // Main
 async function main() {
   const args = parseGlobalFlags(process.argv.slice(2));
+  loadPersistedSession();
   const cmd = args[0];
   
   if (!cmd || cmd === '--help' || cmd === '-h') {
@@ -2012,6 +2197,15 @@ async function main() {
       break;
     case 'tabs':
       await cmdTabs();
+      break;
+    case 'targets':
+      await cmdTargets();
+      break;
+    case 'use-session':
+      await cmdUseSession(args[1], args.slice(2));
+      break;
+    case 'snapshot':
+      await cmdSnapshot(args.slice(1));
       break;
     case 'window':
     case 'win':
