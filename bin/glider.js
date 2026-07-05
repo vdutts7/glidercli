@@ -39,6 +39,9 @@ const STATE_FILE = '/tmp/glider-state.json';
 const LOG_FILE = '/tmp/glider.log';
 const REGISTRY_FILE = path.join(LIB_DIR, 'registry.json');
 
+// Active CDP session (multi-tab). Env or --session / --session-id on CLI.
+let activeSessionId = process.env.GLIDER_SESSION_ID || null;
+
 // Load pattern registry
 let REGISTRY = {};
 if (fs.existsSync(REGISTRY_FILE)) {
@@ -197,10 +200,27 @@ function httpGet(urlPath) {
   });
 }
 
+function parseGlobalFlags(argv) {
+  const rest = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if ((a === '--session' || a === '--session-id') && argv[i + 1]) {
+      activeSessionId = argv[++i];
+    } else {
+      rest.push(a);
+    }
+  }
+  return rest;
+}
+
 function httpPost(urlPath, body) {
+  const payload = { ...body };
+  if (urlPath === '/cdp' && activeSessionId && payload.sessionId == null) {
+    payload.sessionId = activeSessionId;
+  }
   return new Promise((resolve, reject) => {
     const url = new URL(urlPath, SERVER_URL);
-    const data = JSON.stringify(body);
+    const data = JSON.stringify(payload);
     const req = http.request(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1422,7 +1442,7 @@ async function cmdRegistry(patternName, opts = []) {
 // Explore site (clicks around, captures network)
 async function cmdExplore(url, opts = []) {
   if (!url) {
-    log.fail('Usage: glider explore <url> [--depth N] [--output dir] [--har file]');
+    log.fail('Usage: glider explore <url> [--depth N] [--output dir] [--har file] [--session-id id]');
     process.exit(1);
   }
   
@@ -1435,8 +1455,9 @@ async function cmdExplore(url, opts = []) {
     if (opts[i] === '--depth' || opts[i] === '-d') depth = parseInt(opts[++i], 10);
     else if (opts[i] === '--output' || opts[i] === '-o') outputDir = opts[++i];
     else if (opts[i] === '--har') harFile = opts[++i];
-    else if (opts[i] === '--session-id') sessionId = opts[++i];
+    else if (opts[i] === '--session-id' || opts[i] === '--session') sessionId = opts[++i];
   }
+  if (!sessionId && activeSessionId) sessionId = activeSessionId;
   
   log.info(`Exploring: ${url} (depth: ${depth})`);
   
@@ -1739,7 +1760,8 @@ function showHelp() {
   showBanner();
   console.log(`
 ${B5}USAGE${NC}
-    glider <command> [args]
+    glider [--session <id>] <command> [args]
+    ${DIM}GLIDER_SESSION_ID=session-N${NC}  ${DIM}pin tab for all /cdp commands${NC}
 
 ${B5}SETUP${NC}
     ${BW}install${NC}             Install daemon ${DIM}(runs at login, auto-restarts)${NC}
@@ -1923,7 +1945,7 @@ async function cmdUpdate() {
 
 // Main
 async function main() {
-  const args = process.argv.slice(2);
+  const args = parseGlobalFlags(process.argv.slice(2));
   const cmd = args[0];
   
   if (!cmd || cmd === '--help' || cmd === '-h') {
