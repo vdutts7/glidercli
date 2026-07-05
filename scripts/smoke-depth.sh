@@ -15,8 +15,9 @@ const s=fs.readFileSync('$BEX','utf8');
 if (/this\\.depth = options\\.depth \\|\\| 3/.test(s)) process.exit(1);
 if (!/depth === 0/.test(s)) process.exit(1);
 if (!/clicksPerformed/.test(s)) process.exit(1);
+if (!/sendWithRetry/.test(s)) process.exit(1);
+if (!/sessionId: this\\.sessionId/.test(s)) process.exit(1);
 if (!/prefetchSessionFromTargets/.test(s)) process.exit(1);
-if (!/\\/targets/.test(s)) process.exit(1);
 " && ok static_depth_wiring || no static_depth_wiring
 
 # help surfaces session-id + depth 0
@@ -43,7 +44,7 @@ if curl -sf --max-time 3 http://127.0.0.1:19988/status | node -e "let d='';proce
     grep -qE 'depth=0 passive|\(depth=0\)' "$LOG" && ok live_stderr_passive || no live_stderr_passive
     grep -q 'Session pinned from /targets' "$LOG" && ok live_session_prefetch || no live_session_prefetch
     trash "$LOG" 2>/dev/null || true
-    if [[ -f "$OUT/report.json" ]] && jq -e '.clicksPerformed == 0 and .passive == true and .depth == 0' "$OUT/report.json" >/dev/null; then
+    if [[ -f "$OUT/report.json" ]] && jq -e '.clicksPerformed == 0 and .passive == true and .depth == 0 and .sessionId != null' "$OUT/report.json" >/dev/null; then
       ok live_report_clicks_zero
     else
       no live_report_clicks_zero
