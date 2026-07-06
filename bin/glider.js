@@ -57,6 +57,7 @@ if (fs.existsSync(REGISTRY_FILE)) {
 
 // Direct CDP module
 const { DirectCDP, checkChrome } = require(path.join(LIB_DIR, 'cdp-direct.js'));
+const { resolveDomain } = require(path.join(LIB_DIR, 'domain-resolve.js'));
 
 // Domain extensions - load from ~/.glider/config/domains.json
 const DOMAIN_CONFIG_PATHS = [
@@ -1069,7 +1070,7 @@ async function cmdWindow(args) {
 }
 
 async function cmdDomains() {
-  const domainKeys = Object.keys(DOMAINS);
+  const domainKeys = Object.keys(DOMAINS).filter((k) => k !== 'meta');
   if (domainKeys.length === 0) {
     log.warn('No domains configured');
     log.info('Add domains to ~/.glider/config/domains.json');
@@ -1078,12 +1079,28 @@ async function cmdDomains() {
   console.log(`${GREEN}${domainKeys.length}${NC} domain(s) configured:\n`);
   for (const key of domainKeys) {
     const d = DOMAINS[key];
-    const type = d.script ? 'script' : 'url';
-    const target = d.script || d.url || '';
+    const shortcut = d.shortcut || {};
+    const type = shortcut.type || (d.script ? 'script' : d.url ? 'url' : 'none');
+    const target = shortcut.target || d.script || d.url || '';
     console.log(`  ${CYAN}${key}${NC} ${DIM}(${type})${NC}`);
+    if (d.host) console.log(`      ${DIM}host: ${d.host}${NC}`);
+    if (d.warch) console.log(`      ${DIM}warch: ${d.warch}${NC}`);
     if (d.description) console.log(`      ${d.description}`);
-    console.log(`      ${DIM}${target}${NC}`);
+    if (target) console.log(`      ${DIM}${target}${NC}`);
   }
+}
+
+async function cmdResolve(input, opts = []) {
+  if (!input) {
+    log.fail('Usage: glider resolve <url|host> [--json]');
+    process.exit(1);
+  }
+  const result = resolveDomain(input);
+  if (opts.includes('--json') || jsonOutput) {
+    console.log(JSON.stringify({ ok: true, ...result }));
+    return;
+  }
+  console.log(JSON.stringify(result, null, 2));
 }
 
 async function cmdOpen(url) {
@@ -1955,6 +1972,8 @@ ${B5}STATUS${NC}
     ${BW}browser${NC}             Show browser config ${DIM}(name, path, processName, or use key)${NC}
     ${BW}use${NC} <key>           Set browser by registry key ${DIM}(e.g. arc, brave, chrome)${NC}
     ${BW}test${NC}                Run diagnostics
+    ${BW}domains${NC}             List ~/.glider domain shortcuts + warch paths
+    ${BW}resolve${NC} <url>        Resolve host to local warch intel ${DIM}(--json)${NC}
 
 ${B5}NAVIGATION${NC}
     ${BW}goto${NC} <url>          Navigate to URL
@@ -2144,7 +2163,7 @@ async function main() {
   }
   
   // Ensure server is running for most commands
-  if (!['start', 'stop', 'help', '--help', '-h', 'update', 'version', '-v', '--version'].includes(cmd)) {
+  if (!['start', 'stop', 'help', '--help', '-h', 'update', 'version', '-v', '--version', 'domains', 'resolve'].includes(cmd)) {
     if (!await checkServer()) {
       log.info('Server not running, starting...');
       await cmdStart();
@@ -2213,6 +2232,9 @@ async function main() {
       break;
     case 'domains':
       await cmdDomains();
+      break;
+    case 'resolve':
+      await cmdResolve(args[1], args.slice(2));
       break;
     case 'goto':
     case 'navigate':
@@ -2297,9 +2319,11 @@ async function main() {
       // Check if it's a domain command from config
       if (DOMAINS[cmd]) {
         const domain = DOMAINS[cmd];
-        if (domain.script) {
-          // Execute external script
-          const scriptPath = domain.script.replace(/^~/, os.homedir());
+        const shortcut = domain.shortcut || {};
+        const scriptPathRaw = shortcut.type === 'script' ? shortcut.target : domain.script;
+        const urlRaw = shortcut.type === 'url' ? shortcut.target : domain.url;
+        if (scriptPathRaw) {
+          const scriptPath = scriptPathRaw.replace(/^~/, os.homedir()).replace(/\$HOME/g, os.homedir());
           if (fs.existsSync(scriptPath)) {
             const { execSync } = require('child_process');
             try {
@@ -2311,9 +2335,8 @@ async function main() {
             log.fail(`Domain script not found: ${scriptPath}`);
             process.exit(1);
           }
-        } else if (domain.url) {
-          // Navigate to domain URL
-          await cmdGoto(domain.url);
+        } else if (urlRaw) {
+          await cmdGoto(urlRaw);
         }
         break;
       }
