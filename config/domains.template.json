@@ -1,0 +1,15 @@
+{
+  "meta": {
+    "schema_version": "2.0",
+    "description": "Domain index: host → warch dir under registry base",
+    "registry_base": "AGREGISTRY env if set, else GLIDER_HOME (~/.glider)",
+    "warch_layout": "<registry_base>/warch/<host>/"
+  },
+  "example_com": {
+    "host": "example.com",
+    "warch": "warch/example.com",
+    "shortcut": { "type": "none", "target": null },
+    "description": "Replace with your domain",
+    "notes": "glider.json + gotchas.json under warch/<host>/"
+  }
+}
