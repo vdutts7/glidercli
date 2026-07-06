@@ -33,6 +33,8 @@
   },
   "config_paths": {
     "domains": "~/.glider/config/domains.json",
+    "domains_template": "$CURREGISTRY/glider/domains.template.json",
+    "resolve": "glider resolve <url> --json",
     "browser": "~/.glider/config/browser.json",
     "daemon_log": "~/.glider/daemon.log"
   },
