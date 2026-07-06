@@ -1,7 +1,7 @@
 {
   "meta": {
     "project": "glidercli",
-    "updated": "2026-01-31"
+    "updated": "2026-07-06"
   },
   "architecture": {
     "flow": "glidercli -> bserve (ws:19988) -> chrome-extension -> chrome.debugger -> tab",
@@ -32,8 +32,11 @@
     }
   },
   "config_paths": {
+    "glider_home": "~/.glider (override: GLIDER_HOME)",
     "domains": "~/.glider/config/domains.json",
-    "domains_template": "$CURREGISTRY/glider/domains.template.json",
+    "domains_template": "config/domains.template.json (shipped in package)",
+    "warch_root": "<registry_base>/warch/<host>/ (glider.json, gotchas.json, bexplore/)",
+    "registry_base": "AGREGISTRY if set, else GLIDER_HOME (~/.glider)",
     "resolve": "glider resolve <url> --json",
     "browser": "~/.glider/config/browser.json",
     "daemon_log": "~/.glider/daemon.log"

@@ -1973,7 +1973,7 @@ ${B5}STATUS${NC}
     ${BW}use${NC} <key>           Set browser by registry key ${DIM}(e.g. arc, brave, chrome)${NC}
     ${BW}test${NC}                Run diagnostics
     ${BW}domains${NC}             List ~/.glider domain shortcuts + warch paths
-    ${BW}resolve${NC} <url>        Resolve host to local warch intel ${DIM}(--json)${NC}
+    ${BW}resolve${NC} <url>        Domain intel under ~/.glider/warch ${DIM}(--json)${NC}
 
 ${B5}NAVIGATION${NC}
     ${BW}goto${NC} <url>          Navigate to URL
