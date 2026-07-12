@@ -700,6 +700,66 @@ async function cmdRestart() {
   await cmdStart();
 }
 
+//  automate the extension reload + tab re-attachment loop
+*
+reload-ext: automate extension reload + tab re-attachment so operators
+async function cmdReloadExt() {
+  try {
+    const r = await postExtension({ method: 'reloadSelf', params: {} });
+    log.ok(`Extension reload triggered (persisted ${r.result?.persisted ?? '?'} tab URLs).`);
+    log.info('Waiting 4s for extension to boot back up + reconnect...');
+    await new Promise(x => setTimeout(x, 4000));
+    // Extension reboots → autoAttachActiveTab restores from chrome.storage
+    // Confirm state
+    const st = await httpGetJson('/status');
+    log.ok(`relay reconnected: extension=${st.extension} targets=${st.targets}`);
+  } catch (e) {
+    log.fail(`reload-ext failed: ${e.message}`);
+    log.info('First-time bootstrap: open your browser extensions page and reload Glider (one time only).');
+  }
+}
+
+async function cmdAttachAll(filter) {
+  try {
+    const r = await postExtension({ method: 'attachAllTabs', params: filter ? { urlSubstring: filter } : {} });
+    log.ok(`attach-all: attached=${r.result?.attached ?? '?'} skipped=${r.result?.skipped ?? '?'} failed=${r.result?.failed ?? '?'} total_connected=${r.result?.total_connected ?? '?'}`);
+  } catch (e) {
+    log.fail(`attach-all failed: ${e.message}`);
+  }
+}
+
+// Helper: POST to relay's /extension endpoint (already exists in bserve.js)
+async function postExtension(body) {
+  return new Promise((resolve, reject) => {
+    const data = JSON.stringify(body);
+    const req = http.request({
+      hostname: '127.0.0.1', port: 19988, path: '/extension', method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
+    }, (res) => {
+      let s = '';
+      res.on('data', c => s += c);
+      res.on('end', () => {
+        try {
+          const j = JSON.parse(s);
+          if (j.error) reject(new Error(j.error.message || j.error));
+          else resolve(j);
+        } catch(e) { reject(new Error('bad JSON from /extension: ' + s.slice(0,200))); }
+      });
+    });
+    req.on('error', reject);
+    req.write(data); req.end();
+  });
+}
+
+async function httpGetJson(pathStr) {
+  return new Promise((resolve, reject) => {
+    http.get({ hostname: '127.0.0.1', port: 19988, path: pathStr }, (res) => {
+      let s = ''; res.on('data', c => s += c);
+      res.on('end', () => { try { resolve(JSON.parse(s)); } catch(e) { reject(e); } });
+    }).on('error', reject);
+  });
+}
+
 // Daemon management - runs forever, respawns on crash
 async function cmdInstallDaemon() {
   const home = os.homedir();
@@ -2187,6 +2247,13 @@ async function main() {
       break;
     case 'restart':
       await cmdRestart();
+      break;
+    case 'reload-ext':
+    case 'reload-extension':
+      await cmdReloadExt();
+      break;
+    case 'attach-all':
+      await cmdAttachAll(args[1]);   // optional URL substring filter, e.g. 'example.com'
       break;
     case 'install':
       await cmdInstallDaemon();
