@@ -30,9 +30,7 @@ echo ""
 
 echo "Set your git email:"
 
-*
-
-echo "  git config user.email 'me@vd7.io'                      # vdutts7"
+echo "  git config user.email 'me@vd7.io'  # vdutts7"
 
 echo ""
 
