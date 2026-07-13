@@ -502,11 +502,33 @@ async function cmdGoto(url) {
       method: 'Page.navigate',
       params: { url }
     });
+    // v0.3.15 detect nav errors; auto-attach after successful goto.
+    // Prior code printed raw result THEN unconditionally logged '✓ Navigated' —
+    // even when result contained {"error":"Session not found"} (stale pinned session after reload-ext).
+    // Now: detect embedded error, don't lie about success, then auto-attach the target tab.
+    const hasErr = result && (result.error || (typeof result === 'string' && result.includes('error')));
     if (jsonOutput) {
-      emitJson(true, { url, navigate: result });
+      emitJson(!hasErr, { url, navigate: result }, hasErr ? (result.error?.message || result.error || 'unknown') : null);
+    } else if (hasErr) {
+      log.fail(`Navigation reported error: ${JSON.stringify(result)}`);
+      log.info('  hint: pinned session may be stale (e.g. after reload-ext). Try `glider attach-all` or unset GLIDER_SESSION_ID.');
     } else {
-      console.log(JSON.stringify(result));
       log.ok('Navigated');
+      // Auto-attach the tab we just navigated to (best-effort, non-fatal on failure).
+      // Uses URL host as substring filter so we don't accidentally re-attach unrelated tabs.
+      try {
+        const u = new URL(url);
+        const host = u.hostname;
+        // small delay lets the tab actually load + register in chrome.tabs before attach
+        await new Promise(x => setTimeout(x, 800));
+        const attach = await postExtension({ method: 'attachAllTabs', params: { urlSubstring: host } });
+        const d = attach.result ?? attach;
+        if ((d.attached ?? 0) > 0) {
+          log.info(`  auto-attached ${d.attached} tab(s) matching host="${host}"`);
+        }
+      } catch (attErr) {
+        // silent: nav succeeded, auto-attach is a nice-to-have
+      }
     }
   } catch (e) {
     if (jsonOutput) emitJson(false, null, e.message);
@@ -706,7 +728,9 @@ reload-ext: automate extension reload + tab re-attachment so operators
 async function cmdReloadExt() {
   try {
     const r = await postExtension({ method: 'reloadSelf', params: {} });
-    log.ok(`Extension reload triggered (persisted ${r.result?.persisted ?? '?'} tab URLs).`);
+    // v0.3.15 v0.3.15: same response unwrap fix as attach-all — r.result was always undefined
+    const persisted = (r.result?.persisted ?? r.persisted ?? '?');
+    log.ok(`Extension reload triggered (persisted ${persisted} tab URLs).`);
     log.info('Waiting 4s for extension to boot back up + reconnect...');
     await new Promise(x => setTimeout(x, 4000));
     // Extension reboots → autoAttachActiveTab restores from chrome.storage
@@ -722,7 +746,18 @@ async function cmdReloadExt() {
 async function cmdAttachAll(filter) {
   try {
     const r = await postExtension({ method: 'attachAllTabs', params: filter ? { urlSubstring: filter } : {} });
-    log.ok(`attach-all: attached=${r.result?.attached ?? '?'} skipped=${r.result?.skipped ?? '?'} failed=${r.result?.failed ?? '?'} total_connected=${r.result?.total_connected ?? '?'}`);
+    // v0.3.15 attach-all response unwrap fix —
+    // relay's sendToExtension unwraps msg.result before HTTP POST responds, so relay body is {attached, skipped, failed, total_connected} bare.
+    // Prior code read r.result.attached which was always undefined → literal '?' placeholders on every attach-all.
+    const d = r.result ?? r;
+    const attached = d.attached ?? 0;
+    const skipped = d.skipped ?? 0;
+    const failed = d.failed ?? 0;
+    const total = d.total_connected ?? 0;
+    log.ok(`attach-all: attached=${attached} skipped=${skipped} failed=${failed} total_connected=${total}`);
+    if (filter && attached === 0 && total > 0) {
+      log.info(`  hint: filter "${filter}" matched 0 new tabs. Try 'glider attach-all' with no filter, or check 'glider tabs' for URL substrings that would match.`);
+    }
   } catch (e) {
     log.fail(`attach-all failed: ${e.message}`);
   }
@@ -2210,7 +2245,29 @@ async function cmdUpdate() {
 async function main() {
   const args = parseGlobalFlags(process.argv.slice(2));
   loadPersistedSession();
-  const cmd = args[0];
+  let cmd = args[0];
+
+  // v0.3.15 reload-ext command aliases —
+  // Accept common natural-language variants + typos for high-frequency commands.
+  // Rewrites args in place so downstream switch stays clean.
+  const RELOAD_EXT_TWO_WORD = new Set([
+    'ext-reload', 'ext reload',
+    'reload-extension', 'reload extension',
+    'reload-ext'
+  ]);
+  const RELOAD_EXT_ALIASES = new Set(['rex', 'reloadext', 'reloadExt']);
+  if (cmd === 'ext' && args[1] === 'reload') {
+    cmd = 'reload-ext';
+    args.splice(0, 2, 'reload-ext');
+  } else if (cmd === 'reload' && (args[1] === 'ext' || args[1] === 'extension')) {
+    cmd = 'reload-ext';
+    args.splice(0, 2, 'reload-ext');
+  } else if (RELOAD_EXT_ALIASES.has(cmd)) {
+    cmd = 'reload-ext';
+    args[0] = 'reload-ext';
+  }
+  // Typo suggest: if cmd looks like a common command with 1-2 char edit distance, hint it.
+  // (Only checked in unknown-command branch below — this block just normalizes.)
   
   if (!cmd || cmd === '--help' || cmd === '-h') {
     showHelp();
@@ -2408,6 +2465,25 @@ async function main() {
         break;
       }
       log.fail(`Unknown command: ${cmd}`);
+      // v0.3.15 v0.3.15: typo suggest (Levenshtein <=2) before dumping full help.
+      const KNOWN_CMDS = ['status','start','stop','restart','reload-ext','attach-all','install','uninstall',
+        'update','version','connect','browser','use','test','domains','resolve','goto','eval','click','type',
+        'screenshot','snapshot','text','html','title','url','tabs','targets','use-session','fetch','spawn',
+        'extract','explore','favicon','window','reg','run','loop','ralph'];
+      function lev(a, b) {
+        if (Math.abs(a.length - b.length) > 2) return 3;
+        const m = Array.from({length: a.length+1}, () => new Array(b.length+1).fill(0));
+        for (let i = 0; i <= a.length; i++) m[i][0] = i;
+        for (let j = 0; j <= b.length; j++) m[0][j] = j;
+        for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+          m[i][j] = a[i-1] === b[j-1] ? m[i-1][j-1] : 1 + Math.min(m[i-1][j-1], m[i-1][j], m[i][j-1]);
+        }
+        return m[a.length][b.length];
+      }
+      const near = KNOWN_CMDS.map(k => [k, lev(cmd, k)]).filter(x => x[1] <= 2).sort((a,b) => a[1]-b[1]).slice(0, 3);
+      if (near.length > 0) {
+        log.info(`  Did you mean: ${near.map(x => x[0]).join(', ')} ?`);
+      }
       showHelp();
       process.exit(1);
   }
