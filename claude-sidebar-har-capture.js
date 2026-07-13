@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 
 const RELAY_URL = process.env.RELAY_URL || 'ws://127.0.0.1:19988/cdp';
+const CHAT_URL_MATCH = process.env.GLIDER_CHAT_URL_MATCH || null;
 
 class ClaudeSidebarHAR {
   constructor(options = {}) {
@@ -346,7 +347,7 @@ class ClaudeSidebarHAR {
 async function main() {
   const args = process.argv.slice(2);
   let sessionId = null;
-  let outputDir = `/tmp/claude-sidebar-har-${Date.now()}`;
+  let outputDir = path.join(os.tmpdir(), `claude-sidebar-har-${Date.now()}`);
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--session-id') sessionId = args[++i];
@@ -354,9 +355,10 @@ async function main() {
   }
 
   if (!sessionId) {
-*
     const targets = await fetch('http://127.0.0.1:19988/targets').then((r) => r.json());
-    const chat = targets.find((t) => t.targetInfo?.url?.includes('example-chat-session-id'));
+    const chat = CHAT_URL_MATCH
+      ? targets.find((t) => t.targetInfo?.url?.includes(CHAT_URL_MATCH))
+      : targets.find((t) => t.targetInfo?.url?.includes('claude.ai/chat/'));
     sessionId = chat?.sessionId;
   }
 
