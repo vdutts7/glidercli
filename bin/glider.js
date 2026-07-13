@@ -91,7 +91,6 @@ for (const cfgPath of BROWSER_CONFIG_PATHS) {
 
 // Browsers registry - key → { name, path, processName }. Used when browser.json has "use": "<key>"
 const BROWSERS_REGISTRY_PATHS = [
-*
   path.join(os.homedir(), '.glider', 'config', 'browsers-registry.json'),
 ].filter(Boolean);
 let BROWSERS_REGISTRY = {};
