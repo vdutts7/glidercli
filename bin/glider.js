@@ -721,8 +721,7 @@ async function cmdRestart() {
   await cmdStart();
 }
 
-// reload-ext: automate extension reload + tab re-attachment so operators
-*
+// reload-ext: automate extension reload + tab re-attachment
 async function cmdReloadExt() {
   try {
     const r = await postExtension({ method: 'reloadSelf', params: {} });
