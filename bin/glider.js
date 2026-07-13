@@ -502,8 +502,8 @@ async function cmdGoto(url) {
       method: 'Page.navigate',
       params: { url }
     });
-    // v0.3.15 detect nav errors; auto-attach after successful goto.
-    // Prior code printed raw result THEN unconditionally logged '✓ Navigated' —
+    // v0.3.15: detect nav errors; auto-attach after successful goto.
+    // Prior code printed raw result THEN unconditionally logged '✓ Navigated' -
     // even when result contained {"error":"Session not found"} (stale pinned session after reload-ext).
     // Now: detect embedded error, don't lie about success, then auto-attach the target tab.
     const hasErr = result && (result.error || (typeof result === 'string' && result.includes('error')));
@@ -722,13 +722,12 @@ async function cmdRestart() {
   await cmdStart();
 }
 
-//  automate the extension reload + tab re-attachment loop
+// reload-ext: automate extension reload + tab re-attachment so operators
 *
-reload-ext: automate extension reload + tab re-attachment so operators
 async function cmdReloadExt() {
   try {
     const r = await postExtension({ method: 'reloadSelf', params: {} });
-    // v0.3.15 v0.3.15: same response unwrap fix as attach-all — r.result was always undefined
+    // v0.3.15: same response unwrap fix as attach-all - r.result was always undefined
     const persisted = (r.result?.persisted ?? r.persisted ?? '?');
     log.ok(`Extension reload triggered (persisted ${persisted} tab URLs).`);
     log.info('Waiting 4s for extension to boot back up + reconnect...');
@@ -746,7 +745,7 @@ async function cmdReloadExt() {
 async function cmdAttachAll(filter) {
   try {
     const r = await postExtension({ method: 'attachAllTabs', params: filter ? { urlSubstring: filter } : {} });
-    // v0.3.15 attach-all response unwrap fix —
+    // v0.3.15: attach-all response unwrap fix -
     // relay's sendToExtension unwraps msg.result before HTTP POST responds, so relay body is {attached, skipped, failed, total_connected} bare.
     // Prior code read r.result.attached which was always undefined → literal '?' placeholders on every attach-all.
     const d = r.result ?? r;
@@ -2247,7 +2246,7 @@ async function main() {
   loadPersistedSession();
   let cmd = args[0];
 
-  // v0.3.15 reload-ext command aliases —
+  // v0.3.15: reload-ext command aliases -
   // Accept common natural-language variants + typos for high-frequency commands.
   // Rewrites args in place so downstream switch stays clean.
   const RELOAD_EXT_TWO_WORD = new Set([
@@ -2267,7 +2266,7 @@ async function main() {
     args[0] = 'reload-ext';
   }
   // Typo suggest: if cmd looks like a common command with 1-2 char edit distance, hint it.
-  // (Only checked in unknown-command branch below — this block just normalizes.)
+  // (Only checked in unknown-command branch below - this block just normalizes.)
   
   if (!cmd || cmd === '--help' || cmd === '-h') {
     showHelp();
@@ -2465,7 +2464,7 @@ async function main() {
         break;
       }
       log.fail(`Unknown command: ${cmd}`);
-      // v0.3.15 v0.3.15: typo suggest (Levenshtein <=2) before dumping full help.
+      // v0.3.15: typo suggest (Levenshtein <=2) before dumping full help.
       const KNOWN_CMDS = ['status','start','stop','restart','reload-ext','attach-all','install','uninstall',
         'update','version','connect','browser','use','test','domains','resolve','goto','eval','click','type',
         'screenshot','snapshot','text','html','title','url','tabs','targets','use-session','fetch','spawn',
