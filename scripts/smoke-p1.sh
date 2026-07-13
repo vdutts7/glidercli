@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# smoke-p1.sh — P1-1..P1-4 snapshot, --json, allowed-domains, targets/use-session
+# smoke-p1.sh - P1-1..P1-4 snapshot, --json, allowed-domains, targets/use-session
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 GL="$ROOT/bin/glider.js"
@@ -23,7 +23,7 @@ if (!/allowed-domains/.test(g)) process.exit(1);
 
 node -e "
 const { urlAllowed, hostMatchesPattern } = require('$ROOT/lib/guard.js');
-if (!hostMatchesPattern('api.foo.example', 'teams.*')) process.exit(1);
+if (!hostMatchesPattern('api.foo.example', 'api.*')) process.exit(1);
 if (urlAllowed('https://evil.com', ['example.com'])) process.exit(1);
 if (!urlAllowed('https://example.com/foo', ['example.com'])) process.exit(1);
 " && ok guard_unit || no guard_unit
@@ -57,14 +57,15 @@ if curl -sf --max-time 3 http://127.0.0.1:19988/status | node -e "let d='';proce
     no allowed_domains_pass
   fi
 
-  BLOCK_OUT="$(node "$GL" --allowed-domains blocked.example goto "https://example.com" --json 2>&1 || true)"
+  : "${SMOKE_BLOCKED_DOMAIN:=blocked.example}"
+  BLOCK_OUT="$(node "$GL" --allowed-domains "$SMOKE_BLOCKED_DOMAIN" goto "https://example.com" --json 2>&1 || true)"
   if echo "$BLOCK_OUT" | jq -e '.ok == false and (.error | contains("allowed_domains"))' >/dev/null; then
     ok allowed_domains_block
   else
     no allowed_domains_block
   fi
 else
-  echo "SKIP live — extension not connected"
+  echo "SKIP live - extension not connected"
 fi
 
 echo "smoke-p1 pass=$pass fail=$fail"

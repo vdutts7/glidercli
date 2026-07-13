@@ -1,21 +1,23 @@
 #!/usr/bin/env node
 const WebSocket = require('ws');
 const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { gliderHome } = require('./lib/paths');
 
-const RELAY_URL = 'ws://127.0.0.1:19988/cdp';
+const RELAY_URL = process.env.RELAY_URL || 'ws://127.0.0.1:19988/cdp';
 
-const SEARCH_URLS = [
-  'https://www.linkedin.com/search/results/all/?keywords=example&origin=GLOBAL_SEARCH_HEADER',
-  'https://www.linkedin.com/search/results/people/?keywords=software%20engineer&origin=SWITCH_SEARCH_VERTICAL',
-  'https://www.linkedin.com/search/results/companies/?keywords=google&origin=SWITCH_SEARCH_VERTICAL',
-  'https://www.linkedin.com/search/results/content/?keywords=artificial%20intelligence&origin=SWITCH_SEARCH_VERTICAL',
-  'https://www.linkedin.com/search/results/groups/?keywords=python&origin=SWITCH_SEARCH_VERTICAL',
-  'https://www.linkedin.com/search/results/schools/?keywords=example&origin=SWITCH_SEARCH_VERTICAL',
-  'https://www.linkedin.com/search/results/events/?keywords=tech%20conference&origin=SWITCH_SEARCH_VERTICAL',
-  'https://www.linkedin.com/search/results/services/?keywords=marketing&origin=SWITCH_SEARCH_VERTICAL',
-  'https://www.linkedin.com/search/results/products/?keywords=crm&origin=SWITCH_SEARCH_VERTICAL',
-  'https://www.linkedin.com/jobs/search/?keywords=software%20engineer&location=Remote',
-];
+function loadSearchUrls() {
+  const file = process.env.LINKEDIN_URLS_FILE || path.join(gliderHome(), 'linkedin-urls.json');
+  if (fs.existsSync(file)) {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  }
+  const example = path.join(__dirname, 'examples', 'linkedin-urls.example.json');
+  if (fs.existsSync(example)) {
+    return JSON.parse(fs.readFileSync(example, 'utf8'));
+  }
+  throw new Error(`No URL list: set LINKEDIN_URLS_FILE or add ${path.join(gliderHome(), 'linkedin-urls.json')}`);
+}
 
 class HARCapture {
   constructor() {
@@ -159,7 +161,7 @@ async function main() {
     await capture.connect();
     await capture.init();
     
-    for (const url of SEARCH_URLS) {
+    for (const url of loadSearchUrls()) {
       await capture.navigate(url);
     }
     
