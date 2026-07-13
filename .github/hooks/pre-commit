@@ -1,30 +1,21 @@
 #!/bin/bash
 # Blocks commits if email not in allowed list (reads from repo.spine.json)
-# If allowed_emails is empty, skip check (user hasn't configured yet)
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
 CONFIG="$ROOT/repo.spine.json"
 EMAIL=$(git config user.email)
 
-# Read allowed emails from config
 if [[ -f "$CONFIG" ]] && command -v jq &>/dev/null; then
     ALLOWED=$(jq -r '.allowed_emails[]' "$CONFIG" 2>/dev/null)
 else
-    # No config or jq - skip check
     exit 0
 fi
 
-# If no emails configured, skip check
 [[ -z "$ALLOWED" ]] && exit 0
 
 echo "$ALLOWED" | grep -qx "$EMAIL" && exit 0
 
 echo ""
-echo "❌ BLOCKED: $EMAIL not allowed"
-echo ""
-echo "Allowed emails (from repo.spine.json):"
-echo "$ALLOWED" | sed 's/^/  /'
-echo ""
-echo "Fix: git config user.email '<one of the above>'"
+echo "BLOCKED: $EMAIL not in repo.spine.json allowed_emails"
 echo ""
 exit 1

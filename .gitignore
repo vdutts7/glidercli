@@ -37,7 +37,6 @@ coverage/
 .nyc_output/
 
 # AI/Agentic
-*
 .claude/*
 .codeium/*
 .windsurf/*
@@ -50,3 +49,4 @@ _plans/
 
 # Assets (social preview uploaded separately)
 assets/social-preview.png
+.hooks/
