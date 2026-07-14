@@ -3447,33 +3447,82 @@ async function cmdUpload(argv) {
   } catch (e) { log.fail(`upload failed: ${e.message}`); process.exit(1); }
 }
 
-// --- WAVE 3: cmdHar (start/stop/dump/replay) ---
-let HAR_BUFFER = null;
+// --- WAVE 3: cmdHar (start/stop/dump/status) ---
+// v0.4.1: rewired to bexplore subprocess (was Potemkin stub - help advertised
+// the verb but dump always returned 0 entries; "server-side subscription
+// not implemented"). Now delegates to the same code path `explore --har` uses.
 async function cmdHar(argv) {
   const sub = argv[0];
-  await _guardAndConnect('har');
-  const HAR_STATE = path.join(os.homedir(), '.glider', 'har-buffer.json');
+  const STATE_PATH = path.join(os.homedir(), '.glider', 'har-state.json');
+  const BUF_HAR = path.join(os.homedir(), '.glider', 'har-buffer.har');
+  const BUF_OUT = path.join(os.homedir(), '.glider', 'har-buffer-out');
+  const readState = () => { try { return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8')); } catch { return null; } };
+  const writeState = (st) => { try { fs.mkdirSync(path.dirname(STATE_PATH), { recursive: true }); } catch {} fs.writeFileSync(STATE_PATH, JSON.stringify(st, null, 2)); };
+  const pidAlive = (pid) => { if (!pid) return false; try { process.kill(pid, 0); return true; } catch { return false; } };
+
   if (sub === 'start') {
-    await httpPost('/cdp', { method: 'Network.enable', params: {} });
-    HAR_BUFFER = { started: new Date().toISOString(), entries: [] };
-    try { fs.mkdirSync(path.dirname(HAR_STATE), { recursive: true }); } catch {}
-    fs.writeFileSync(HAR_STATE, JSON.stringify(HAR_BUFFER));
-    // Note: full HAR requires event subscription (persistent server); here we mark state; user can dump devtools separately if needed.
-    if (jsonOutput) emitJson(true, { started: true, state_file: HAR_STATE });
-    else log.ok(`HAR capture started; state at ${HAR_STATE} (server-side subscription not implemented - stub)`);
+    const url = argv[1];
+    if (!url) { log.fail('Usage: glider har start <url> [--session-id id]'); process.exit(1); }
+    const existing = readState();
+    if (existing && pidAlive(existing.pid)) {
+      log.fail(`HAR capture already running (pid=${existing.pid}, url=${existing.url}). Run 'glider har stop' first.`);
+      process.exit(1);
+    }
+    let sessionId = null;
+    for (let i = 2; i < argv.length; i++) {
+      if (argv[i] === '--session-id' || argv[i] === '--session') sessionId = argv[++i];
+    }
+    if (!sessionId && activeSessionId) sessionId = activeSessionId;
+    await _guardAndConnect('har');
+    try { fs.mkdirSync(BUF_OUT, { recursive: true }); } catch {}
+    try { fs.unlinkSync(BUF_HAR); } catch {}
+    const bexplorePath = path.join(LIB_DIR, 'bexplore.js');
+    const spawnArgs = [bexplorePath, url, '--depth', '0', '--output', BUF_OUT, '--har', BUF_HAR];
+    if (sessionId) spawnArgs.push('--session-id', sessionId);
+    const child = spawn('node', spawnArgs, { detached: true, stdio: ['ignore', 'ignore', 'ignore'] });
+    child.unref();
+    const state = { pid: child.pid, har: BUF_HAR, url, session_id: sessionId, started_at: new Date().toISOString() };
+    writeState(state);
+    if (jsonOutput) emitJson(true, state);
+    else log.ok(`HAR capture started (pid=${child.pid}, url=${url}); dump with 'glider har dump [path]'`);
   } else if (sub === 'stop') {
-    await httpPost('/cdp', { method: 'Network.disable', params: {} });
-    if (jsonOutput) emitJson(true, { stopped: true });
-    else log.ok('HAR capture stopped');
+    const st = readState();
+    if (!st) { log.fail('No HAR capture in progress'); process.exit(1); }
+    if (pidAlive(st.pid)) { try { process.kill(st.pid, 'SIGTERM'); } catch {} }
+    try { fs.unlinkSync(STATE_PATH); } catch {}
+    if (jsonOutput) emitJson(true, { stopped: true, pid: st.pid });
+    else log.ok(`HAR capture stopped (pid=${st.pid})`);
   } else if (sub === 'dump') {
     const p = argv[1] || `/tmp/glider-${Date.now()}.har`;
-    let buf; try { buf = JSON.parse(fs.readFileSync(HAR_STATE, 'utf8')); } catch { buf = { entries: [] }; }
-    const har = { log: { version: '1.2', creator: { name: 'glider', version: require('../package.json').version }, entries: buf.entries } };
-    fs.writeFileSync(p, JSON.stringify(har, null, 2));
-    if (jsonOutput) emitJson(true, { path: p, entries: buf.entries.length });
-    else log.ok(`HAR dumped to ${p} (${buf.entries.length} entries - event stream not yet wired)`);
+    const st = readState();
+    if (!st) { log.fail('No HAR capture in progress. Run: glider har start <url>'); process.exit(1); }
+    const timeoutMs = 60000;
+    const started = Date.now();
+    while (pidAlive(st.pid) && (Date.now() - started) < timeoutMs) {
+      await new Promise(r => setTimeout(r, 500));
+    }
+    if (pidAlive(st.pid)) {
+      log.fail(`HAR child still running after ${timeoutMs}ms; run 'glider har stop' or wait`);
+      process.exit(1);
+    }
+    if (!fs.existsSync(st.har)) {
+      log.fail(`HAR buffer not found at ${st.har} (capture may have failed)`);
+      process.exit(1);
+    }
+    fs.copyFileSync(st.har, p);
+    let entryCount = 0;
+    try { entryCount = JSON.parse(fs.readFileSync(p, 'utf8')).log.entries.length; } catch {}
+    try { fs.unlinkSync(STATE_PATH); } catch {}
+    if (jsonOutput) emitJson(true, { path: p, entries: entryCount });
+    else log.ok(`HAR dumped to ${p} (${entryCount} entries)`);
+  } else if (sub === 'status') {
+    const st = readState();
+    if (!st) { if (jsonOutput) emitJson(true, { running: false }); else console.log('idle'); return; }
+    const alive = pidAlive(st.pid);
+    if (jsonOutput) emitJson(true, { running: alive, ...st });
+    else console.log(`${alive ? 'RUNNING' : 'DONE'} pid=${st.pid} url=${st.url} started=${st.started_at}`);
   } else {
-    log.fail('Usage: glider har start | stop | dump [PATH] | replay <entry-id>'); process.exit(1);
+    log.fail('Usage: glider har start <url> [--session-id id] | stop | dump [PATH] | status'); process.exit(1);
   }
 }
 
