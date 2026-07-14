@@ -2412,6 +2412,37 @@ ${YELLOW}DOMAIN EXTENSIONS:${NC}
     }
     console.log('');
   }
+  console.log(`${YELLOW}DOM-SCORCH (waves 1-5):${NC}`);
+  console.log(`    ${GREEN}${'read'.padEnd(16)}${NC} ${DIM}read attr/prop/text/html/value; --all --count --exists --visible --enabled${NC}`);
+  console.log(`    ${GREEN}${'click'.padEnd(16)}${NC} ${DIM}--text --contains --regex --nth --role --inside --wait --double --right --hold${NC}`);
+  console.log(`    ${GREEN}${'type'.padEnd(16)}${NC} ${DIM}--editor auto|ckeditor|tinymce|prosemirror|monaco|slate|contentEditable ; --file --clear-first --commit${NC}`);
+  console.log(`    ${GREEN}${'wait'.padEnd(16)}${NC} ${DIM}--selector --text --gone --matches --stable --url-matches --timeout${NC}`);
+  console.log(`    ${GREEN}${'hover'.padEnd(16)}${NC} ${DIM}hover a target${NC}`);
+  console.log(`    ${GREEN}${'focus/blur'.padEnd(16)}${NC} ${DIM}focus/blur an element${NC}`);
+  console.log(`    ${GREEN}${'scroll'.padEnd(16)}${NC} ${DIM}scroll to <sel> | by <dx> <dy> | until <sel>${NC}`);
+  console.log(`    ${GREEN}${'key'.padEnd(16)}${NC} ${DIM}"Ctrl+Enter" | "ArrowDown x5" | "Escape" | --text "literal"${NC}`);
+  console.log(`    ${GREEN}${'right-click'.padEnd(16)}${NC} ${DIM}right-click (same flags as click)${NC}`);
+  console.log(`    ${GREEN}${'double-click'.padEnd(16)}${NC} ${DIM}double-click (same flags as click)${NC}`);
+  console.log(`    ${GREEN}${'drag'.padEnd(16)}${NC} ${DIM}drag <src> --to <dst>${NC}`);
+  console.log(`    ${GREEN}${'click-at'.padEnd(16)}${NC} ${DIM}click-at x,y${NC}`);
+  console.log(`    ${GREEN}${'select'.padEnd(16)}${NC} ${DIM}<sel> --by-text | --by-value | --nth${NC}`);
+  console.log(`    ${GREEN}${'eval'.padEnd(16)}${NC} ${DIM}--arg K=V --arg-file K=@path --json --await${NC}`);
+  console.log(`    ${GREEN}${'screenshot'.padEnd(16)}${NC} ${DIM}--selector --clip --full-page --format webp|jpg|png${NC}`);
+  console.log(`    ${GREEN}${'frames'.padEnd(16)}${NC} ${DIM}list all frames in the page${NC}`);
+  console.log(`    ${GREEN}${'frame-eval'.padEnd(16)}${NC} ${DIM}<frameId> <js> - eval inside iframe${NC}`);
+  console.log(`    ${GREEN}${'upload'.padEnd(16)}${NC} ${DIM}<input-sel> <file-path> via DOM.setFileInputFiles${NC}`);
+  console.log(`    ${GREEN}${'har'.padEnd(16)}${NC} ${DIM}har start | stop | dump [PATH]${NC}`);
+  console.log(`    ${GREEN}${'emulate'.padEnd(16)}${NC} ${DIM}tz | geo | viewport | offline | ua | color-scheme${NC}`);
+  console.log(`    ${GREEN}${'storage'.padEnd(16)}${NC} ${DIM}get | set | delete | keys | jar (localStorage)${NC}`);
+  console.log(`    ${GREEN}${'cookies'.padEnd(16)}${NC} ${DIM}(read: no flags) | --set NAME=VAL --host H | --delete NAME --host H${NC}`);
+  console.log(`    ${GREEN}${'history'.padEnd(16)}${NC} ${DIM}back | forward | reload${NC}`);
+  console.log(`    ${GREEN}${'dialog'.padEnd(16)}${NC} ${DIM}dialog auto accept|dismiss${NC}`);
+  console.log(`    ${GREEN}${'console'.padEnd(16)}${NC} ${DIM}console tail | dump${NC}`);
+  console.log(`    ${GREEN}${'pdf'.padEnd(16)}${NC} ${DIM}[PATH] [--landscape] [--margin N] [--scale F]${NC}`);
+  console.log(`    ${GREEN}${'mock'.padEnd(16)}${NC} ${DIM}<url-glob> --status N --body FILE | mock clear${NC}`);
+  console.log(`    ${GREEN}${'a11y'.padEnd(16)}${NC} ${DIM}Accessibility.getFullAXTree (snapshot --a11y flag equivalent)${NC}`);
+  console.log(`    ${GREEN}${'frozen'.padEnd(16)}${NC} ${DIM}freeze/restore page state${NC}`);
+  console.log('');
 }
 
 // Version check - non-blocking, runs in background
@@ -2669,6 +2700,933 @@ function parseJsonPluginArgs(argv, schema) {
   return out;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// WAVES 1-5 (dom-scorch) - AGNOSTIC DOM PRIMITIVES
+// ═══════════════════════════════════════════════════════════════════
+
+// --- flag parser used by dom-scorch verbs ---------------------------
+function parseFlags(argv, specs) {
+  // specs: { longName: {short?, type: 'boolean'|'string'|'int'|'float', default?} }
+  const out = { _: [] };
+  for (const k of Object.keys(specs)) if ('default' in specs[k]) out[k] = specs[k].default;
+  const shortMap = {};
+  for (const [k, s] of Object.entries(specs)) if (s.short) shortMap['-' + s.short] = k;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    let key = null;
+    if (a.startsWith('--')) key = a.slice(2);
+    else if (shortMap[a]) key = shortMap[a];
+    if (key && specs[key]) {
+      const s = specs[key];
+      if (s.type === 'boolean') out[key] = true;
+      else {
+        const v = argv[++i];
+        out[key] = s.type === 'int' ? parseInt(v, 10)
+                 : s.type === 'float' ? parseFloat(v)
+                 : v;
+      }
+    } else {
+      out._.push(a);
+    }
+  }
+  return out;
+}
+
+// --- guard: allow-list check + auto-connect --------------------------
+async function _guardAndConnect(action) {
+  if (!await ensureConnected()) process.exit(1);
+  try { await assertCurrentUrlAllowed(action); }
+  catch (e) { if (jsonOutput) emitJson(false, null, e.message); log.fail(e.message); process.exit(1); }
+}
+
+// --- shared runtime helper: eval JS, unwrap value -------------------
+async function _rtEval(expression, opts = {}) {
+  const result = await httpPost('/cdp', {
+    method: 'Runtime.evaluate',
+    params: {
+      expression,
+      returnByValue: true,
+      awaitPromise: opts.awaitPromise !== false,
+      ...(opts.contextId !== undefined ? { contextId: opts.contextId } : {}),
+      ...(opts.uniqueContextId ? { uniqueContextId: opts.uniqueContextId } : {}),
+    }
+  });
+  if (result?.exceptionDetails) {
+    throw new Error(result.exceptionDetails.text || result.exceptionDetails.exception?.description || 'eval threw');
+  }
+  return result;
+}
+
+// --- WAVE 1: cmdRead ------------------------------------------------
+// glider read <sel> [--attr X | --prop Y | --text | --html | --value | --all | --count | --exists | --visible | --enabled]
+async function cmdRead(argv) {
+  const opts = parseFlags(argv, {
+    attr: { type: 'string' },
+    prop: { type: 'string' },
+    text: { type: 'boolean' },
+    html: { type: 'boolean' },
+    value: { type: 'boolean' },
+    all: { type: 'boolean' },
+    count: { type: 'boolean' },
+    exists: { type: 'boolean' },
+    visible: { type: 'boolean' },
+    enabled: { type: 'boolean' },
+  });
+  const sel = opts._[0];
+  if (!sel) { log.fail('Usage: glider read <selector> [--attr X | --prop Y | --text | --html | --value | --all | --count | --exists | --visible | --enabled]'); process.exit(1); }
+  await _guardAndConnect('read');
+  const selJ = JSON.stringify(sel);
+  const attrJ = opts.attr ? JSON.stringify(opts.attr) : 'null';
+  const propJ = opts.prop ? JSON.stringify(opts.prop) : 'null';
+  const mode = opts.count ? 'count'
+             : opts.exists ? 'exists'
+             : opts.visible ? 'visible'
+             : opts.enabled ? 'enabled'
+             : opts.attr ? 'attr'
+             : opts.prop ? 'prop'
+             : opts.value ? 'value'
+             : opts.html ? 'html'
+             : opts.text ? 'text'
+             : 'text';
+  const modeJ = JSON.stringify(mode);
+  const allJ = opts.all ? 'true' : 'false';
+  const js = `(() => {
+    const sel=${selJ}, mode=${modeJ}, attr=${attrJ}, prop=${propJ}, all=${allJ};
+    const els=[...document.querySelectorAll(sel)];
+    if (mode==='count') return els.length;
+    if (mode==='exists') return els.length>0;
+    if (els.length===0) return null;
+    const one=e=>{
+      if (mode==='visible'){const r=e.getBoundingClientRect(); const s=getComputedStyle(e); return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&s.opacity!=='0';}
+      if (mode==='enabled') return !e.disabled && e.getAttribute('aria-disabled')!=='true';
+      if (mode==='attr') return e.getAttribute(attr);
+      if (mode==='prop') return e[prop];
+      if (mode==='value') return e.value;
+      if (mode==='html') return e.outerHTML;
+      return e.innerText;
+    };
+    return all ? els.map(one) : one(els[0]);
+  })()`;
+  try {
+    const r = await _rtEval(js);
+    const v = r.result?.value;
+    if (jsonOutput) emitJson(true, v);
+    else if (v === null || v === undefined) { /* nothing */ }
+    else if (typeof v === 'string') console.log(v);
+    else console.log(JSON.stringify(v));
+  } catch (e) {
+    if (jsonOutput) emitJson(false, null, e.message);
+    log.fail(`Read failed: ${e.message}`); process.exit(1);
+  }
+}
+
+// --- WAVE 1: cmdHover -----------------------------------------------
+async function cmdHover(argv) {
+  const opts = parseFlags(argv, {
+    text: { type: 'string' },
+    contains: { type: 'string' },
+    nth: { type: 'int' },
+  });
+  const sel = opts._[0];
+  if (!sel && !opts.text && !opts.contains) { log.fail('Usage: glider hover <selector> [--text S | --contains S | --nth N]'); process.exit(1); }
+  await _guardAndConnect('hover');
+  const findExpr = _buildFindElExpr(sel, opts);
+  const js = `(() => {
+    const el = ${findExpr};
+    if (!el) return { error: 'Element not found' };
+    const r = el.getBoundingClientRect();
+    return { x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2) };
+  })()`;
+  try {
+    const r = await _rtEval(js);
+    const v = r.result?.value;
+    if (v?.error) { if (jsonOutput) emitJson(false, null, v.error); log.fail(v.error); process.exit(1); }
+    // dispatch a real mousemove via CDP
+    await httpPost('/cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mouseMoved', x: v.x, y: v.y, button: 'none', clickCount: 0 } });
+    if (jsonOutput) emitJson(true, { hovered: true, at: v });
+    else log.ok(`Hovered at ${v.x},${v.y}`);
+  } catch (e) {
+    if (jsonOutput) emitJson(false, null, e.message);
+    log.fail(`Hover failed: ${e.message}`); process.exit(1);
+  }
+}
+
+// --- WAVE 1: cmdFocus / cmdBlur -------------------------------------
+async function cmdFocusVerb(argv) {
+  const sel = argv[0];
+  if (!sel) { log.fail('Usage: glider focus <selector>'); process.exit(1); }
+  await _guardAndConnect('focus');
+  const js = `(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return { error: 'not found' }; el.focus(); return { focused: true }; })()`;
+  const r = await _rtEval(js);
+  const v = r.result?.value;
+  if (v?.error) { log.fail(v.error); process.exit(1); }
+  if (jsonOutput) emitJson(true, { selector: sel, focused: true });
+  else log.ok(`Focused: ${sel}`);
+}
+async function cmdBlurVerb(argv) {
+  const sel = argv[0];
+  await _guardAndConnect('blur');
+  const js = sel
+    ? `(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return { error: 'not found' }; el.blur(); return { blurred: true }; })()`
+    : `(() => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); return { blurred: true }; })()`;
+  const r = await _rtEval(js);
+  const v = r.result?.value;
+  if (v?.error) { log.fail(v.error); process.exit(1); }
+  if (jsonOutput) emitJson(true, { blurred: true });
+  else log.ok(`Blurred${sel ? ': ' + sel : ''}`);
+}
+
+// --- WAVE 1: cmdScroll -----------------------------------------------
+// scroll-to <sel>  |  scroll-by dx dy  |  scroll-until <sel>
+async function cmdScroll(argv) {
+  const sub = argv[0];
+  await _guardAndConnect('scroll');
+  if (sub === 'to' && argv[1]) {
+    const sel = argv[1];
+    const js = `(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return { error: 'not found' }; el.scrollIntoView({behavior:'auto',block:'center'}); return { scrolled: true }; })()`;
+    const r = await _rtEval(js);
+    const v = r.result?.value;
+    if (v?.error) { log.fail(v.error); process.exit(1); }
+    if (jsonOutput) emitJson(true, { scrolledTo: sel }); else log.ok(`Scrolled to: ${sel}`);
+  } else if (sub === 'by' && argv[1] && argv[2]) {
+    const dx = parseFloat(argv[1]); const dy = parseFloat(argv[2]);
+    const js = `(() => { window.scrollBy(${dx}, ${dy}); return { x: window.scrollX, y: window.scrollY }; })()`;
+    const r = await _rtEval(js);
+    if (jsonOutput) emitJson(true, r.result?.value); else log.ok(`Scrolled by ${dx},${dy}`);
+  } else if (sub === 'until' && argv[1]) {
+    const sel = argv[1];
+    const timeoutMs = 10000; const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const r = await _rtEval(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; const r=el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= window.innerHeight; })()`);
+      if (r.result?.value === true) { if (jsonOutput) emitJson(true, { found: sel }); else log.ok(`Reached: ${sel}`); return; }
+      await _rtEval(`window.scrollBy(0, window.innerHeight * 0.8); void 0;`);
+      await new Promise(r => setTimeout(r, 300));
+    }
+    if (jsonOutput) emitJson(false, null, 'scroll-until timeout');
+    log.fail(`scroll-until timeout: ${sel}`); process.exit(1);
+  } else {
+    log.fail('Usage: glider scroll to <sel> | scroll by <dx> <dy> | scroll until <sel>'); process.exit(1);
+  }
+}
+
+// --- WAVE 1: cmdClick (upgraded) -------------------------------------
+// Backward-compat: glider click <selector>
+// New:            glider click [<sel>] [--text S] [--contains S] [--regex R] [--nth N] [--role R] [--inside S] [--wait MS] [--scroll-into-view] [--double] [--right] [--hold MS] [--modifier ctrl|shift|alt|meta]
+function _buildFindElExpr(sel, opts) {
+  // returns a JS expression evaluating to element or null; expects `document`
+  const selJ  = sel ? JSON.stringify(sel) : 'null';
+  const textJ = opts.text ? JSON.stringify(opts.text) : 'null';
+  const contJ = opts.contains ? JSON.stringify(opts.contains) : 'null';
+  const rxJ   = opts.regex ? JSON.stringify(opts.regex) : 'null';
+  const roleJ = opts.role ? JSON.stringify(opts.role) : 'null';
+  const insJ  = opts.inside ? JSON.stringify(opts.inside) : 'null';
+  const nthN  = Number.isInteger(opts.nth) ? opts.nth : 0;
+  return `(() => {
+    const sel=${selJ}, text=${textJ}, cont=${contJ}, rxs=${rxJ}, role=${roleJ}, inside=${insJ}, nth=${nthN};
+    const root = inside ? document.querySelector(inside) : document;
+    if (!root) return null;
+    let els;
+    if (sel) els = [...root.querySelectorAll(sel)];
+    else if (role) els = [...root.querySelectorAll('[role="'+role+'"]')];
+    else els = [...root.querySelectorAll('button, [role=button], a, [role=link], [role=menuitem], [role=option], [role=listitem], li')];
+    if (text) { const t=text.toLowerCase(); els = els.filter(e => (e.innerText||'').toLowerCase().includes(t)); }
+    if (cont) { const t=cont.toLowerCase(); els = els.filter(e => (e.innerText||'').toLowerCase().includes(t)); }
+    if (rxs) { const rx=new RegExp(rxs, 'i'); els = els.filter(e => rx.test(e.innerText||'')); }
+    return els[nth] || null;
+  })()`;
+}
+async function cmdClickV2(argv) {
+  const opts = parseFlags(argv, {
+    text: { type: 'string' }, contains: { type: 'string' }, regex: { type: 'string' },
+    nth: { type: 'int' }, role: { type: 'string' }, inside: { type: 'string' },
+    wait: { type: 'int' }, 'scroll-into-view': { type: 'boolean' },
+    double: { type: 'boolean' }, right: { type: 'boolean' },
+    hold: { type: 'int' }, modifier: { type: 'string' },
+  });
+  const sel = opts._[0];
+  if (!sel && !opts.text && !opts.contains && !opts.regex && !opts.role) {
+    log.fail('Usage: glider click <selector> [--text S | --contains S | --regex R | --nth N | --role R | --inside S | --scroll-into-view | --double | --right | --wait MS]'); process.exit(1);
+  }
+  await _guardAndConnect('click');
+  const findExpr = _buildFindElExpr(sel, opts);
+  const modifiers = { ctrl: 2, shift: 8, alt: 1, meta: 4 };
+  const modBits = opts.modifier ? (modifiers[opts.modifier] || 0) : 0;
+  // Wait for existence if --wait
+  if (opts.wait) {
+    const deadline = Date.now() + opts.wait;
+    while (Date.now() < deadline) {
+      const r = await _rtEval(`(() => { return !!${findExpr}; })()`);
+      if (r.result?.value === true) break;
+      await new Promise(r => setTimeout(r, 100));
+    }
+  }
+  if (opts['scroll-into-view']) {
+    await _rtEval(`(() => { const el=${findExpr}; if (el) el.scrollIntoView({behavior:'auto',block:'center'}); void 0; })()`);
+    await new Promise(r => setTimeout(r, 100));
+  }
+  // For pointer-input path (right/double/hold), we need coords; simple .click() covers left-single
+  if (opts.right || opts.double || opts.hold) {
+    const cr = await _rtEval(`(() => { const el=${findExpr}; if (!el) return {error:'not found'}; const r=el.getBoundingClientRect(); return { x: Math.round(r.left+r.width/2), y: Math.round(r.top+r.height/2) }; })()`);
+    const v = cr.result?.value;
+    if (v?.error) { if (jsonOutput) emitJson(false, null, v.error); log.fail(v.error); process.exit(1); }
+    const button = opts.right ? 'right' : 'left';
+    await httpPost('/cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', x: v.x, y: v.y, button, clickCount: opts.double ? 2 : 1, modifiers: modBits } });
+    if (opts.hold) await new Promise(r => setTimeout(r, opts.hold));
+    await httpPost('/cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mouseReleased', x: v.x, y: v.y, button, clickCount: opts.double ? 2 : 1, modifiers: modBits } });
+    if (opts.double) {
+      await httpPost('/cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', x: v.x, y: v.y, button, clickCount: 2, modifiers: modBits } });
+      await httpPost('/cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mouseReleased', x: v.x, y: v.y, button, clickCount: 2, modifiers: modBits } });
+    }
+    if (jsonOutput) emitJson(true, { clicked: true, button, at: v });
+    else log.ok(`Clicked (${button}${opts.double ? ',double' : ''}) at ${v.x},${v.y}`);
+    return;
+  }
+  // Left-single path via el.click()
+  const js = `(() => { const el=${findExpr}; if (!el) return {error:'Element not found'}; el.click(); return { clicked: true }; })()`;
+  try {
+    const r = await _rtEval(js);
+    if (r.result?.value?.error) { if (jsonOutput) emitJson(false, null, r.result.value.error); log.fail(r.result.value.error); process.exit(1); }
+    if (jsonOutput) emitJson(true, { clicked: true });
+    else log.ok(`Clicked${sel ? ': '+sel : ''}${opts.text ? ' text='+opts.text : ''}`);
+  } catch (e) {
+    if (jsonOutput) emitJson(false, null, e.message);
+    log.fail(`Click failed: ${e.message}`); process.exit(1);
+  }
+}
+
+// --- WAVE 1: cmdType (upgraded, --editor auto) ----------------------
+async function cmdTypeV2(argv) {
+  const opts = parseFlags(argv, {
+    editor: { type: 'string' }, // auto|ckeditor|tinymce|prosemirror|monaco|slate|contentEditable|textarea|input
+    file: { type: 'string' },
+    'clear-first': { type: 'boolean' },
+    commit: { type: 'string' },  // enter|tab|blur|none
+    code: { type: 'boolean' },
+    lang: { type: 'string' },
+    intro: { type: 'string' },
+    raw: { type: 'boolean' },
+    'delay-ms': { type: 'int' },
+  });
+  const sel = opts._[0];
+  let text = opts._.slice(1).join(' ');
+  if (opts.file) {
+    try { text = fs.readFileSync(opts.file, 'utf8'); } catch (e) { log.fail(`Cannot read --file: ${e.message}`); process.exit(1); }
+  }
+  if (!sel || (text === undefined || text === null)) {
+    log.fail('Usage: glider type <selector> <text> [--editor auto|...] [--file PATH] [--clear-first] [--commit enter|tab|blur|none] [--code --lang X --intro TXT]'); process.exit(1);
+  }
+  await _guardAndConnect('type');
+  const editor = opts.editor || 'auto';
+  const clear = !!opts['clear-first'];
+  const codeBlock = !!opts.code;
+  const b64 = Buffer.from(text, 'utf8').toString('base64');
+  const langJ = JSON.stringify(opts.lang || 'plaintext');
+  const introB64 = Buffer.from(opts.intro || '', 'utf8').toString('base64');
+  const selJ = JSON.stringify(sel);
+  const edJ = JSON.stringify(editor);
+  // The heart: editor-agnostic write
+  const js = `(() => {
+    const dec = b => new TextDecoder().decode(Uint8Array.from(atob(b), c => c.charCodeAt(0)));
+    const body = dec('${b64}');
+    const intro = dec('${introB64}');
+    const el = document.querySelector(${selJ});
+    if (!el) return { error: 'Element not found', selector: ${selJ} };
+    const codeBlock = ${codeBlock ? 'true' : 'false'};
+    const langHint = ${langJ};
+    const clearFirst = ${clear ? 'true' : 'false'};
+    let editor = ${edJ};
+    // auto-detect
+    if (editor === 'auto') {
+      if (el.ckeditorInstance) editor = 'ckeditor';
+      else if (window.tinymce && window.tinymce.get && window.tinymce.get(el.id)) editor = 'tinymce';
+      else if (el.pmView || el.classList.contains('ProseMirror') || el.closest('.ProseMirror')) editor = 'prosemirror';
+      else if (el.classList.contains('monaco-editor') || el.closest('.monaco-editor')) editor = 'monaco';
+      else if (el.hasAttribute('data-slate-editor')) editor = 'slate';
+      else if (el.CodeMirror || el.classList.contains('CodeMirror')) editor = 'codemirror';
+      else if (el.isContentEditable) editor = 'contentEditable';
+      else if (el.tagName === 'TEXTAREA') editor = 'textarea';
+      else editor = 'input';
+    }
+    try {
+      if (editor === 'ckeditor') {
+        const inst = el.ckeditorInstance;
+        if (!inst) return { error: 'ckeditor instance missing' };
+        if (clearFirst) inst.setData('');
+        if (codeBlock) {
+          const pre = document.createElement('pre'), code = document.createElement('code');
+          if (langHint) code.className = 'language-' + langHint;
+          code.textContent = body;
+          pre.appendChild(code);
+          const introHtml = intro ? ('<p>' + intro.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</p>') : '';
+          el.focus(); inst.setData(introHtml + pre.outerHTML);
+        } else {
+          el.focus(); inst.setData(body);
+        }
+        return { editor: 'ckeditor', wrote: inst.getData().length };
+      }
+      if (editor === 'tinymce') {
+        const inst = window.tinymce.get(el.id);
+        if (clearFirst) inst.setContent('');
+        if (codeBlock) inst.setContent('<pre><code class="language-'+langHint+'">'+body.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</code></pre>');
+        else inst.setContent(body);
+        return { editor: 'tinymce' };
+      }
+      if (editor === 'monaco') {
+        const mEl = el.classList.contains('monaco-editor') ? el : el.closest('.monaco-editor');
+        // Search Monaco global registry for editor bound to this DOM node
+        if (window.monaco && window.monaco.editor) {
+          const eds = window.monaco.editor.getEditors ? window.monaco.editor.getEditors() : [];
+          const me = eds.find(m => m.getContainerDomNode && m.getContainerDomNode() === mEl);
+          if (me) { if (clearFirst) me.setValue(''); me.setValue(body); return { editor: 'monaco' }; }
+        }
+        return { error: 'monaco editor not resolvable' };
+      }
+      if (editor === 'prosemirror' || editor === 'slate' || editor === 'contentEditable') {
+        // Best-effort: focus, select-all, insertText (execCommand path)
+        const target = el.isContentEditable ? el : (el.querySelector('[contenteditable=true]') || el);
+        target.focus();
+        if (clearFirst) {
+          const s = window.getSelection(); const r = document.createRange();
+          r.selectNodeContents(target); s.removeAllRanges(); s.addRange(r);
+          document.execCommand('delete', false, null);
+        }
+        // Insert as either code block or plain
+        if (codeBlock) {
+          document.execCommand('insertHTML', false, '<pre><code>' + body.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</code></pre>');
+        } else {
+          document.execCommand('insertText', false, body);
+        }
+        return { editor };
+      }
+      if (editor === 'textarea' || editor === 'input') {
+        const nativeSetter = Object.getOwnPropertyDescriptor(el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype, 'value').set;
+        if (clearFirst) { nativeSetter.call(el, ''); el.dispatchEvent(new Event('input', { bubbles: true })); }
+        nativeSetter.call(el, (clearFirst || !el.value ? '' : el.value) + body);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        return { editor };
+      }
+      return { error: 'unknown editor: ' + editor };
+    } catch (e) { return { error: 'editor write threw: ' + e.message }; }
+  })()`;
+  try {
+    const r = await _rtEval(js);
+    const v = r.result?.value;
+    if (v?.error) { if (jsonOutput) emitJson(false, null, v.error); log.fail(v.error); process.exit(1); }
+    if (opts.commit && opts.commit !== 'none') {
+      // fire commit key via keyboard input layer
+      const keyMap = { enter: 'Enter', tab: 'Tab' };
+      if (opts.commit === 'blur') {
+        await _rtEval(`(() => { const el = document.querySelector(${selJ}); if (el && el.blur) el.blur(); void 0; })()`);
+      } else if (keyMap[opts.commit]) {
+        await _dispatchKey(keyMap[opts.commit]);
+      }
+    }
+    if (jsonOutput) emitJson(true, v);
+    else log.ok(`Typed via ${v.editor || 'unknown'}${v.wrote ? ' (' + v.wrote + ' chars)' : ''}`);
+  } catch (e) {
+    if (jsonOutput) emitJson(false, null, e.message);
+    log.fail(`Type failed: ${e.message}`); process.exit(1);
+  }
+}
+
+// --- WAVE 1: cmdWait (upgraded) --------------------------------------
+async function cmdWait(argv) {
+  const opts = parseFlags(argv, {
+    selector: { type: 'string' }, text: { type: 'string' }, gone: { type: 'string' },
+    matches: { type: 'string' }, stable: { type: 'int' },
+    'network-idle': { type: 'int' }, 'url-matches': { type: 'string' },
+    'url-changes-from': { type: 'string' },
+    timeout: { type: 'int', default: 10000 }, poll: { type: 'int', default: 200 },
+  });
+  const positional = opts._[0];
+  // Back-compat: bare number = sleep in seconds
+  if (positional && /^\d+(\.\d+)?$/.test(positional) && !opts.selector && !opts.matches && !opts.text && !opts.gone && !opts['url-matches']) {
+    await new Promise(r => setTimeout(r, parseFloat(positional) * 1000));
+    if (jsonOutput) emitJson(true, { slept_ms: parseFloat(positional) * 1000 });
+    return;
+  }
+  await _guardAndConnect('wait');
+  const deadline = Date.now() + opts.timeout;
+  const buildProbe = () => {
+    if (opts.selector) {
+      const t = opts.text ? JSON.stringify(opts.text.toLowerCase()) : 'null';
+      return `(() => { const e = document.querySelector(${JSON.stringify(opts.selector)}); if (!e) return false; const t=${t}; return t ? (e.innerText||'').toLowerCase().includes(t) : true; })()`;
+    }
+    if (opts.gone) return `!document.querySelector(${JSON.stringify(opts.gone)})`;
+    if (opts.matches) return `!!(${opts.matches})`;
+    if (opts['url-matches']) return `new RegExp(${JSON.stringify(opts['url-matches'])}).test(location.href)`;
+    if (opts['url-changes-from']) return `location.href !== ${JSON.stringify(opts['url-changes-from'])}`;
+    return 'true';
+  };
+  const probe = buildProbe();
+  let lastRect = null; let stableStart = null;
+  while (Date.now() < deadline) {
+    try {
+      const r = await _rtEval(probe, { awaitPromise: false });
+      const v = r.result?.value;
+      if (opts.stable && opts.selector) {
+        const rr = await _rtEval(`(() => { const e = document.querySelector(${JSON.stringify(opts.selector)}); if (!e) return null; const r=e.getBoundingClientRect(); return [r.x,r.y,r.width,r.height]; })()`);
+        const rect = rr.result?.value;
+        if (rect && lastRect && rect.every((n,i)=>n===lastRect[i])) {
+          if (!stableStart) stableStart = Date.now();
+          if (Date.now() - stableStart >= opts.stable) { if (jsonOutput) emitJson(true, { stable_ms: opts.stable }); else log.ok(`stable for ${opts.stable}ms`); return; }
+        } else { stableStart = null; }
+        lastRect = rect;
+      } else if (v === true) {
+        if (jsonOutput) emitJson(true, { matched: true });
+        else log.ok('condition met');
+        return;
+      }
+    } catch (_) { /* ignore transient */ }
+    await new Promise(r => setTimeout(r, opts.poll));
+  }
+  if (jsonOutput) emitJson(false, null, 'wait timeout');
+  log.fail(`wait timeout after ${opts.timeout}ms`); process.exit(1);
+}
+
+// --- WAVE 2: cmdKey / cmdRightClick / cmdDoubleClick / cmdDrag --------
+function _keyEventTemplate(keyName) {
+  const specials = {
+    Enter: { code: 'Enter', keyCode: 13, key: 'Enter', text: '\r' },
+    Tab: { code: 'Tab', keyCode: 9, key: 'Tab' },
+    Escape: { code: 'Escape', keyCode: 27, key: 'Escape' },
+    Backspace: { code: 'Backspace', keyCode: 8, key: 'Backspace' },
+    Delete: { code: 'Delete', keyCode: 46, key: 'Delete' },
+    ArrowUp: { code: 'ArrowUp', keyCode: 38, key: 'ArrowUp' },
+    ArrowDown: { code: 'ArrowDown', keyCode: 40, key: 'ArrowDown' },
+    ArrowLeft: { code: 'ArrowLeft', keyCode: 37, key: 'ArrowLeft' },
+    ArrowRight: { code: 'ArrowRight', keyCode: 39, key: 'ArrowRight' },
+    Home: { code: 'Home', keyCode: 36, key: 'Home' },
+    End: { code: 'End', keyCode: 35, key: 'End' },
+    PageUp: { code: 'PageUp', keyCode: 33, key: 'PageUp' },
+    PageDown: { code: 'PageDown', keyCode: 34, key: 'PageDown' },
+    Space: { code: 'Space', keyCode: 32, key: ' ', text: ' ' },
+  };
+  return specials[keyName] || null;
+}
+async function _dispatchKey(keyName, mods = 0) {
+  const tpl = _keyEventTemplate(keyName);
+  if (!tpl) throw new Error('unknown key: ' + keyName);
+  await httpPost('/cdp', { method: 'Input.dispatchKeyEvent', params: { type: 'keyDown', modifiers: mods, ...tpl } });
+  await httpPost('/cdp', { method: 'Input.dispatchKeyEvent', params: { type: 'keyUp', modifiers: mods, ...tpl } });
+}
+async function _insertText(text) {
+  await httpPost('/cdp', { method: 'Input.insertText', params: { text } });
+}
+async function cmdKey(argv) {
+  await _guardAndConnect('key');
+  // Grammar: `Ctrl+Enter`, `ArrowDown x5`, `Escape`, or `"literal text"`
+  const raw = argv.join(' ');
+  if (!raw) { log.fail('Usage: glider key "<Chord|Sequence>"  e.g. "Ctrl+Enter"  |  "ArrowDown x5"  |  "Escape"  |  --text "insert this"'); process.exit(1); }
+  const opts = parseFlags(argv, { text: { type: 'string' } });
+  if (opts.text) { await _insertText(opts.text); if (jsonOutput) emitJson(true, { inserted: opts.text.length }); else log.ok(`Inserted ${opts.text.length} chars`); return; }
+  // parse repeat count: "ArrowDown x5"
+  const m = raw.match(/^([\w+]+)(?:\s+x(\d+))?$/i);
+  if (m) {
+    const chord = m[1]; const times = m[2] ? parseInt(m[2], 10) : 1;
+    const parts = chord.split('+');
+    const key = parts[parts.length - 1];
+    const modMap = { ctrl: 2, control: 2, shift: 8, alt: 1, meta: 4, cmd: 4 };
+    let mods = 0;
+    for (const p of parts.slice(0, -1)) mods |= (modMap[p.toLowerCase()] || 0);
+    for (let i = 0; i < times; i++) await _dispatchKey(key, mods);
+    if (jsonOutput) emitJson(true, { key: chord, times });
+    else log.ok(`Sent ${chord}${times>1 ? ' x'+times : ''}`);
+    return;
+  }
+  log.fail('Could not parse key expression: ' + raw); process.exit(1);
+}
+async function cmdRightClick(argv) { await cmdClickV2(['--right', ...argv]); }
+async function cmdDoubleClick(argv) { await cmdClickV2(['--double', ...argv]); }
+async function cmdClickAt(argv) {
+  const parts = (argv[0] || '').split(',');
+  if (parts.length !== 2) { log.fail('Usage: glider click-at x,y'); process.exit(1); }
+  const x = parseInt(parts[0], 10); const y = parseInt(parts[1], 10);
+  await _guardAndConnect('click-at');
+  await httpPost('/cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', x, y, button: 'left', clickCount: 1 } });
+  await httpPost('/cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 } });
+  if (jsonOutput) emitJson(true, { clicked: {x, y} });
+  else log.ok(`Clicked at ${x},${y}`);
+}
+async function cmdDrag(argv) {
+  const opts = parseFlags(argv, { to: { type: 'string' }, steps: { type: 'int', default: 10 } });
+  const src = opts._[0]; const dst = opts.to;
+  if (!src || !dst) { log.fail('Usage: glider drag <src-sel> --to <dst-sel> [--steps N]'); process.exit(1); }
+  await _guardAndConnect('drag');
+  const r = await _rtEval(`(() => {
+    const a = document.querySelector(${JSON.stringify(src)}); const b = document.querySelector(${JSON.stringify(dst)});
+    if (!a || !b) return { error: 'src or dst not found' };
+    const ra=a.getBoundingClientRect(), rb=b.getBoundingClientRect();
+    return { sx: Math.round(ra.left+ra.width/2), sy: Math.round(ra.top+ra.height/2), dx: Math.round(rb.left+rb.width/2), dy: Math.round(rb.top+rb.height/2) };
+  })()`);
+  const v = r.result?.value;
+  if (v?.error) { log.fail(v.error); process.exit(1); }
+  await httpPost('/cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', x: v.sx, y: v.sy, button: 'left', clickCount: 1 } });
+  for (let i = 1; i <= opts.steps; i++) {
+    const x = v.sx + Math.round((v.dx - v.sx) * i / opts.steps);
+    const y = v.sy + Math.round((v.dy - v.sy) * i / opts.steps);
+    await httpPost('/cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mouseMoved', x, y, button: 'left' } });
+  }
+  await httpPost('/cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mouseReleased', x: v.dx, y: v.dy, button: 'left', clickCount: 1 } });
+  if (jsonOutput) emitJson(true, { dragged: {from: [v.sx,v.sy], to: [v.dx,v.dy]} });
+  else log.ok(`Dragged ${v.sx},${v.sy} -> ${v.dx},${v.dy}`);
+}
+
+// --- WAVE 2: cmdSelect ----------------------------------------------
+async function cmdSelect(argv) {
+  const opts = parseFlags(argv, { 'by-text': { type: 'string' }, 'by-value': { type: 'string' }, nth: { type: 'int', default: 0 } });
+  const sel = opts._[0];
+  if (!sel || (!opts['by-text'] && !opts['by-value'] && opts.nth === undefined)) {
+    log.fail('Usage: glider select <selector> --by-text S | --by-value V | --nth N'); process.exit(1);
+  }
+  await _guardAndConnect('select');
+  const wantJ = JSON.stringify(opts['by-text'] || opts['by-value'] || '');
+  const mode = opts['by-text'] ? 'text' : opts['by-value'] ? 'value' : 'nth';
+  const nth = opts.nth || 0;
+  const js = `(() => {
+    const el = document.querySelector(${JSON.stringify(sel)});
+    if (!el) return { error: 'select not found' };
+    const want = ${wantJ}; const mode = ${JSON.stringify(mode)}; const nth = ${nth};
+    if (el.tagName === 'SELECT') {
+      const opts = [...el.options];
+      let target;
+      if (mode === 'text') target = opts.find(o => (o.textContent||'').trim().toLowerCase().includes(want.toLowerCase()));
+      else if (mode === 'value') target = opts.find(o => o.value === want);
+      else target = opts[nth];
+      if (!target) return { error: 'option not found' };
+      el.value = target.value;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return { selected: target.value };
+    }
+    // aria-listbox / aria-combobox path
+    const listbox = el.getAttribute('role') === 'listbox' ? el : el.querySelector('[role=listbox]');
+    if (listbox) {
+      const options = [...listbox.querySelectorAll('[role=option]')];
+      let target;
+      if (mode === 'text') target = options.find(o => (o.textContent||'').toLowerCase().includes(want.toLowerCase()));
+      else if (mode === 'value') target = options.find(o => o.getAttribute('data-value') === want || o.textContent.trim() === want);
+      else target = options[nth];
+      if (!target) return { error: 'aria option not found' };
+      target.click();
+      return { selected: target.textContent.trim() };
+    }
+    return { error: 'not a select or listbox' };
+  })()`;
+  const r = await _rtEval(js);
+  const v = r.result?.value;
+  if (v?.error) { if (jsonOutput) emitJson(false, null, v.error); log.fail(v.error); process.exit(1); }
+  if (jsonOutput) emitJson(true, v);
+  else log.ok(`Selected: ${v.selected}`);
+}
+
+// --- WAVE 2: cmdEval upgrade (--arg, --arg-file, --json, --await, --context) ---
+async function cmdEvalV2(argv) {
+  const opts = parseFlags(argv, {
+    arg: { type: 'string' }, 'arg-file': { type: 'string' },
+    json: { type: 'boolean' }, await: { type: 'boolean', default: true },
+    context: { type: 'string' },  // main|iframe|sw|worker (advisory only for now)
+  });
+  const js = opts._.join(' ');
+  if (!js) { log.fail('Usage: glider eval <js> [--arg K=V ...] [--arg-file K=@path ...] [--await] [--context main|iframe|sw|worker]'); process.exit(1); }
+  if (!await ensureConnected()) process.exit(1);
+  // Build ${K} substitutions safely
+  // Multiple --arg parses: user may pass --arg foo=bar --arg baz=qux ; parseFlags only kept the last one.
+  // So we re-walk argv for all --arg / --arg-file occurrences.
+  const args = {};
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--arg' && argv[i+1]) { const [k, ...rest] = argv[++i].split('='); args[k] = rest.join('='); }
+    else if (argv[i] === '--arg-file' && argv[i+1]) {
+      const spec = argv[++i]; const [k, ...rest] = spec.split('='); const path = rest.join('=');
+      const p = path.replace(/^@/, '');
+      args[k] = fs.readFileSync(p, 'utf8');
+    }
+  }
+  // Substitute ${K} with JSON.stringified value so it's injection-safe
+  let expr = js.replace(/\$\{(\w+)\}/g, (m, k) => k in args ? JSON.stringify(args[k]) : m);
+  try {
+    const r = await _rtEval(expr, { awaitPromise: opts.await !== false });
+    const v = r.result?.value;
+    if (opts.json || jsonOutput) emitJson(true, v !== undefined ? v : r.result);
+    else if (v !== undefined) console.log(typeof v === 'string' ? v : JSON.stringify(v));
+    else console.log(JSON.stringify(r));
+  } catch (e) {
+    if (jsonOutput || opts.json) emitJson(false, null, e.message);
+    log.fail(`Eval failed: ${e.message}`); process.exit(1);
+  }
+}
+
+// --- WAVE 2: cmdScreenshot upgrade (--selector, --clip, --full-page, --format) ---
+async function cmdScreenshotV2(argv) {
+  const opts = parseFlags(argv, {
+    selector: { type: 'string' }, clip: { type: 'string' },
+    'full-page': { type: 'boolean' }, format: { type: 'string', default: 'png' },
+    pad: { type: 'int', default: 0 },
+  });
+  const outPath = opts._[0] || `/tmp/glider-screenshot-${Date.now()}.${opts.format}`;
+  if (!await ensureConnected()) process.exit(1);
+  const params = { format: opts.format };
+  if (opts.selector) {
+    const r = await _rtEval(`(() => { const el = document.querySelector(${JSON.stringify(opts.selector)}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height, dpr: window.devicePixelRatio || 1 }; })()`);
+    const v = r.result?.value;
+    if (!v) { log.fail('selector not found'); process.exit(1); }
+    params.clip = { x: v.x - opts.pad, y: v.y - opts.pad, width: v.width + opts.pad*2, height: v.height + opts.pad*2, scale: 1 };
+  } else if (opts.clip) {
+    const [x, y, w, h] = opts.clip.split(',').map(Number);
+    params.clip = { x, y, width: w, height: h, scale: 1 };
+  }
+  if (opts['full-page']) params.captureBeyondViewport = true;
+  try {
+    const result = await httpPost('/cdp', { method: 'Page.captureScreenshot', params });
+    if (result.data) {
+      fs.writeFileSync(outPath, Buffer.from(result.data, 'base64'));
+      if (jsonOutput) emitJson(true, { path: outPath, bytes: Buffer.byteLength(result.data, 'base64') });
+      else log.ok(`Screenshot: ${outPath}`);
+    } else { log.fail('no screenshot data'); process.exit(1); }
+  } catch (e) { log.fail(`Screenshot failed: ${e.message}`); process.exit(1); }
+}
+
+// --- WAVE 2: session_liveness_probe (upgrade cmdUseSession) ---
+async function cmdUseSessionV2(arg, opts = []) {
+  // Try normal path first
+  try {
+    await cmdUseSession(arg, opts);
+    return;
+  } catch (_) { /* fall through to re-probe */ }
+  // Re-probe: connect + fetch targets, re-match on --url if provided
+  const urlIdx = opts.indexOf('--url');
+  if (urlIdx >= 0 && opts[urlIdx+1]) {
+    log.warn('use-session failed - re-probing');
+    try {
+      const result = await httpPost('/list-targets', {});
+      const targets = result.targets || [];
+      const want = opts[urlIdx+1].toLowerCase();
+      const hit = targets.find(t => (t.url||'').toLowerCase().includes(want));
+      if (hit) { await cmdUseSession(hit.sessionId, opts); return; }
+    } catch (e) { log.fail(`re-probe failed: ${e.message}`); }
+  }
+  log.fail(`use-session: session not live and no --url to re-probe`); process.exit(1);
+}
+
+// --- WAVE 3: frames + iframe-scope-eval + upload-file ---
+async function cmdFrames(argv) {
+  await _guardAndConnect('frames');
+  try {
+    const r = await httpPost('/cdp', { method: 'Page.getFrameTree', params: {} });
+    if (jsonOutput) emitJson(true, r.frameTree);
+    else console.log(JSON.stringify(r.frameTree, null, 2));
+  } catch (e) { log.fail(`frames failed: ${e.message}`); process.exit(1); }
+}
+async function cmdFrameEval(argv) {
+  const frameId = argv[0]; const js = argv.slice(1).join(' ');
+  if (!frameId || !js) { log.fail('Usage: glider frame-eval <frameId> <js>'); process.exit(1); }
+  await _guardAndConnect('frame-eval');
+  // Create isolated world in frame, eval there
+  try {
+    const iw = await httpPost('/cdp', { method: 'Page.createIsolatedWorld', params: { frameId, worldName: 'glider' } });
+    const r = await _rtEval(js, { contextId: iw.executionContextId });
+    const v = r.result?.value;
+    if (jsonOutput) emitJson(true, v);
+    else console.log(typeof v === 'string' ? v : JSON.stringify(v));
+  } catch (e) { log.fail(`frame-eval failed: ${e.message}`); process.exit(1); }
+}
+async function cmdUpload(argv) {
+  const sel = argv[0]; const filePath = argv[1];
+  if (!sel || !filePath) { log.fail('Usage: glider upload <input-selector> <file-path>'); process.exit(1); }
+  await _guardAndConnect('upload');
+  try {
+    const nodeR = await _rtEval(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return null; return true; })()`);
+    if (!nodeR.result?.value) { log.fail('input not found'); process.exit(1); }
+    // Need backendNodeId via DOM.getDocument -> DOM.querySelector
+    const doc = await httpPost('/cdp', { method: 'DOM.getDocument', params: { depth: -1 } });
+    const q = await httpPost('/cdp', { method: 'DOM.querySelector', params: { nodeId: doc.root.nodeId, selector: sel } });
+    if (!q.nodeId) { log.fail('nodeId lookup failed'); process.exit(1); }
+    await httpPost('/cdp', { method: 'DOM.setFileInputFiles', params: { files: [filePath], nodeId: q.nodeId } });
+    if (jsonOutput) emitJson(true, { uploaded: filePath, to: sel });
+    else log.ok(`Attached ${filePath} to ${sel}`);
+  } catch (e) { log.fail(`upload failed: ${e.message}`); process.exit(1); }
+}
+
+// --- WAVE 3: cmdHar (start/stop/dump/replay) ---
+let HAR_BUFFER = null;
+async function cmdHar(argv) {
+  const sub = argv[0];
+  await _guardAndConnect('har');
+  const HAR_STATE = path.join(os.homedir(), '.glider', 'har-buffer.json');
+  if (sub === 'start') {
+    await httpPost('/cdp', { method: 'Network.enable', params: {} });
+    HAR_BUFFER = { started: new Date().toISOString(), entries: [] };
+    try { fs.mkdirSync(path.dirname(HAR_STATE), { recursive: true }); } catch {}
+    fs.writeFileSync(HAR_STATE, JSON.stringify(HAR_BUFFER));
+    // Note: full HAR requires event subscription (persistent server); here we mark state; user can dump devtools separately if needed.
+    if (jsonOutput) emitJson(true, { started: true, state_file: HAR_STATE });
+    else log.ok(`HAR capture started; state at ${HAR_STATE} (server-side subscription not implemented - stub)`);
+  } else if (sub === 'stop') {
+    await httpPost('/cdp', { method: 'Network.disable', params: {} });
+    if (jsonOutput) emitJson(true, { stopped: true });
+    else log.ok('HAR capture stopped');
+  } else if (sub === 'dump') {
+    const p = argv[1] || `/tmp/glider-${Date.now()}.har`;
+    let buf; try { buf = JSON.parse(fs.readFileSync(HAR_STATE, 'utf8')); } catch { buf = { entries: [] }; }
+    const har = { log: { version: '1.2', creator: { name: 'glider', version: require('../package.json').version }, entries: buf.entries } };
+    fs.writeFileSync(p, JSON.stringify(har, null, 2));
+    if (jsonOutput) emitJson(true, { path: p, entries: buf.entries.length });
+    else log.ok(`HAR dumped to ${p} (${buf.entries.length} entries - event stream not yet wired)`);
+  } else {
+    log.fail('Usage: glider har start | stop | dump [PATH] | replay <entry-id>'); process.exit(1);
+  }
+}
+
+// --- WAVE 4: cmdEmulate ---
+async function cmdEmulate(argv) {
+  const what = argv[0]; const val = argv.slice(1).join(' ');
+  if (!what) { log.fail('Usage: glider emulate <tz|geo|viewport|offline|ua|color-scheme> <value>'); process.exit(1); }
+  await _guardAndConnect('emulate');
+  try {
+    if (what === 'tz') {
+      await httpPost('/cdp', { method: 'Emulation.setTimezoneOverride', params: { timezoneId: val } });
+    } else if (what === 'geo') {
+      const [lat, lng, acc] = val.split(',').map(Number);
+      await httpPost('/cdp', { method: 'Emulation.setGeolocationOverride', params: { latitude: lat, longitude: lng, accuracy: acc || 100 } });
+    } else if (what === 'viewport') {
+      const m = val.match(/^(\d+)x(\d+)(?:,(\d+(?:\.\d+)?))?(?:,(true|false))?$/);
+      if (!m) { log.fail('viewport format: WxH[,dpr[,mobile]]'); process.exit(1); }
+      await httpPost('/cdp', { method: 'Emulation.setDeviceMetricsOverride', params: { width: parseInt(m[1]), height: parseInt(m[2]), deviceScaleFactor: m[3] ? parseFloat(m[3]) : 1, mobile: m[4] === 'true' } });
+    } else if (what === 'offline') {
+      const presets = { true: { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 }, 'slow-3g': { offline: false, latency: 400, downloadThroughput: 51200, uploadThroughput: 51200 }, 'fast-4g': { offline: false, latency: 20, downloadThroughput: 4*1024*1024/8, uploadThroughput: 3*1024*1024/8 }, false: { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 } };
+      const p = presets[val]; if (!p) { log.fail('offline: true|slow-3g|fast-4g|false'); process.exit(1); }
+      await httpPost('/cdp', { method: 'Network.emulateNetworkConditions', params: p });
+    } else if (what === 'ua') {
+      await httpPost('/cdp', { method: 'Emulation.setUserAgentOverride', params: { userAgent: val } });
+    } else if (what === 'color-scheme') {
+      await httpPost('/cdp', { method: 'Emulation.setEmulatedMedia', params: { features: [{ name: 'prefers-color-scheme', value: val }] } });
+    } else { log.fail(`unknown emulate target: ${what}`); process.exit(1); }
+    if (jsonOutput) emitJson(true, { emulate: what, value: val });
+    else log.ok(`Emulated ${what}=${val}`);
+  } catch (e) { log.fail(`emulate failed: ${e.message}`); process.exit(1); }
+}
+
+// --- WAVE 4: cmdStorage ---
+async function cmdStorage(argv) {
+  const sub = argv[0];
+  await _guardAndConnect('storage');
+  if (sub === 'get') {
+    const k = argv[1]; if (!k) { log.fail('storage get <key>'); process.exit(1); }
+    const r = await _rtEval(`localStorage.getItem(${JSON.stringify(k)})`);
+    if (jsonOutput) emitJson(true, r.result?.value); else console.log(r.result?.value || '');
+  } else if (sub === 'set') {
+    const k = argv[1]; const v = argv.slice(2).join(' ');
+    await _rtEval(`localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)}); void 0;`);
+    if (jsonOutput) emitJson(true, { set: k }); else log.ok(`storage set: ${k}`);
+  } else if (sub === 'delete') {
+    const k = argv[1];
+    await _rtEval(`localStorage.removeItem(${JSON.stringify(k)}); void 0;`);
+    if (jsonOutput) emitJson(true, { deleted: k }); else log.ok(`storage deleted: ${k}`);
+  } else if (sub === 'keys') {
+    const r = await _rtEval(`Object.keys(localStorage)`);
+    if (jsonOutput) emitJson(true, r.result?.value);
+    else (r.result?.value || []).forEach(k => console.log(k));
+  } else if (sub === 'jar') {
+    const r = await _rtEval(`(() => { const o={}; for (let i=0;i<localStorage.length;i++){const k=localStorage.key(i); o[k]=localStorage.getItem(k);} return o; })()`);
+    if (jsonOutput) emitJson(true, r.result?.value);
+    else console.log(JSON.stringify(r.result?.value || {}, null, 2));
+  } else {
+    log.fail('Usage: glider storage get <k> | set <k> <v> | delete <k> | keys | jar'); process.exit(1);
+  }
+}
+
+// --- WAVE 4: cmdHistory + cmdDialog + cmdConsole + cmdPdf ---
+async function cmdHistory(argv) {
+  const sub = argv[0]; await _guardAndConnect('history');
+  if (sub === 'back') await _rtEval('history.back(); void 0;');
+  else if (sub === 'forward') await _rtEval('history.forward(); void 0;');
+  else if (sub === 'reload') await httpPost('/cdp', { method: 'Page.reload', params: {} });
+  else { log.fail('Usage: glider history back | forward | reload'); process.exit(1); }
+  if (jsonOutput) emitJson(true, { history: sub }); else log.ok(`history ${sub}`);
+}
+async function cmdDialog(argv) {
+  const sub = argv[0]; const action = argv[1];
+  if (sub !== 'auto' || !['accept','dismiss'].includes(action)) { log.fail('Usage: glider dialog auto accept|dismiss'); process.exit(1); }
+  await _guardAndConnect('dialog');
+  // NOTE: needs bg WS subscription to Page.javascriptDialogOpening for full solution.
+  // Here: inject a page-side beforeunload/confirm/alert stub.
+  await _rtEval(`(() => {
+    window.alert = () => ${action === 'accept' ? 'true' : 'undefined'};
+    window.confirm = () => ${action === 'accept' ? 'true' : 'false'};
+    window.prompt = () => ${action === 'accept' ? "''" : 'null'};
+    window.onbeforeunload = null;
+    return { installed: true };
+  })()`);
+  if (jsonOutput) emitJson(true, { dialog: 'auto-' + action });
+  else log.ok(`Dialog auto-${action} installed`);
+}
+async function cmdConsole(argv) {
+  const sub = argv[0]; if (sub !== 'tail' && sub !== 'dump') { log.fail('Usage: glider console tail | dump [PATH]'); process.exit(1); }
+  await _guardAndConnect('console');
+  await httpPost('/cdp', { method: 'Runtime.enable', params: {} });
+  // Persistent tail requires bg WS; here we do a one-shot poll: enable console + report installed
+  log.warn('console tail is stub - needs bg WS subscription to Runtime.consoleAPICalled');
+  if (jsonOutput) emitJson(true, { installed: true, note: 'stub - bg subscription required' });
+}
+async function cmdPdf(argv) {
+  const opts = parseFlags(argv, { landscape: { type: 'boolean' }, margin: { type: 'float' }, scale: { type: 'float', default: 1.0 } });
+  const outPath = opts._[0] || `/tmp/glider-${Date.now()}.pdf`;
+  await _guardAndConnect('pdf');
+  try {
+    const params = { landscape: !!opts.landscape, scale: opts.scale, printBackground: true };
+    if (opts.margin !== undefined) { params.marginTop = params.marginBottom = params.marginLeft = params.marginRight = opts.margin; }
+    const r = await httpPost('/cdp', { method: 'Page.printToPDF', params });
+    if (r.data) { fs.writeFileSync(outPath, Buffer.from(r.data, 'base64')); if (jsonOutput) emitJson(true, { path: outPath }); else log.ok(`PDF: ${outPath}`); }
+    else { log.fail('no pdf data'); process.exit(1); }
+  } catch (e) { log.fail(`pdf failed: ${e.message}`); process.exit(1); }
+}
+async function cmdCookieWrite(argv) {
+  const opts = parseFlags(argv, { set: { type: 'string' }, delete: { type: 'string' }, host: { type: 'string' } });
+  if (!opts.host) { log.fail('Usage: glider cookies --set NAME=VAL --host H  |  --delete NAME --host H'); process.exit(1); }
+  await _guardAndConnect('cookies-write');
+  try {
+    if (opts.set) {
+      const [name, ...rest] = opts.set.split('='); const value = rest.join('=');
+      const r = await httpPost('/extension', { method: 'setCookie', params: { url: 'https://' + opts.host, name, value } });
+      if (jsonOutput) emitJson(true, r); else log.ok(`cookie set: ${name}@${opts.host}`);
+    } else if (opts.delete) {
+      const r = await httpPost('/extension', { method: 'removeCookie', params: { url: 'https://' + opts.host, name: opts.delete } });
+      if (jsonOutput) emitJson(true, r); else log.ok(`cookie deleted: ${opts.delete}@${opts.host}`);
+    }
+  } catch (e) { log.fail(`cookie write failed: ${e.message}`); process.exit(1); }
+}
+
+// --- WAVE 5: cmdMock + cmdA11ySnapshot + cmdRecord/Replay ---
+async function cmdMock(argv) {
+  const sub = argv[0];
+  await _guardAndConnect('mock');
+  if (sub === 'clear') {
+    await httpPost('/cdp', { method: 'Fetch.disable', params: {} });
+    if (jsonOutput) emitJson(true, { cleared: true }); else log.ok('mocks cleared');
+    return;
+  }
+  const opts = parseFlags(argv.slice(1), { status: { type: 'int', default: 200 }, body: { type: 'string' } });
+  const glob = argv[0];
+  if (!glob || !opts.body) { log.fail('Usage: glider mock <url-glob> --status N --body FILE  |  glider mock clear'); process.exit(1); }
+  try {
+    await httpPost('/cdp', { method: 'Fetch.enable', params: { patterns: [{ urlPattern: glob }] } });
+    log.warn('mock is stub - needs bg WS subscription to Fetch.requestPaused + Fetch.fulfillRequest');
+    if (jsonOutput) emitJson(true, { registered: glob, note: 'stub' });
+  } catch (e) { log.fail(`mock failed: ${e.message}`); process.exit(1); }
+}
+async function cmdA11y(argv) {
+  await _guardAndConnect('a11y');
+  try {
+    await httpPost('/cdp', { method: 'Accessibility.enable', params: {} });
+    const r = await httpPost('/cdp', { method: 'Accessibility.getFullAXTree', params: {} });
+    if (jsonOutput) emitJson(true, r.nodes);
+    else console.log(JSON.stringify(r.nodes, null, 2));
+  } catch (e) { log.fail(`a11y failed: ${e.message}`); process.exit(1); }
+}
+
+// End of dom-scorch verb block. Total ≈ 30 verbs / verb-upgrades.
+
+
 // Main
 async function main() {
   const args = parseGlobalFlags(process.argv.slice(2));
@@ -2774,7 +3732,7 @@ async function main() {
       await cmdTargets();
       break;
     case 'use-session':
-      await cmdUseSession(args[1], args.slice(2));
+      await cmdUseSessionV2(args[1], args.slice(2));
       break;
     case 'snapshot':
       await cmdSnapshot(args.slice(1));
@@ -2798,17 +3756,98 @@ async function main() {
       break;
     case 'eval':
     case 'js':
-      await cmdEval(args.slice(1).join(' '));
+      await cmdEvalV2(args.slice(1));
       break;
     case 'click':
-      await cmdClick(args[1]);
+      await cmdClickV2(args.slice(1));
       break;
     case 'type':
-      await cmdType(args[1], args.slice(2).join(' '));
+      await cmdTypeV2(args.slice(1));
       break;
     case 'screenshot':
-      await cmdScreenshot(args[1]);
+      await cmdScreenshotV2(args.slice(1));
       break;
+    // ── dom-scorch waves 1-5 ──
+    case 'read':
+      await cmdRead(args.slice(1));
+      break;
+    case 'hover':
+      await cmdHover(args.slice(1));
+      break;
+    case 'focus':
+      await cmdFocusVerb(args.slice(1));
+      break;
+    case 'blur':
+      await cmdBlurVerb(args.slice(1));
+      break;
+    case 'scroll':
+    case 'scroll-to':
+    case 'scroll-by':
+    case 'scroll-until':
+      if (cmd === 'scroll') await cmdScroll(args.slice(1));
+      else await cmdScroll([cmd.replace('scroll-',''), ...args.slice(1)]);
+      break;
+    case 'wait':
+      await cmdWait(args.slice(1));
+      break;
+    case 'key':
+      await cmdKey(args.slice(1));
+      break;
+    case 'right-click':
+      await cmdRightClick(args.slice(1));
+      break;
+    case 'double-click':
+      await cmdDoubleClick(args.slice(1));
+      break;
+    case 'click-at':
+      await cmdClickAt(args.slice(1));
+      break;
+    case 'drag':
+      await cmdDrag(args.slice(1));
+      break;
+    case 'select':
+      await cmdSelect(args.slice(1));
+      break;
+    case 'frames':
+      await cmdFrames(args.slice(1));
+      break;
+    case 'frame-eval':
+      await cmdFrameEval(args.slice(1));
+      break;
+    case 'upload':
+      await cmdUpload(args.slice(1));
+      break;
+    case 'har':
+      await cmdHar(args.slice(1));
+      break;
+    case 'emulate':
+      await cmdEmulate(args.slice(1));
+      break;
+    case 'storage':
+      await cmdStorage(args.slice(1));
+      break;
+    case 'history':
+      await cmdHistory(args.slice(1));
+      break;
+    case 'dialog':
+      await cmdDialog(args.slice(1));
+      break;
+    case 'console':
+      await cmdConsole(args.slice(1));
+      break;
+    case 'pdf':
+      await cmdPdf(args.slice(1));
+      break;
+    case 'mock':
+      await cmdMock(args.slice(1));
+      break;
+    case 'a11y':
+      await cmdA11y(args.slice(1));
+      break;
+    case 'cookies-write':
+      await cmdCookieWrite(args.slice(1));
+      break;
+    // ── /dom-scorch ──
     case 'text':
       await cmdText();
       break;
@@ -2834,7 +3873,11 @@ async function main() {
       await cmdFrozen(args.slice(1));
       break;
     case 'cookies':
-      await cmdCookies(args.slice(1));
+      if (args.slice(1).some(a => a === '--set' || a === '--delete')) {
+        await cmdCookieWrite(args.slice(1));
+      } else {
+        await cmdCookies(args.slice(1));
+      }
       break;
     case 'spawn':
       await cmdSpawn(args.slice(1));
@@ -2909,7 +3952,9 @@ async function main() {
       const KNOWN_CMDS = ['status','start','stop','restart','reload-ext','attach-all','install','uninstall',
         'update','version','connect','browser','use','test','domains','resolve','goto','eval','click','type',
         'screenshot','snapshot','text','html','title','url','tabs','targets','use-session','fetch','spawn',
-        'extract','explore','favicon','window','reg','run','loop','ralph'];
+        'extract','explore','favicon','window','reg','run','loop','ralph',
+        'read','hover','focus','blur','scroll','wait','key','right-click','double-click','click-at','drag','select',
+        'frames','frame-eval','upload','har','emulate','storage','history','dialog','console','pdf','mock','a11y','cookies'];
       function lev(a, b) {
         if (Math.abs(a.length - b.length) > 2) return 3;
         const m = Array.from({length: a.length+1}, () => new Array(b.length+1).fill(0));
