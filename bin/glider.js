@@ -1939,14 +1939,18 @@ async function cmdExplore(url, opts = []) {
   let outputDir = '/tmp/glider-explore';
   let harFile = null;
   let sessionId = null;
+  let freshTab = false;
+  let closeOnDone = false;
   
   for (let i = 0; i < opts.length; i++) {
     if (opts[i] === '--depth' || opts[i] === '-d') depth = parseInt(opts[++i], 10);
     else if (opts[i] === '--output' || opts[i] === '-o') outputDir = opts[++i];
     else if (opts[i] === '--har') harFile = opts[++i];
     else if (opts[i] === '--session-id' || opts[i] === '--session') sessionId = opts[++i];
+    else if (opts[i] === '--fresh-tab') freshTab = true;
+    else if (opts[i] === '--close-on-done') closeOnDone = true;
   }
-  if (!sessionId && activeSessionId) sessionId = activeSessionId;
+  if (!sessionId && !freshTab && activeSessionId) sessionId = activeSessionId;
 
   try {
     assertUrlAllowed(url, allowedDomainList, 'explore');
@@ -1956,6 +1960,29 @@ async function cmdExplore(url, opts = []) {
     process.exit(1);
   }
   
+  // v0.4.2: --fresh-tab sidesteps H4 (CSS.enable forwardCDPCommand timeout
+  // on long-lived session reuse). Opens a new tab, waits for target attach,
+  // uses the new session-id, and optionally closes on done.
+  let freshTargetId = null;
+  if (freshTab) {
+    const { WindowManager } = require(path.join(LIB_DIR, 'bwindow.js'));
+    const wm = new WindowManager();
+    await wm.connect();
+    await wm.init();
+    log.info(`[explore] Opening fresh tab for capture...`);
+    const result = await wm.createTab(url);
+    freshTargetId = result.targetId;
+    await new Promise(r => setTimeout(r, 2500));
+    try {
+      const targetsRes = await httpGet('/targets');
+      const targets = (targetsRes && targetsRes.targets) || targetsRes || [];
+      const t = (Array.isArray(targets) ? targets : []).find(x => x.targetId === freshTargetId);
+      if (t && t.sessionId) sessionId = t.sessionId;
+    } catch {}
+    if (!sessionId) log.info('[explore] fresh-tab created but sessionId not resolved (bexplore will auto-pin)');
+    else log.ok(`[explore] fresh-tab session: ${sessionId}`);
+  }
+
   log.info(`Exploring: ${url} (depth: ${depth})`);
   
   // Use the bexplore.js library
@@ -1969,9 +1996,24 @@ async function cmdExplore(url, opts = []) {
     const child = spawn('node', spawnArgs, {
       stdio: 'inherit'
     });
-    await new Promise((resolve, reject) => {
-      child.on('close', code => code === 0 ? resolve() : reject(new Error(`Exit code: ${code}`)));
-    });
+    try {
+      await new Promise((resolve, reject) => {
+        child.on('close', code => code === 0 ? resolve() : reject(new Error(`Exit code: ${code}`)));
+      });
+    } finally {
+      if (freshTab && closeOnDone && freshTargetId) {
+        try {
+          const { WindowManager } = require(path.join(LIB_DIR, 'bwindow.js'));
+          const wm = new WindowManager();
+          await wm.connect();
+          await wm.init();
+          await wm.closeTarget(freshTargetId);
+          log.ok(`[explore] fresh-tab closed: ${freshTargetId}`);
+        } catch (e) {
+          log.info(`[explore] fresh-tab close failed: ${e.message}`);
+        }
+      }
+    }
   } else {
     // Fallback: simple exploration
     await cmdGoto(url);
