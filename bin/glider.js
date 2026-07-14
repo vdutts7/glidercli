@@ -1488,6 +1488,198 @@ async function cmdCorsFetch(url, opts = []) {
   }
 }
 
+
+// Detect if the attached tab is under Chrome hidden-tab throttling.
+// Primitive: runtime_evaluate_sync_reads.
+// Recipe: eval document.visibilityState + '|' + document.hidden.
+// Semantics: 'hidden|true' → macrotasks (setTimeout/fetch/XHR/workers) will not fire.
+// Exit code: 0 if visible, 1 if hidden (chainable in scripts).
+async function cmdFrozen(opts = []) {
+  let sessionId = null;
+  for (let i = 0; i < opts.length; i++) {
+    const a = opts[i];
+    if (a === '--session' || a === '--sessionId') sessionId = opts[++i];
+    else if (a === '--help') {
+      console.log('Usage: glider frozen [--session <id>]');
+      console.log('  Detect whether the attached tab is macrotask-frozen (hidden).');
+      console.log('  Exit code: 0 = visible, 1 = hidden (frozen).');
+      return;
+    }
+  }
+  if (!await ensureConnected()) process.exit(1);
+
+  const js = `document.visibilityState + '|' + document.hidden + '|' + (document.wasDiscarded||false)`;
+  try {
+    const cdpParams = { method: 'Runtime.evaluate', params: { expression: js, returnByValue: true } };
+    if (sessionId) cdpParams.sessionId = sessionId;
+    const result = await httpPost('/cdp', cdpParams);
+    if (result && result.error && !result.result) {
+      const msg = `CDP error: ${typeof result.error === 'string' ? result.error : JSON.stringify(result.error)}`;
+      if (jsonOutput) emitJson(false, null, msg);
+      log.fail(msg);
+      process.exit(2);
+    }
+    const value = result?.result?.value;
+    if (!value) {
+      if (jsonOutput) emitJson(false, null, 'no value');
+      log.fail('No value returned');
+      process.exit(2);
+    }
+    const [visibilityState, hidden, wasDiscarded] = String(value).split('|');
+    const frozen = hidden === 'true';
+    const out = { visibilityState, hidden: frozen, wasDiscarded: wasDiscarded === 'true', frozen };
+    if (jsonOutput) {
+      emitJson(true, out);
+    } else {
+      if (frozen) {
+        log.warn(`FROZEN - visibilityState=${visibilityState} hidden=${hidden} wasDiscarded=${wasDiscarded}`);
+        log.info('Macrotasks (setTimeout/fetch/XHR/workers) will not fire until user focuses tab.');
+      } else {
+        log.ok(`live - visibilityState=${visibilityState} hidden=${hidden} wasDiscarded=${wasDiscarded}`);
+      }
+    }
+    process.exit(frozen ? 1 : 0);
+  } catch (e) {
+    if (jsonOutput) emitJson(false, null, e.message);
+    log.fail(`frozen check failed: ${e.message}`);
+    process.exit(2);
+  }
+}
+
+// List cookies for a URL (including HttpOnly) via extension chrome.cookies.getAll bridge.
+// Primitive: extension_ws_bridge (background.js exposes method:'getCookies').
+// Note: this reads via the CRX cookies API - HttpOnly cookies (ESTSAUTH, s.SessID etc.)
+//       ARE returned because MV3 extensions with "cookies" permission bypass the JS wall.
+async function cmdCookies(opts = []) {
+  let url = null;
+  let host = null;         // convenience: bare host → https://<host>/
+  let name = null;         // optional exact-name filter
+  let showValue = false;   // print full cookie value (default: mask)
+  let asHeader = false;    // emit as ready-to-paste "Cookie: k=v; k=v" line
+
+  const positional = [];
+  for (let i = 0; i < opts.length; i++) {
+    const a = opts[i];
+    if (a === '--url' || a === '-u') url = opts[++i];
+    else if (a === '--host' || a === '-h') host = opts[++i];
+    else if (a === '--name' || a === '-n') name = opts[++i];
+    else if (a === '--value' || a === '--secret' || a === '--full') showValue = true;
+    else if (a === '--header' || a === '--as-header') asHeader = true;
+    else if (a === '--help') {
+      console.log('Usage: glider cookies <url> | --host <h> | --url <u> [--name <n>] [--value] [--header] [--json]');
+      console.log('  Read cookies (INCLUDING HttpOnly) for a URL via the extension cookies API.');
+      console.log('  --host <h>   convenience: expands to https://<h>/');
+      console.log('  --name <n>   filter to a single cookie by exact name');
+      console.log('  --value      print full cookie value (default: masked)');
+      console.log('  --header     emit as "Cookie: k=v; k=v" header line');
+      return;
+    }
+    else if (!a.startsWith('-')) positional.push(a);
+  }
+  if (!url && positional.length) url = positional[0];
+  if (!url && host) url = /^https?:\/\//i.test(host) ? host : `https://${host}/`;
+  if (!url) {
+    log.fail('Usage: glider cookies <url> | --host <h> | --url <u>');
+    process.exit(1);
+  }
+
+  if (!await ensureConnected()) process.exit(1);
+
+  try {
+    const payload = await httpPost('/extension', {
+      method: 'getCookies',
+      params: { url }
+    });
+
+    if (!payload || payload.error) {
+      const msg = payload?.error || 'no response from extension';
+      if (jsonOutput) emitJson(false, null, msg);
+      log.fail(`cookies fetch failed: ${msg}`);
+      log.info('Requires glider CRX >= 0.3.21 (bg handler "getCookies"). Reload the extension if just updated.');
+      process.exit(1);
+    }
+
+    let cookies = payload.data || payload.result?.cookies || payload.cookies || [];
+    if (!Array.isArray(cookies)) {
+      if (jsonOutput) emitJson(false, null, 'unexpected response shape');
+      log.fail('unexpected response shape from extension');
+      console.error(JSON.stringify(payload).slice(0, 500));
+      process.exit(1);
+    }
+    if (name) cookies = cookies.filter(c => c.name === name);
+
+    // Filter expired
+    const nowSec = Math.floor(Date.now() / 1000);
+    for (const c of cookies) {
+      if (c.expirationDate) {
+        c._expires_in_sec = Math.floor(c.expirationDate - nowSec);
+        c._expired = c._expires_in_sec < 0;
+      } else {
+        c._expires_in_sec = null;
+        c._expired = false; // session cookie
+      }
+    }
+
+    if (asHeader) {
+      const line = cookies
+        .filter(c => !c._expired)
+        .map(c => `${c.name}=${c.value}`)
+        .join('; ');
+      if (jsonOutput) emitJson(true, { header: line, count: cookies.length });
+      else console.log(line);
+      return;
+    }
+
+    if (jsonOutput) {
+      const out = cookies.map(c => ({
+        name: c.name,
+        domain: c.domain,
+        path: c.path,
+        httpOnly: !!c.httpOnly,
+        secure: !!c.secure,
+        sameSite: c.sameSite,
+        session: !!c.session,
+        expirationDate: c.expirationDate || null,
+        expires_in_sec: c._expires_in_sec,
+        expired: c._expired,
+        value: showValue ? c.value : maskCookieValue(c.value),
+      }));
+      emitJson(true, { url, count: out.length, cookies: out });
+      return;
+    }
+
+    if (cookies.length === 0) {
+      log.warn(name ? `No cookie named "${name}" for ${url}` : `No cookies for ${url}`);
+      return;
+    }
+    log.ok(`${cookies.length} cookie(s) for ${url}:`);
+    for (const c of cookies) {
+      const flags = [
+        c.httpOnly ? 'HttpOnly' : null,
+        c.secure ? 'Secure' : null,
+        c.sameSite ? `SameSite=${c.sameSite}` : null,
+        c.session ? 'Session' : null,
+      ].filter(Boolean).join(' ');
+      const exp = c._expires_in_sec == null
+        ? '(session)'
+        : (c._expired ? `EXPIRED ${-c._expires_in_sec}s ago` : `expires in ${Math.floor(c._expires_in_sec/60)}m ${c._expires_in_sec%60}s`);
+      const val = showValue ? c.value : maskCookieValue(c.value);
+      console.log(`  ${c.name}=${val}  [${c.domain}${c.path}]  ${flags}  ${exp}`);
+    }
+  } catch (e) {
+    if (jsonOutput) emitJson(false, null, e.message);
+    log.fail(`cookies fetch failed: ${e.message}`);
+    process.exit(1);
+  }
+}
+
+function maskCookieValue(v) {
+  if (v == null) return '(none)';
+  const s = String(v);
+  if (s.length < 20) return s.slice(0, 4) + '...' + s.slice(-2);
+  return s.slice(0, 12) + '...(' + (s.length - 20) + ' chars)...' + s.slice(-6);
+}
+
 // Spawn multiple tabs
 async function cmdSpawn(urls) {
   if (!urls || urls.length === 0) {
@@ -2196,6 +2388,30 @@ ${YELLOW}DOMAIN EXTENSIONS:${NC}
     }
     console.log('');
   }
+
+  // Plugins socket - hydrated from ~/.glider/plugins/*.plugin.{json,js}
+  // (loadPlugins is called from main() before showHelp when invoked as `glider help`,
+  //  but a bare `glider --help` runs before main; safe-load here for that path.)
+  if (GLIDER_PLUGIN_REGISTRY.size === 0) {
+    try { loadPlugins(); } catch {}
+  }
+  const seen = new Set();
+  const pluginVerbs = [];
+  for (const [verb, def] of GLIDER_PLUGIN_REGISTRY) {
+    if (def.verb !== verb) continue; // skip aliases
+    if (seen.has(def._source)) continue;
+    seen.add(def._source);
+    pluginVerbs.push({ verb, def });
+  }
+  if (pluginVerbs.length > 0) {
+    console.log(`${YELLOW}PLUGINS:${NC} (from ~/.glider/plugins/)`);
+    for (const { verb, def } of pluginVerbs) {
+      const desc = (Array.isArray(def.help) ? def.help.find(l => !/^Usage:/i.test(l)) : def.help) || '(no description)';
+      const shortDesc = String(desc).replace(/^\s+/, '').slice(0, 60);
+      console.log(`    ${GREEN}${verb.padEnd(16)}${NC} ${DIM}${shortDesc}${NC}`);
+    }
+    console.log('');
+  }
 }
 
 // Version check - non-blocking, runs in background
@@ -2253,10 +2469,211 @@ async function cmdUpdate() {
   }
 }
 
+// ────────────────────────────────────────────────────────────────
+// PLUGIN SOCKET  (v0.3.21)
+// ────────────────────────────────────────────────────────────────
+// glidercli itself is verb-agnostic. Local plugins hydrate additional
+// verbs at runtime from `$HOME/.glider/plugins/*.plugin.{json,js}`.
+// This lets consumers (org-specific ontologies, private tentacles) ship
+// their own verbs without ever landing in the public npm package.
+//
+// Plugin discovery order:
+//   1. $GLIDER_PLUGIN_DIR  (env override)
+//   2. $HOME/.glider/plugins/
+//
+// Two plugin formats:
+//
+// (a) JSON - declarative, for simple eval-based verbs:
+//   {
+//     "verb": "myverb",
+//     "aliases": ["mv"],
+//     "help": ["Usage: glider myverb [--flag]", "  Describe it..."],
+//     "primitive": "eval" | "extension" | "cdp",
+//     "recipe":    "<javascript expression>" (for primitive=eval)
+//     "method":    "<extension method name>" (for primitive=extension)
+//     "args":      { "--flag": {"type":"boolean|string|number"} },   optional
+//     "output":    { "format":"table|json|raw" }                     optional
+//   }
+//
+// (b) JS - imperative, for complex verbs:
+//   module.exports = {
+//     verb: 'myverb',
+//     aliases: ['mv'],
+//     help: ['Usage: glider myverb ...'],
+//     async run(argv, ctx) {
+//       // ctx = { cdp, ext, log, jsonOutput, emitJson, ensureConnected, mask, httpPost, httpGet, os, fs, path }
+//       const val = await ctx.cdp.eval('1+1', { sessionId: ctx.persistedSessionId });
+//       ctx.log.ok(JSON.stringify(val));
+//     }
+//   };
+const GLIDER_PLUGIN_REGISTRY = new Map(); // verb → plugin def
+
+function pluginDirs() {
+  const dirs = [];
+  if (process.env.GLIDER_PLUGIN_DIR) dirs.push(process.env.GLIDER_PLUGIN_DIR);
+  dirs.push(path.join(os.homedir(), '.glider', 'plugins'));
+  return dirs.filter(d => { try { return fs.statSync(d).isDirectory(); } catch { return false; } });
+}
+
+function loadPlugins() {
+  const dirs = pluginDirs();
+  for (const dir of dirs) {
+    let entries;
+    try { entries = fs.readdirSync(dir); } catch { continue; }
+    for (const name of entries) {
+      if (!/\.plugin\.(json|js|cjs)$/i.test(name)) continue;
+      const full = path.join(dir, name);
+      try {
+        let def;
+        if (/\.json$/i.test(name)) {
+          def = JSON.parse(fs.readFileSync(full, 'utf8'));
+          def._source = full;
+          def._type = 'json';
+        } else {
+          def = require(full);
+          def._source = full;
+          def._type = 'js';
+        }
+        if (!def.verb || typeof def.verb !== 'string') {
+          log.warn(`Plugin ${name}: missing "verb", skipping`);
+          continue;
+        }
+        GLIDER_PLUGIN_REGISTRY.set(def.verb, def);
+        for (const a of (def.aliases || [])) GLIDER_PLUGIN_REGISTRY.set(a, def);
+      } catch (e) {
+        log.warn(`Plugin ${name}: load failed - ${e.message}`);
+      }
+    }
+  }
+}
+
+// Build the helper context passed to JS plugins
+function makePluginCtx() {
+  return {
+    // Primitives
+    cdp: {
+      async eval(js, opts = {}) {
+        const params = { method: 'Runtime.evaluate', params: { expression: js, returnByValue: true, awaitPromise: !!opts.awaitPromise } };
+        if (opts.sessionId) params.sessionId = opts.sessionId;
+        const r = await httpPost('/cdp', params);
+        if (r && r.error && !r.result) throw new Error(`CDP: ${typeof r.error === 'string' ? r.error : JSON.stringify(r.error)}`);
+        return r?.result?.value;
+      },
+      async call(method, params, opts = {}) {
+        const body = { method, params: params || {} };
+        if (opts.sessionId) body.sessionId = opts.sessionId;
+        return await httpPost('/cdp', body);
+      },
+    },
+    ext: {
+      async call(method, params) {
+        return await httpPost('/extension', { method, params: params || {} });
+      },
+    },
+    // Utilities
+    log,
+    get jsonOutput() { return jsonOutput; },
+    emitJson,
+    ensureConnected,
+    httpPost, httpGet,
+    // Common masks
+    mask: {
+      jwt(s) {
+        if (!s || typeof s !== 'string') return String(s);
+        if (s.length < 40) return s.slice(0,6) + '...' + s.slice(-4);
+        return s.slice(0,20) + '...(' + (s.length - 30) + ' chars)...' + s.slice(-10);
+      },
+      cookie(s) {
+        if (s == null) return '(none)';
+        const t = String(s);
+        if (t.length < 20) return t.slice(0,4) + '...' + t.slice(-2);
+        return t.slice(0,12) + '...(' + (t.length - 20) + ' chars)...' + t.slice(-6);
+      },
+    },
+    // Node built-ins (avoid plugins needing to require these themselves)
+    os, fs, path,
+    // Version marker for plugins to feature-detect
+    apiVersion: 1,
+  };
+}
+
+async function runPlugin(def, argv) {
+  const ctx = makePluginCtx();
+
+  // Help dispatch
+  if (argv.includes('--help') || argv.includes('-h')) {
+    if (Array.isArray(def.help)) def.help.forEach(l => console.log(l));
+    else if (typeof def.help === 'string') console.log(def.help);
+    else console.log(`Usage: glider ${def.verb} [args]`);
+    return;
+  }
+
+  // JS plugin - call run()
+  if (def._type === 'js') {
+    if (typeof def.run !== 'function') {
+      log.fail(`Plugin ${def.verb}: JS plugin must export "run(argv, ctx)"`);
+      process.exit(1);
+    }
+    if (!await ensureConnected()) process.exit(1);
+    try {
+      await def.run(argv, ctx);
+    } catch (e) {
+      if (jsonOutput) emitJson(false, null, e.message);
+      log.fail(`Plugin ${def.verb} failed: ${e.message}`);
+      if (process.env.GLIDER_PLUGIN_DEBUG) console.error(e.stack);
+      process.exit(1);
+    }
+    return;
+  }
+
+  // JSON plugin - declarative execution
+  if (!await ensureConnected()) process.exit(1);
+  const parsed = parseJsonPluginArgs(argv, def.args || {});
+  try {
+    let out;
+    if (def.primitive === 'eval') {
+      if (!def.recipe) throw new Error('JSON plugin with primitive=eval requires "recipe"');
+      const sessionId = parsed['--session'] || parsed.sessionId;
+      const val = await ctx.cdp.eval(def.recipe, { sessionId, awaitPromise: !!def.awaitPromise });
+      out = val;
+    } else if (def.primitive === 'extension') {
+      if (!def.method) throw new Error('JSON plugin with primitive=extension requires "method"');
+      const params = { ...parsed };
+      delete params._;
+      out = await ctx.ext.call(def.method, params);
+    } else {
+      throw new Error(`Unknown primitive "${def.primitive}" (expected: eval | extension)`);
+    }
+    if (jsonOutput || def.output?.format === 'json') {
+      emitJson(true, out);
+    } else {
+      console.log(typeof out === 'string' ? out : JSON.stringify(out, null, 2));
+    }
+  } catch (e) {
+    if (jsonOutput) emitJson(false, null, e.message);
+    log.fail(`Plugin ${def.verb} failed: ${e.message}`);
+    process.exit(1);
+  }
+}
+
+function parseJsonPluginArgs(argv, schema) {
+  const out = { _: [] };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a.startsWith('--')) {
+      const spec = schema[a] || { type: 'string' };
+      if (spec.type === 'boolean') out[a] = true;
+      else out[a] = argv[++i];
+    } else out._.push(a);
+  }
+  return out;
+}
+
 // Main
 async function main() {
   const args = parseGlobalFlags(process.argv.slice(2));
   loadPersistedSession();
+  loadPlugins();  // hydrate ~/.glider/plugins/*.plugin.{json,js} - verb-agnostic core
   let cmd = args[0];
 
   // v0.3.15: reload-ext command aliases -
@@ -2413,6 +2830,12 @@ async function main() {
     case 'cfetch':
       await cmdCorsFetch(args[1], args.slice(2));
       break;
+    case 'frozen':
+      await cmdFrozen(args.slice(1));
+      break;
+    case 'cookies':
+      await cmdCookies(args.slice(1));
+      break;
     case 'spawn':
       await cmdSpawn(args.slice(1));
       break;
@@ -2452,6 +2875,11 @@ async function main() {
       await cmdLoop(taskArg, loopOpts);
       break;
     default:
+      // Plugin registry check FIRST - locally-hydrated verbs win over "unknown"
+      if (GLIDER_PLUGIN_REGISTRY.has(cmd)) {
+        await runPlugin(GLIDER_PLUGIN_REGISTRY.get(cmd), args.slice(1));
+        break;
+      }
       // Check if it's a domain command from config
       if (DOMAINS[cmd]) {
         const domain = DOMAINS[cmd];
