@@ -1445,25 +1445,40 @@ async function cmdCorsFetch(url, opts = []) {
   }
   
   try {
-    const result = await httpPost('/extension', {
-      method: 'corsFetch',
-      params: {
-        url,
-        options: { method, body, headers: { 'Accept': 'application/json' } }
-      }
-    });
-    
+    // Browser-typical Accept by default (unlocks Yammer-family 406-strict endpoints).
+    const defaultAccept = 'application/json, text/plain, */*';
+    async function doFetch(acceptHeader) {
+      return httpPost('/extension', {
+        method: 'corsFetch',
+        params: {
+          url,
+          options: { method, body, headers: { 'Accept': acceptHeader } }
+        }
+      });
+    }
+
+    let result = await doFetch(defaultAccept);
+    // /extension response envelope varies (flat vs wrapped); normalize
+    let payload = result?.result ?? result;
+    // 2-shot Accept fallback: if server returns 406 on the loose Accept, retry strict
+    if (payload?.status === 406) {
+      result = await doFetch('application/json');
+      payload = result?.result ?? result;
+    }
+
     if (result?.error) {
       log.fail(`Fetch error: ${result.error}`);
       process.exit(1);
     }
-    
-    const data = result?.result?.data;
-    const output = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
+
+    // cli_gap: cfetch_empty_response_crash - data may be undefined/null on empty bodies
+    let data = payload?.data;
+    if (data === undefined || data === null) data = '';
+    const output = typeof data === 'object' ? JSON.stringify(data, null, 2) : String(data);
     
     if (outputFile) {
       fs.writeFileSync(outputFile, output);
-      log.ok(`Saved to ${outputFile} (status: ${result?.result?.status})`);
+      log.ok(`Saved to ${outputFile} (status: ${payload?.status})`);
     } else {
       console.log(output);
     }
