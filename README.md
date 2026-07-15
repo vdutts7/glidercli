@@ -172,6 +172,7 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 | `glider connect` | attach relay to browser |
 | `glider status` | server, extension, tabs |
 | `glider goto` / `eval` / `click` / `type` | page ops |
+| `glider frozen` / `thaw` | detect / un-throttle a hidden (macrotask-frozen) tab in place |
 | `glider screenshot` | PNG capture |
 | `glider explore` | crawl + HAR |
 | `glider resolve` | host → local warch intel (`--json`) |

@@ -1546,6 +1546,83 @@ async function cmdFrozen(opts = []) {
   }
 }
 
+// Thaw a macrotask-frozen tab WITHOUT touching the OS window.
+//
+// Chrome throttles/pauses macrotasks (setTimeout, fetch, XHR, workers, and MSAL
+// token refresh) on any tab whose window is minimized or fully occluded --
+// document.visibilityState reports 'hidden' and `glider frozen` exits 1. Neither
+// Page.bringToFront nor Target.activateTarget un-hide a minimized window, so the
+// tab stays frozen. Emulation.setFocusEmulationEnabled + Page.setWebLifecycleState
+// ('active') flip the renderer to a focused/active lifecycle state and un-throttle
+// it in place -- async fires again within a couple hundred ms, no window restore
+// needed. Reverse of `glider frozen` (which only detects). Idempotent.
+async function cmdThaw(opts = []) {
+  let sessionId = null;
+  let all = false;
+  let verify = false;
+  for (let i = 0; i < opts.length; i++) {
+    const a = opts[i];
+    if (a === '--session' || a === '--sessionId') sessionId = opts[++i];
+    else if (a === '--all') all = true;
+    else if (a === '--verify') verify = true;
+    else if (a === '--help') {
+      console.log('Usage: glider thaw [--session <id>] [--all] [--verify]');
+      console.log('  Un-throttle a macrotask-frozen (hidden/minimized) tab in place so');
+      console.log('  setTimeout/fetch/XHR/workers + token refresh resume -- no window restore.');
+      console.log('  --all     thaw every attached tab');
+      console.log('  --verify  re-check visibility + async liveness after thawing');
+      console.log('  Reverse of `glider frozen` (detect). Idempotent.');
+      return;
+    }
+  }
+  if (!await ensureConnected()) process.exit(1);
+
+  let sessions;
+  if (all) {
+    const raw = await httpGet('/targets');
+    sessions = (Array.isArray(raw) ? raw : []).map((t) => t.sessionId).filter(Boolean);
+    if (!sessions.length) { log.warn('No targets to thaw'); return; }
+  } else {
+    sessions = [sessionId || activeSessionId || null];
+  }
+
+  const results = [];
+  for (const sid of sessions) {
+    const p1 = { method: 'Emulation.setFocusEmulationEnabled', params: { enabled: true } };
+    const p2 = { method: 'Page.setWebLifecycleState', params: { state: 'active' } };
+    if (sid) { p1.sessionId = sid; p2.sessionId = sid; }
+    try {
+      await httpPost('/cdp', p1);
+      await httpPost('/cdp', p2);
+      const entry = { sessionId: sid || activeSessionId || '(pinned)', thawed: true };
+      if (verify) {
+        const vp = { method: 'Runtime.evaluate', params: { expression: `document.visibilityState`, returnByValue: true } };
+        if (sid) vp.sessionId = sid;
+        const vr = await httpPost('/cdp', vp);
+        entry.visibilityState = vr?.result?.value;
+        const ap = { method: 'Runtime.evaluate', params: { expression: `new Promise(r=>setTimeout(()=>r('ALIVE'),250))`, returnByValue: true, awaitPromise: true } };
+        if (sid) ap.sessionId = sid;
+        const ar = await httpPost('/cdp', ap);
+        entry.asyncAlive = ar?.result?.value === 'ALIVE';
+      }
+      results.push(entry);
+    } catch (e) {
+      results.push({ sessionId: sid || '(pinned)', thawed: false, error: e.message });
+    }
+  }
+
+  if (jsonOutput) {
+    emitJson(true, all ? { thawed: results } : results[0]);
+  } else {
+    for (const r of results) {
+      if (!r.thawed) { log.fail(`thaw failed (${r.sessionId}): ${r.error}`); continue; }
+      let extra = '';
+      if (verify) extra = ` - visibilityState=${r.visibilityState} asyncAlive=${r.asyncAlive}`;
+      log.ok(`thawed ${r.sessionId}${extra}`);
+    }
+  }
+}
+
 // List cookies for a URL (including HttpOnly) via extension chrome.cookies.getAll bridge.
 // Primitive: extension_ws_bridge (background.js exposes method:'getCookies').
 // Note: this reads via the CRX cookies API - HttpOnly cookies (ESTSAUTH, s.SessID etc.)
@@ -2483,7 +2560,8 @@ ${YELLOW}DOMAIN EXTENSIONS:${NC}
   console.log(`    ${GREEN}${'pdf'.padEnd(16)}${NC} ${DIM}[PATH] [--landscape] [--margin N] [--scale F]${NC}`);
   console.log(`    ${GREEN}${'mock'.padEnd(16)}${NC} ${DIM}<url-glob> --status N --body FILE | mock clear${NC}`);
   console.log(`    ${GREEN}${'a11y'.padEnd(16)}${NC} ${DIM}Accessibility.getFullAXTree (snapshot --a11y flag equivalent)${NC}`);
-  console.log(`    ${GREEN}${'frozen'.padEnd(16)}${NC} ${DIM}freeze/restore page state${NC}`);
+  console.log(`    ${GREEN}${'frozen'.padEnd(16)}${NC} ${DIM}detect if tab is macrotask-frozen (hidden); exit 1 = frozen${NC}`);
+  console.log(`    ${GREEN}${'thaw'.padEnd(16)}${NC} ${DIM}un-throttle a frozen/hidden tab in place (--all --verify); aka unfreeze/wake${NC}`);
   console.log('');
 }
 
@@ -3962,6 +4040,11 @@ async function main() {
       break;
     case 'frozen':
       await cmdFrozen(args.slice(1));
+      break;
+    case 'thaw':
+    case 'unfreeze':
+    case 'wake':
+      await cmdThaw(args.slice(1));
       break;
     case 'cookies':
       if (args.slice(1).some(a => a === '--set' || a === '--delete')) {
