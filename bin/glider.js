@@ -3830,8 +3830,10 @@ async function main() {
     process.exit(0);
   }
   
-  // Background version check (non-blocking) - skip for update/version commands
-  if (!['update', 'version', '-v', '--version'].includes(cmd)) {
+  // Background version check (non-blocking) - skip for update/version commands.
+  // Opt out via GLIDER_NO_UPDATE=1 or CI (operator sockets - set outside this repo).
+  if (!['update', 'version', '-v', '--version'].includes(cmd)
+      && !process.env.GLIDER_NO_UPDATE && !process.env.CI) {
     checkForUpdates();
   }
   
