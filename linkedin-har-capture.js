@@ -152,7 +152,11 @@ class HARCapture {
 }
 
 async function main() {
-  const outputDir = process.argv[2] || '/tmp/linkedin-capture';
+  const requestedDir = process.argv[2] || '/tmp/linkedin-capture';
+  if (typeof requestedDir !== 'string' || requestedDir.includes('\0')) {
+    throw new Error('Invalid output directory');
+  }
+  const outputDir = path.resolve(requestedDir);
   fs.mkdirSync(outputDir, { recursive: true });
   
   const capture = new HARCapture();
