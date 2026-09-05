@@ -147,7 +147,7 @@ glider resolve https://news.ycombinator.com --json
 | Env | Default | Role |
 |-----|---------|------|
 | `GLIDER_HOME` | `~/.glider` | config, cache, warch tree |
-| `AGREGISTRY` | unset | optional registry root → warch at `$AGREGISTRY/warch/HOST/` |
+| `AGREGISTRY` | unset | optional registry root → warch at `AGREGISTRY/warch/HOST/` |
 
 Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed the host index.
 

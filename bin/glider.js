@@ -1623,6 +1623,132 @@ async function cmdThaw(opts = []) {
   }
 }
 
+// Freeze a hidden/background tab IN PLACE: Chrome's Page lifecycle 'frozen' state
+// halts the tab's task queues (timers, rAF, fetch, workers, further JS allocation)
+// without killing the renderer. Reverse of `glider thaw`. Idempotent. The tab
+// auto-resumes ('active') on focus or via `glider thaw`; DOM/scroll/form state is
+// preserved.
+//
+// WHAT IT IS FOR: CONTAINMENT, not reclaim. Freezing a background tab that is
+// actively burning CPU or leaking (heap growing in a rAF/timer loop) stops the
+// bleed. It does NOT by itself free existing memory. Empirically (native-port A/B,
+// Runtime.getHeapUsage + process-tree RSS): unreachable JS heap is reclaimed by
+// V8's own GC / memory-reducer (idle GC ~10s on a live tab) whether or not you
+// freeze; and a loaded tab's real footprint (live DOM, decoded images, compositor)
+// is not released by ANY V8 lever while the document is alive - only discard /
+// navigate (which loses page state) frees that. `--verify` prints a before/after
+// heap delta, but that delta is V8 GC of the now-quiesced tab, not a freeze-
+// specific reclaim.
+//
+// WALLS (recorded in capabilities.json): via the extension chrome.debugger bridge
+// the Memory + HeapProfiler domains are BLOCKED by Chromium (JSON-RPC -32601 "wasn't
+// found"); Memory.forciblyPurgeJavaScriptMemory / HeapProfiler.collectGarbage exist
+// only on the native --remote-debugging-port. Even there, forciblyPurge reclaims
+// nothing beyond an explicit GC for JS heap and does not touch DOM/image/renderer
+// memory of a loaded page (proven: Wikipedia tab, GC 52->1MB JS but RSS -5MB only,
+// purge +0). Freeze (Page domain) is what the CRX bridge CAN reach.
+//
+// Safety: NEVER freezes the visible/active tab (--force overrides). --fat-mb gates
+// to tabs whose heap backingStorage >= N MB.
+async function cmdFreeze(opts = []) {
+  let sessionId = null;
+  let all = false;
+  let verify = false;
+  let force = false;
+  let fatMb = 0;
+  for (let i = 0; i < opts.length; i++) {
+    const a = opts[i];
+    if (a === '--session' || a === '--sessionId') sessionId = opts[++i];
+    else if (a === '--all') all = true;
+    else if (a === '--verify') verify = true;
+    else if (a === '--force') force = true;
+    else if (a === '--fat-mb') fatMb = parseInt(opts[++i], 10) || 0;
+    else if (a === '--help') {
+      console.log('Usage: glider freeze [--session <id>] [--all] [--fat-mb N] [--verify] [--force]');
+      console.log('  Halt a hidden/background tab in place (stop timers/rAF/fetch/JS alloc) to');
+      console.log('  CONTAIN a runaway or leaking bg tab. Reverse of thaw; auto-resumes on focus.');
+      console.log('  Not a heap reclaimer: V8 GC handles dead heap; only discard frees live DOM/images.');
+      console.log('  --all       freeze every hidden attached tab (skips the visible one)');
+      console.log('  --fat-mb N  only freeze tabs whose heap backingStorage >= N MB (default 0)');
+      console.log('  --verify    print before/after heap delta (V8 GC of quiesced tab, not freeze-reclaim)');
+      console.log('  --force     also freeze the visible tab (DANGER: hangs current page)');
+      console.log('  Reverse of `glider thaw`. Idempotent.');
+      return;
+    }
+  }
+  if (!await ensureConnected()) process.exit(1);
+
+  const heapMb = async (sid) => {
+    const p = { method: 'Runtime.getHeapUsage', params: {} };
+    if (sid) p.sessionId = sid;
+    try {
+      const r = await httpPost('/cdp', p);
+      const bs = r?.backingStorageSize ?? r?.result?.backingStorageSize;
+      return typeof bs === 'number' ? Math.round(bs / 1048576) : null;
+    } catch { return null; }
+  };
+  const visState = async (sid) => {
+    const p = { method: 'Runtime.evaluate', params: { expression: `document.visibilityState`, returnByValue: true } };
+    if (sid) p.sessionId = sid;
+    try { const r = await httpPost('/cdp', p); return r?.result?.value || null; } catch { return null; }
+  };
+
+  let targets;
+  if (all) {
+    const raw = await httpGet('/targets');
+    targets = (Array.isArray(raw) ? raw : [])
+      .map((t) => ({ sid: t.sessionId, pid: t.targetInfo && t.targetInfo.pid, url: (t.targetInfo && t.targetInfo.url) || '' }))
+      .filter((t) => t.sid);
+    if (!targets.length) { log.warn('No targets to freeze'); return; }
+  } else {
+    targets = [{ sid: sessionId || activeSessionId || null, pid: null, url: '' }];
+  }
+
+  const results = [];
+  let totalReclaimed = 0;
+  for (const t of targets) {
+    const sid = t.sid;
+    const vis = await visState(sid);
+    if (vis === 'visible' && !force) {
+      results.push({ sessionId: sid || '(pinned)', frozen: false, skipped: 'visible' });
+      continue;
+    }
+    const before = await heapMb(sid);
+    if (fatMb > 0 && before !== null && before < fatMb) {
+      results.push({ sessionId: sid || '(pinned)', frozen: false, skipped: `under_fat_mb(${before}<${fatMb})` });
+      continue;
+    }
+    const p = { method: 'Page.setWebLifecycleState', params: { state: 'frozen' } };
+    if (sid) p.sessionId = sid;
+    try {
+      const r = await httpPost('/cdp', p);
+      if (r && r.error && !(r.result)) throw new Error(typeof r.error === 'string' ? r.error : JSON.stringify(r.error));
+      const entry = { sessionId: sid || activeSessionId || '(pinned)', pid: t.pid || undefined, frozen: true, beforeMb: before };
+      if (verify) {
+        const after = await heapMb(sid);
+        entry.afterMb = after;
+        if (before !== null && after !== null) { entry.reclaimedMb = before - after; totalReclaimed += Math.max(0, before - after); }
+      }
+      results.push(entry);
+    } catch (e) {
+      results.push({ sessionId: sid || '(pinned)', frozen: false, error: e.message });
+    }
+  }
+
+  if (jsonOutput) {
+    emitJson(true, all ? { frozen: results, totalReclaimedMb: totalReclaimed } : results[0]);
+  } else {
+    for (const r of results) {
+      if (r.skipped) { log.info(`skipped ${r.sessionId} (${r.skipped})`); continue; }
+      if (!r.frozen) { log.fail(`freeze failed (${r.sessionId}): ${r.error}`); continue; }
+      let extra = r.beforeMb !== null && r.beforeMb !== undefined ? ` heap=${r.beforeMb}MB` : '';
+      if (verify && r.afterMb !== undefined) extra += ` -> ${r.afterMb}MB (V8-GC heapΔ ${r.reclaimedMb}MB)`;
+      log.ok(`froze ${r.sessionId}${r.pid ? ` pid=${r.pid}` : ''}${extra}`);
+    }
+    if (all && verify) log.ok(`total heapΔ (V8 GC of quiesced tabs): ${totalReclaimed}MB across ${results.filter(r => r.frozen).length} tab(s)`);
+  }
+}
+
 // List cookies for a URL (including HttpOnly) via extension chrome.cookies.getAll bridge.
 // Primitive: extension_ws_bridge (background.js exposes method:'getCookies').
 // Note: this reads via the CRX cookies API - HttpOnly cookies (ESTSAUTH, s.SessID etc.)
@@ -2562,6 +2688,7 @@ ${YELLOW}DOMAIN EXTENSIONS:${NC}
   console.log(`    ${GREEN}${'a11y'.padEnd(16)}${NC} ${DIM}Accessibility.getFullAXTree (snapshot --a11y flag equivalent)${NC}`);
   console.log(`    ${GREEN}${'frozen'.padEnd(16)}${NC} ${DIM}detect if tab is macrotask-frozen (hidden); exit 1 = frozen${NC}`);
   console.log(`    ${GREEN}${'thaw'.padEnd(16)}${NC} ${DIM}un-throttle a frozen/hidden tab in place (--all --verify); aka unfreeze/wake${NC}`);
+  console.log(`    ${GREEN}${'freeze'.padEnd(16)}${NC} ${DIM}halt/contain a hidden bg tab (stop JS/timers/alloc); reverse of thaw${NC}`);
   console.log('');
 }
 
@@ -4047,6 +4174,9 @@ async function main() {
     case 'unfreeze':
     case 'wake':
       await cmdThaw(args.slice(1));
+      break;
+    case 'freeze':
+      await cmdFreeze(args.slice(1));
       break;
     case 'cookies':
       if (args.slice(1).some(a => a === '--set' || a === '--delete')) {
