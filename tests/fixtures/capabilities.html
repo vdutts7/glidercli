@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Glider Capability Fixture</title>
+  <style>
+    body { min-height: 2200px; font-family: sans-serif; }
+    #hover-target, #drag-source, #drop-target { width: 140px; height: 48px; margin: 12px; border: 1px solid #333; }
+    #drop-target { margin-top: 600px; }
+    #hidden-target { display: none; }
+  </style>
+</head>
+<body>
+  <h1 id="heading" data-kind="hero">Capability Fixture</h1>
+  <button id="click-target">Click me</button>
+  <button id="double-target">Double me</button>
+  <button id="right-target">Right click me</button>
+  <input id="text-input" value="">
+  <textarea id="textarea"></textarea>
+  <div id="editable" contenteditable="true"></div>
+  <select id="select-target">
+    <option value="one">One</option>
+    <option value="two">Two</option>
+  </select>
+  <input id="switch-target" type="checkbox" role="switch">
+  <input id="upload-target" type="file">
+  <div id="hover-target">Hover me</div>
+  <div id="drag-source" draggable="true">Drag source</div>
+  <div id="drop-target">Drop target</div>
+  <button id="disabled-target" disabled>Disabled</button>
+  <div id="hidden-target">Hidden</div>
+  <div id="remove-target">Remove me</div>
+  <div id="shadow-host"></div>
+  <iframe id="fixture-frame" src="/frame"></iframe>
+  <script>
+    window.fixtureState = {
+      clicks: 0,
+      doubleClicks: 0,
+      rightClicks: 0,
+      hovers: 0,
+      drops: 0,
+      keydowns: [],
+      lastMouse: null,
+      inputEvents: 0,
+    };
+
+    document.querySelector('#click-target').addEventListener('click', () => {
+      window.fixtureState.clicks += 1;
+    });
+    document.querySelector('#double-target').addEventListener('dblclick', () => {
+      window.fixtureState.doubleClicks += 1;
+    });
+    document.querySelector('#right-target').addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      window.fixtureState.rightClicks += 1;
+    });
+    document.querySelector('#hover-target').addEventListener('mouseenter', () => {
+      window.fixtureState.hovers += 1;
+    });
+    document.querySelector('#text-input').addEventListener('input', () => {
+      window.fixtureState.inputEvents += 1;
+    });
+    document.addEventListener('keydown', (event) => {
+      window.fixtureState.keydowns.push({
+        key: event.key,
+        ctrl: event.ctrlKey,
+        shift: event.shiftKey,
+        alt: event.altKey,
+        meta: event.metaKey,
+      });
+    });
+    document.addEventListener('mousemove', (event) => {
+      window.fixtureState.lastMouse = [event.clientX, event.clientY];
+    });
+    document.querySelector('#drag-source').addEventListener('dragstart', (event) => {
+      event.dataTransfer.setData('text/plain', 'fixture');
+    });
+    document.querySelector('#drop-target').addEventListener('dragover', (event) => event.preventDefault());
+    document.querySelector('#drop-target').addEventListener('drop', (event) => {
+      event.preventDefault();
+      window.fixtureState.drops += 1;
+    });
+
+    const shadow = document.querySelector('#shadow-host').attachShadow({ mode: 'open' });
+    shadow.innerHTML = '<span id="shadow-value">Shadow value</span>';
+
+    setTimeout(() => {
+      const delayed = document.createElement('div');
+      delayed.id = 'delayed-target';
+      delayed.textContent = 'Ready';
+      document.body.appendChild(delayed);
+    }, 300);
+    setTimeout(() => document.querySelector('#remove-target')?.remove(), 500);
+    console.log('fixture-ready');
+  </script>
+</body>
+</html>

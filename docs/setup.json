@@ -1,11 +1,14 @@
 {
   "meta": {
     "project": "glidercli",
-    "updated": "2026-07-06"
+    "updated": "2026-09-17"
   },
   "architecture": {
-    "flow": "glidercli -> bserve (ws:19988) -> chrome-extension -> chrome.debugger -> tab",
-    "relay_port": 19988,
+    "flow": "glidercli -> bserve (localhost relay) -> Chromium extension -> chrome.debugger -> tab",
+    "relay_port_default": 19988,
+    "relay_port_environment": ["GLIDER_PORT", "RELAY_PORT"],
+    "extension_relay_port": 19988,
+    "custom_port_requires_matching_extension_build": true,
     "relay_host": "127.0.0.1"
   },
   "requirements": {
@@ -27,19 +30,19 @@
       "/cdp": "POST - forward CDP command"
     },
     "websocket": {
-      "/extension": "chrome extension connects here",
+      "/extension": "Glider extension connects here; published Chrome Web Store build uses port 19988",
       "/cdp": "cli/clients connect here"
     }
   },
   "config_paths": {
-    "glider_home": "~/.glider (override: GLIDER_HOME)",
-    "domains": "~/.glider/config/domains.json",
+    "glider_home": "$GLIDER_HOME (default: $HOME/.glider)",
+    "domains": "$GLIDER_HOME/config/domains.json",
     "domains_template": "config/domains.template.json (shipped in package)",
-    "warch_root": "<registry_base>/warch/<host>/ (glider.json, gotchas.json, bexplore/)",
-    "registry_base": "AGREGISTRY if set, else GLIDER_HOME (~/.glider)",
+    "warch_root": "<registry-base>/warch/<host>/ (glider.json, gotchas.json, bexplore/)",
+    "registry_base": "AGREGISTRY if set, else GLIDER_HOME",
     "resolve": "glider resolve <url> --json",
-    "browser": "~/.glider/config/browser.json",
-    "daemon_log": "~/.glider/daemon.log"
+    "browser": "$GLIDER_HOME/config/browser.json",
+    "daemon_log": "$GLIDER_HOME/daemon.log"
   },
   "discovery": "glider --help"
 }

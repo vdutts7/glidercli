@@ -73,7 +73,7 @@ Not supported today: Firefox/Safari/WebKit/Gecko, DuckDuckGo, browsers without C
 
 ### Browser config
 
-Priority: `~/.glider/config/browser.json` → default Google Chrome.
+Priority: `$GLIDER_HOME/config/browser.json` → `$GLIDER_HOME/browser.json` → default Google Chrome.
 
 Registry key (recommended):
 
@@ -81,7 +81,7 @@ Registry key (recommended):
 { "use": "arc" }
 ```
 
-Registry file: `~/.glider/config/browsers-registry.json`
+Registry file: `$GLIDER_HOME/config/browsers-registry.json`
 
 ```bash
 glider use arc
@@ -147,6 +147,14 @@ glider resolve https://news.ycombinator.com --json
 | Env | Default | Role |
 |-----|---------|------|
 | `GLIDER_HOME` | `~/.glider` | config, cache, warch tree |
+| `GLIDER_PORT` | `19988` | relay port for CLI + helpers; non-default values require matching extension configuration |
+| `GLIDER_NODE_BIN` | auto-detected | Node.js 18+ executable for background relay supervisor |
+| `GLIDER_RELOAD_TIMEOUT_MS` | `15000` | extension reload/reconnect deadline |
+| `GLIDER_CDP_TIMEOUT_MS` | `30000` | per-request CDP/extension timeout |
+| `GLIDER_RELAY_RECONNECT_GRACE_MS` | `10000` | keep cached targets while extension WS flaps |
+| `GLIDER_RELAY_COMMAND_RECONNECT_WAIT_MS` | `3000` | wait for extension before failing a command |
+| `GLIDER_RELAY_MAX_PENDING` | `256` | max in-flight extension requests |
+| `GLIDER_TIMING` | unset | set `1` to always attach `timing` on `--json` output |
 | `AGREGISTRY` | unset | optional registry root → warch at `AGREGISTRY/warch/HOST/` |
 
 Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed the host index.
@@ -157,7 +165,9 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 
 | problem | fix | stability | why |
 |---------|-----|-----------|-----|
-| extension not connected | click Glider icon in toolbar → `glider connect` | per Chrome launch | relay waits on extension WS |
+| extension not connected | install/enable [`Glider` on Chrome Web Store](https://chromewebstore.google.com/detail/glider/njbidokkffhgpofcejgcfcgcinmeoalj) in selected browser profile; click Glider icon, then run `glider connect` | per browser launch | relay waits on extension WS |
+| extension socket up but worker dead | click Glider icon or reload the extension; `glider status --json` shows `extensionWorkerAlive: false` | MV3 worker | status refuses healthy until pong |
+| custom relay port has no extension | use `19988` with Chrome Web Store build | install-stable | published extension connects to `ws://localhost:19988/extension` |
 | wrong tab targeted | `glider targets` → `glider use-session session-6` | session-stable | multi-tab needs explicit session |
 | explore HAR empty bodies | replay in-tab with auth hook on XHR/fetch | site-specific | some SPAs never expose bearer in storage |
 | `resolve` misses host | add `~/.glider/warch/HOST/glider.json` or set `AGREGISTRY` | file-stable | optional per-host capture hints |
@@ -168,9 +178,10 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 
 | Command | Description |
 |---------|-------------|
-| `glider install` / `uninstall` | daemon at login |
+| `glider install` / `uninstall` | background relay supervisor |
 | `glider connect` | attach relay to browser |
-| `glider status` | server, extension, tabs |
+| `glider status` | server + extension + tabs; nonzero unless full stack is healthy |
+| `glider test` | relay + extension + target + live CDP `1+1` diagnostic |
 | `glider goto` / `eval` / `click` / `type` | page ops |
 | `glider frozen` / `thaw` | detect / un-throttle a hidden (macrotask-frozen) tab in place |
 | `glider screenshot` | PNG capture |
@@ -179,6 +190,20 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 | `glider run` / `loop` | YAML task / Ralph loop |
 
 Full surface: `glider --help`
+
+---
+
+## Verification
+
+```bash
+npm test                 # unit, CLI regression, relay integration, tarball boundary
+npm run test:live        # isolated live-browser fixture against the connected extension
+npm run test:syntax      # package JavaScript syntax gate
+```
+
+Live smoke creates + closes its own browser window.
+
+Incomplete event-stream features fail closed: `wait --network-idle`, console streaming, response fulfillment. No success-shaped fallback.
 
 ---
 

@@ -21,7 +21,7 @@
  * - Checkpointing and state persistence
  */
 
-const { spawn, execSync, exec } = require('child_process');
+const { spawn, execFileSync, execSync, exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -30,22 +30,40 @@ const WebSocket = require('ws');
 const YAML = require('yaml');
 
 // Config
-const PORT = process.env.GLIDER_PORT || 19988;
+const { relayPort } = require('../lib/relay-config.js');
 const DEBUG_PORT = process.env.GLIDER_DEBUG_PORT || 9222;
-const SERVER_URL = `http://127.0.0.1:${PORT}`;
 const DEBUG_URL = `http://127.0.0.1:${DEBUG_PORT}`;
 const LIB_DIR = path.join(__dirname, '..', 'lib');
 const STATE_FILE = '/tmp/glider-state.json';
-const LOG_FILE = '/tmp/glider.log';
 const REGISTRY_FILE = path.join(LIB_DIR, 'registry.json');
 
 // Active CDP session (multi-tab). Env or --session / --session-id on CLI.
 let activeSessionId = process.env.GLIDER_SESSION_ID || null;
 let jsonOutput = false;
 let allowedDomainList = null;
-const SESSION_STORE = path.join(os.homedir(), '.glider', 'config', 'active-session.json');
+const { configPath, gliderHome } = require(path.join(LIB_DIR, 'paths.js'));
+const { isBrowserInternalUrl, loadBrowserConfig } = require(path.join(LIB_DIR, 'browser-config.js'));
+const GLIDER_HOME = gliderHome();
+const LOG_FILE = path.join(GLIDER_HOME, 'relay.log');
+const SESSION_STORE = path.join(GLIDER_HOME, 'config', 'active-session.json');
 const { resolveAllowedDomains, assertUrlAllowed, urlAllowed } = require(path.join(LIB_DIR, 'guard.js'));
 const { buildSnapshotExpression, formatSnapshotText } = require(path.join(LIB_DIR, 'bsnapshot.js'));
+let PORT = null;
+let SERVER_URL = null;
+let relayConfigError = null;
+try {
+  PORT = relayPort();
+  SERVER_URL = `http://127.0.0.1:${PORT}`;
+} catch (error) {
+  relayConfigError = error;
+}
+const RELAY_ENTRY = path.join(LIB_DIR, 'bserve.js');
+const RELAY_PID_FILE = PORT === null ? null : path.join(GLIDER_HOME, `relay-${PORT}.pid`);
+const RELAY_START_LOCK = PORT === null ? null : path.join(GLIDER_HOME, `relay-${PORT}.lifecycle.lock`);
+const DAEMON_ENTRY = path.join(LIB_DIR, 'glider-daemon.sh');
+const DAEMON_PID_FILE = PORT === null ? null : path.join(GLIDER_HOME, `daemon-${PORT}.pid`);
+const DAEMON_CLAIM_DIR = PORT === null ? null : path.join(GLIDER_HOME, `daemon-${PORT}.claim`);
+const DAEMON_MANAGEMENT_LOCK = PORT === null ? null : path.join(GLIDER_HOME, `daemon-${PORT}.management.lock`);
 
 // Load pattern registry
 let REGISTRY = {};
@@ -60,10 +78,7 @@ const { DirectCDP, checkChrome } = require(path.join(LIB_DIR, 'cdp-direct.js'));
 const { resolveDomain } = require(path.join(LIB_DIR, 'domain-resolve.js'));
 
 // Domain extensions - load from ~/.glider/config/domains.json
-const DOMAIN_CONFIG_PATHS = [
-  path.join(os.homedir(), '.glider', 'config', 'domains.json'),
-  path.join(os.homedir(), '.glider', 'domains.json'),
-];
+const DOMAIN_CONFIG_PATHS = configPath('domains.json');
 let DOMAINS = {};
 for (const cfgPath of DOMAIN_CONFIG_PATHS) {
   if (fs.existsSync(cfgPath)) {
@@ -74,52 +89,8 @@ for (const cfgPath of DOMAIN_CONFIG_PATHS) {
   }
 }
 
-// Browser config- which browser to launch/use (must be Chromium-based, see README.md#Browsers)
-const BROWSER_CONFIG_PATHS = [
-  path.join(os.homedir(), '.glider', 'config', 'browser.json'),
-  path.join(os.homedir(), '.glider', 'browser.json'),
-];
-let BROWSER_CONFIG = {};
-for (const cfgPath of BROWSER_CONFIG_PATHS) {
-  if (fs.existsSync(cfgPath)) {
-    try {
-      BROWSER_CONFIG = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
-      break;
-    } catch (e) { /* ignore parse errors */ }
-  }
-}
-
-// Browsers registry - key → { name, path, processName }. Used when browser.json has "use": "<key>"
-const BROWSERS_REGISTRY_PATHS = [
-  path.join(os.homedir(), '.glider', 'config', 'browsers-registry.json'),
-].filter(Boolean);
-let BROWSERS_REGISTRY = {};
-for (const regPath of BROWSERS_REGISTRY_PATHS) {
-  if (regPath && fs.existsSync(regPath)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(regPath, 'utf8'));
-      BROWSERS_REGISTRY = data.registry || data;
-      break;
-    } catch (e) { /* ignore */ }
-  }
-}
-
 function getBrowserConfig() {
-  let name = BROWSER_CONFIG.name || null;
-  let pathOrNull = BROWSER_CONFIG.path || null;
-  let processName = BROWSER_CONFIG.processName || null;
-
-  // Key-based lookup: browser.json has { "use": "arc" } → resolve from registry
-  if (!name && BROWSER_CONFIG.use && BROWSERS_REGISTRY[BROWSER_CONFIG.use]) {
-    const entry = BROWSERS_REGISTRY[BROWSER_CONFIG.use];
-    name = entry.name;
-    pathOrNull = entry.path != null ? entry.path : null;
-    processName = entry.processName || entry.name;
-  }
-
-  name = name || 'Google Chrome';
-  processName = processName || name;
-  return { name, path: pathOrNull, processName };
+  return loadBrowserConfig({ home: GLIDER_HOME });
 }
 
 // Colors - matching the deep blue gradient logo
@@ -179,6 +150,292 @@ const log = {
   },
 };
 
+function getProcessIdentity(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  try {
+    process.kill(pid, 0);
+    const identityEnv = {
+      ...process.env,
+      LC_ALL: 'C',
+      LANG: 'C',
+      TZ: 'UTC',
+    };
+    const command = execFileSync('ps', ['-p', String(pid), '-o', 'command='], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      env: identityEnv,
+    }).trim();
+    const started = execFileSync('ps', ['-p', String(pid), '-o', 'lstart='], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      env: identityEnv,
+    }).trim();
+    if (!command || !started) return null;
+    return { command, started };
+  } catch {
+    return null;
+  }
+}
+
+function commandIncludesPath(command, expectedPath) {
+  if (!command || !expectedPath) return false;
+  const resolved = fs.realpathSync(expectedPath);
+  return command.includes(expectedPath) || command.includes(resolved);
+}
+
+function readRelayPidRecord(filePath) {
+  try {
+    const record = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    if (record?.schema !== 1 || !Number.isInteger(record.pid) || record.pid <= 0) return null;
+    return record;
+  } catch {
+    return null;
+  }
+}
+
+function relayPidRecordMatches(record, identity) {
+  return Boolean(
+    record
+    && identity
+    && record.port === PORT
+    && record.entry === fs.realpathSync(RELAY_ENTRY)
+    && record.started === identity.started
+    && commandIncludesPath(identity.command, RELAY_ENTRY)
+  );
+}
+
+function writeRelayPidRecord(record) {
+  const temp = `${RELAY_PID_FILE}.${process.pid}.${record.pid}.tmp`;
+  fs.writeFileSync(temp, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
+  fs.renameSync(temp, RELAY_PID_FILE);
+}
+
+function removeRelayPidRecordIfOwned(pid, started) {
+  const current = readRelayPidRecord(RELAY_PID_FILE);
+  if (current?.pid === pid && current.started === started) {
+    fs.unlinkSync(RELAY_PID_FILE);
+  }
+}
+
+function readProcessLock(filePath) {
+  try {
+    const record = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    if (record?.schema !== 1 || !Number.isInteger(record.pid) || record.pid <= 0) return null;
+    return record;
+  } catch {
+    return null;
+  }
+}
+
+function processLockIsLive(record) {
+  const identity = record ? getProcessIdentity(record.pid) : null;
+  return Boolean(
+    identity
+    && record.started === identity.started
+  );
+}
+
+async function acquireProcessLock(filePath, label, timeoutMs = 7000) {
+  const identity = getProcessIdentity(process.pid);
+  if (!identity) throw new Error(`Could not verify ${label} lock owner`);
+  const record = {
+    schema: 1,
+    pid: process.pid,
+    entry: fs.realpathSync(__filename),
+    started: identity.started,
+  };
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const fd = fs.openSync(filePath, 'wx', 0o600);
+      try {
+        fs.writeFileSync(fd, `${JSON.stringify(record, null, 2)}\n`);
+      } finally {
+        fs.closeSync(fd);
+      }
+      return record;
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+    }
+
+    const existing = readProcessLock(filePath);
+    if (!processLockIsLive(existing)) {
+      try {
+        const ageMs = Date.now() - fs.statSync(filePath).mtimeMs;
+        if (ageMs < 2000) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          continue;
+        }
+      } catch (error) {
+        if (error.code === 'ENOENT') continue;
+        throw error;
+      }
+      throw new Error(`Stale ${label} lock requires manual removal: ${filePath}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`Timed out waiting for ${label} lock: ${filePath}`);
+}
+
+function releaseProcessLock(filePath, record) {
+  const current = readProcessLock(filePath);
+  if (current?.pid === record?.pid && current.started === record.started) {
+    fs.unlinkSync(filePath);
+  }
+}
+
+function acquireRelayStartLock() {
+  return acquireProcessLock(RELAY_START_LOCK, 'relay lifecycle');
+}
+
+function releaseRelayStartLock(record) {
+  releaseProcessLock(RELAY_START_LOCK, record);
+}
+
+function acquireDaemonManagementLock() {
+  return acquireProcessLock(DAEMON_MANAGEMENT_LOCK, 'daemon management');
+}
+
+function releaseDaemonManagementLock(record) {
+  releaseProcessLock(DAEMON_MANAGEMENT_LOCK, record);
+}
+
+async function acquireStandaloneRelayLocks() {
+  const daemonManagement = await acquireDaemonManagementLock();
+  try {
+    return {
+      daemonManagement,
+      relayLifecycle: await acquireRelayStartLock(),
+    };
+  } catch (error) {
+    releaseDaemonManagementLock(daemonManagement);
+    throw error;
+  }
+}
+
+function releaseStandaloneRelayLocks(locks) {
+  try {
+    releaseRelayStartLock(locks.relayLifecycle);
+  } finally {
+    releaseDaemonManagementLock(locks.daemonManagement);
+  }
+}
+
+function readDaemonPidRecord(filePath) {
+  try {
+    const record = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    if (
+      record?.schema !== 1
+      || !Number.isInteger(record.pid)
+      || record.pid <= 0
+      || !Number.isInteger(record.port)
+    ) return null;
+    return record;
+  } catch {
+    return null;
+  }
+}
+
+function daemonSupervisorMatches(record, identity, daemonScript) {
+  return Boolean(
+    record
+    && identity
+    && record.port === PORT
+    && record.entry === fs.realpathSync(daemonScript)
+    && record.started === identity.started
+    && commandIncludesPath(identity.command, daemonScript)
+  );
+}
+
+function daemonChildMatches(record) {
+  if (!Number.isInteger(record?.childPid) || record.childPid <= 0 || !record.childStarted) {
+    return false;
+  }
+  const identity = getProcessIdentity(record.childPid);
+  return Boolean(
+    identity
+    && record.childEntry === fs.realpathSync(RELAY_ENTRY)
+    && record.childStarted === identity.started
+    && commandIncludesPath(identity.command, RELAY_ENTRY)
+  );
+}
+
+function inspectDaemonOwnership() {
+  const recordExists = fs.existsSync(DAEMON_PID_FILE);
+  const claimExists = fs.existsSync(DAEMON_CLAIM_DIR);
+  if (!recordExists && !claimExists) return { state: 'absent', record: null };
+
+  const record = recordExists ? readDaemonPidRecord(DAEMON_PID_FILE) : null;
+  const identity = record ? getProcessIdentity(record.pid) : null;
+  if (claimExists && daemonSupervisorMatches(record, identity, DAEMON_ENTRY)) {
+    return { state: 'owned', record };
+  }
+  return { state: 'unverified', record };
+}
+
+function assertStandaloneRelayAllowed(ownership = inspectDaemonOwnership()) {
+  if (ownership.state === 'owned') {
+    throw new Error(
+      `Relay port ${PORT} is managed by daemon PID ${ownership.record.pid}; use glider uninstall to stop the supervisor`,
+    );
+  }
+  if (ownership.state === 'unverified') {
+    throw new Error(
+      `Refusing standalone relay lifecycle while daemon ownership is unverified: ${DAEMON_PID_FILE}`,
+    );
+  }
+}
+
+function removeDaemonPidRecordIfOwned(filePath, record) {
+  const current = readDaemonPidRecord(filePath);
+  if (
+    current
+    && record
+    && current.pid === record.pid
+    && current.port === record.port
+    && current.entry === record.entry
+    && current.started === record.started
+  ) {
+    fs.unlinkSync(filePath);
+  }
+}
+
+function inspectLegacyDaemonRecord(filePath, daemonScript) {
+  if (!fs.existsSync(filePath)) return { state: 'absent', pid: null };
+  let pid = null;
+  try {
+    pid = Number.parseInt(fs.readFileSync(filePath, 'utf8').trim(), 10);
+  } catch {}
+  if (!Number.isInteger(pid) || pid <= 0) return { state: 'stale', pid: null };
+  const identity = getProcessIdentity(pid);
+  if (!identity || !commandIncludesPath(identity.command, daemonScript)) {
+    return { state: 'stale', pid };
+  }
+  return { state: 'live-unverified', pid };
+}
+
+async function waitForProcessExit(pid, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0);
+    } catch (error) {
+      if (error.code === 'ESRCH') return true;
+      throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return false;
+}
+
+function emitCommandFailure(message, exitCode = 1) {
+  if (jsonOutput) {
+    console.log(JSON.stringify({ ok: false, observation: null, error: message, warnings: [] }, null, 2));
+  }
+  log.fail(message);
+  process.exitCode = exitCode;
+}
+
 // macOS notification helper
 function notify(title, message, sound = false) {
   try {
@@ -189,19 +446,28 @@ function notify(title, message, sound = false) {
 
 // HTTP helpers
 function httpGet(urlPath) {
+  const started = Date.now();
   return new Promise((resolve, reject) => {
     const url = new URL(urlPath, SERVER_URL);
-    http.get(url, { timeout: 2000 }, (res) => {
+    const req = http.get(url, { timeout: 2000 }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
+        let parsed;
         try {
-          resolve(JSON.parse(data));
+          parsed = data ? JSON.parse(data) : null;
         } catch {
-          resolve(data);
+          parsed = data;
         }
+        const error = responseError(res, parsed, url);
+        if (error) reject(error);
+        else resolve(parsed);
       });
-    }).on('error', reject);
+    });
+    req.on('timeout', () => req.destroy(new Error(`Request timed out: ${url.pathname}`)));
+    req.on('error', reject);
+  }).finally(() => {
+    lastHttpTiming.relay_ms = (lastHttpTiming.relay_ms || 0) + (Date.now() - started);
   });
 }
 
@@ -214,15 +480,53 @@ function loadPersistedSession() {
   } catch { /* ignore */ }
 }
 
+function clearPersistedSession() {
+  activeSessionId = null;
+  try { if (fs.existsSync(SESSION_STORE)) fs.unlinkSync(SESSION_STORE); } catch { /* ignore */ }
+}
+
 function persistSession(sessionId) {
   activeSessionId = sessionId;
   fs.mkdirSync(path.dirname(SESSION_STORE), { recursive: true });
   fs.writeFileSync(SESSION_STORE, JSON.stringify({ sessionId, updated: new Date().toISOString() }, null, 2));
 }
 
+const lastHttpTiming = { relay_ms: 0, cdp_ms: 0 };
+let commandStartedAt = 0;
+
+function resetCommandTiming() {
+  lastHttpTiming.relay_ms = 0;
+  lastHttpTiming.cdp_ms = 0;
+  commandStartedAt = Date.now();
+}
+
+function timingFields() {
+  if (process.env.GLIDER_TIMING !== '1') return null;
+  return {
+    relay_ms: lastHttpTiming.relay_ms,
+    cdp_ms: lastHttpTiming.cdp_ms,
+    total_ms: Date.now() - (commandStartedAt || Date.now()),
+  };
+}
+
 function emitJson(ok, observation, error = null, warnings = []) {
-  console.log(JSON.stringify({ ok, observation, error, warnings }, null, 2));
+  const timing = timingFields();
+  const payload = { ok, observation, error, warnings };
+  if (timing) payload.timing = timing;
+  console.log(JSON.stringify(payload, null, 2));
   if (!ok) process.exit(1);
+}
+
+function failUnsupported(capability, detail) {
+  const message = `${capability} is not fully implemented: ${detail}`;
+  if (jsonOutput) {
+    const timing = timingFields();
+    const payload = { ok: false, observation: null, error: message, warnings: [] };
+    if (timing) payload.timing = timing;
+    console.log(JSON.stringify(payload, null, 2));
+  }
+  log.fail(message);
+  process.exit(2);
 }
 
 async function assertCurrentUrlAllowed(action) {
@@ -240,11 +544,23 @@ function parseGlobalFlags(argv) {
   const cliDomains = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if ((a === '--session' || a === '--session-id') && argv[i + 1]) {
+    const equals = a.match(/^(--(?:session|session-id|allowed-domains))=(.*)$/);
+    if (equals) {
+      if (equals[2] === '') throw new Error(`${equals[1]} requires a value`);
+      if (equals[1] === '--allowed-domains') {
+        cliDomains.push(...equals[2].split(',').map((s) => s.trim()).filter(Boolean));
+      } else {
+        activeSessionId = equals[2];
+      }
+    } else if (a === '--session' || a === '--session-id') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('-')) throw new Error(`${a} requires a value`);
       activeSessionId = argv[++i];
     } else if (a === '--json') {
       jsonOutput = true;
-    } else if (a === '--allowed-domains' && argv[i + 1]) {
+    } else if (a === '--allowed-domains') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('-')) throw new Error('--allowed-domains requires a value');
       cliDomains.push(...String(argv[++i]).split(',').map((s) => s.trim()).filter(Boolean));
     } else {
       rest.push(a);
@@ -254,11 +570,20 @@ function parseGlobalFlags(argv) {
   return rest;
 }
 
-function httpPost(urlPath, body) {
-  const payload = { ...body };
-  if (urlPath === '/cdp' && activeSessionId && payload.sessionId == null) {
-    payload.sessionId = activeSessionId;
-  }
+function responseError(res, body, url) {
+  if (res.statusCode >= 200 && res.statusCode < 300) return null;
+  const detail = body && typeof body === 'object'
+    ? body.error?.message || body.error || body.message
+    : body;
+  return new Error(`HTTP ${res.statusCode} from ${url.pathname}${detail ? `: ${detail}` : ''}`);
+}
+
+function isSessionNotFoundError(error) {
+  return /Session not found/i.test(String(error?.message || error || ''));
+}
+
+function httpPostRaw(urlPath, payload) {
+  const started = Date.now();
   return new Promise((resolve, reject) => {
     const url = new URL(urlPath, SERVER_URL);
     const data = JSON.stringify(payload);
@@ -270,23 +595,91 @@ function httpPost(urlPath, body) {
       let result = '';
       res.on('data', chunk => result += chunk);
       res.on('end', () => {
+        let parsed;
         try {
-          resolve(JSON.parse(result));
+          parsed = result ? JSON.parse(result) : null;
         } catch {
-          resolve(result);
+          parsed = result;
         }
+        const error = responseError(res, parsed, url);
+        if (error) reject(error);
+        else resolve(parsed);
       });
     });
+    req.on('timeout', () => req.destroy(new Error(`Request timed out: ${url.pathname}`)));
     req.on('error', reject);
     req.write(data);
     req.end();
+  }).finally(() => {
+    const elapsed = Date.now() - started;
+    if (urlPath === '/cdp') lastHttpTiming.cdp_ms += elapsed;
+    else lastHttpTiming.relay_ms += elapsed;
   });
 }
 
+async function pickLiveSessionId() {
+  const targets = await getTargets();
+  return targets[0]?.sessionId || null;
+}
+
+async function httpPost(urlPath, body) {
+  const payload = { ...body };
+  const pinned = activeSessionId;
+  if (urlPath === '/cdp' && pinned && payload.sessionId == null) {
+    payload.sessionId = pinned;
+  }
+  try {
+    return await httpPostRaw(urlPath, payload);
+  } catch (error) {
+    if (
+      urlPath === '/cdp'
+      && pinned
+      && payload.sessionId === pinned
+      && isSessionNotFoundError(error)
+    ) {
+      const live = await pickLiveSessionId();
+      clearPersistedSession();
+      if (live) {
+        persistSession(live);
+        const retry = { ...body, sessionId: live };
+        return httpPostRaw(urlPath, retry);
+      }
+    }
+    throw error;
+  }
+}
+
+async function waitUntil(predicate, { timeoutMs = 5000, intervalMs = 50, label = 'condition' } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    try {
+      if (await predicate()) return true;
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  if (lastError) throw new Error(`${label} not met within ${timeoutMs}ms: ${lastError.message}`);
+  return false;
+}
+
 // Server checks
+async function getRelayStatus() {
+  return httpGet('/status');
+}
+
+function extensionReady(status) {
+  if (!status || status.extension !== true) return false;
+  if (Object.prototype.hasOwnProperty.call(status, 'extensionWorkerAlive')) {
+    return status.extensionWorkerAlive === true;
+  }
+  return true;
+}
+
 async function checkServer() {
   try {
-    await httpGet('/status');
+    await getRelayStatus();
     return true;
   } catch {
     return false;
@@ -296,7 +689,7 @@ async function checkServer() {
 async function checkExtension() {
   try {
     const status = await httpGet('/status');
-    return status && status.extension === true;
+    return extensionReady(status);
   } catch {
     return false;
   }
@@ -319,7 +712,49 @@ async function getTargets() {
   }
 }
 
-// Auto-connect helper - ensures Chrome is running and connected before commands
+function appleScriptString(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function browserIsRunning(browser) {
+  try {
+    execFileSync('pgrep', ['-x', browser.processName], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function launchBrowser(browser) {
+  const args = browser.path ? [browser.path] : ['-a', browser.name];
+  execFileSync('open', args, { stdio: 'ignore' });
+}
+
+function activeBrowserTabUrl(browser) {
+  const app = appleScriptString(browser.name);
+  return execFileSync('osascript', [
+    '-e',
+    `tell application "${app}" to return URL of active tab of front window`,
+  ]).toString().trim();
+}
+
+function createBrowserPage(browser, url, newWindow = false) {
+  const app = appleScriptString(browser.name);
+  const target = appleScriptString(url);
+  const command = newWindow
+    ? `tell application "${app}" to make new window with properties {URL:"${target}"}`
+    : `tell application "${app}" to make new tab at front window with properties {URL:"${target}"}`;
+  execFileSync('osascript', ['-e', command], { stdio: 'ignore' });
+}
+
+async function requestActiveTabAttach() {
+  const response = await fetch(`${SERVER_URL}/attach`, { method: 'POST' });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
+  return data;
+}
+
+// Auto-connect helper - honors the browser selected by $GLIDER_HOME/config/browser.json.
 async function ensureConnected() {
   // Check if already connected
   if (await checkTab()) {
@@ -329,29 +764,23 @@ async function ensureConnected() {
   // Check if server is running
   if (!await checkServer()) {
     log.info('Server not running, starting...');
-    await cmdStart();
-    await new Promise(r => setTimeout(r, 1000));
+    await cmdStart({ render: false });
+    await waitUntil(() => checkServer(), { timeoutMs: 5000, intervalMs: 50, label: 'relay ready' });
   }
   
-  // Check if Chrome is running
-  try {
-    execSync('pgrep -x "Google Chrome"', { stdio: 'ignore' });
-  } catch {
-    log.info('Chrome not running, launching...');
-    // Open Chrome with a new window to google.com
-    execSync('open -na "Google Chrome" --args --new-window "https://www.google.com"');
-    await new Promise(r => setTimeout(r, 3000));
+  const browser = getBrowserConfig();
+  if (!browserIsRunning(browser)) {
+    log.info(`${browser.name} not running, launching...`);
+    launchBrowser(browser);
+    await waitUntil(() => browserIsRunning(browser), { timeoutMs: 8000, intervalMs: 100, label: 'browser launch' });
   }
   
   // Wait for extension to connect
-  for (let i = 0; i < 10; i++) {
-    if (await checkExtension()) break;
-    await new Promise(r => setTimeout(r, 500));
-  }
+  await waitUntil(() => checkExtension(), { timeoutMs: 5000, intervalMs: 100, label: 'extension' });
   
   if (!await checkExtension()) {
-    log.fail('Extension not connected - make sure Glider extension is installed');
-    log.info('Install extension from Chrome Web Store: https://chromewebstore.google.com/detail/glider/njbidokkffhgpofcejgcfcgcinmeoalj');
+    log.fail(`Extension not connected in ${browser.name}`);
+    log.info('Install or enable Glider from Chrome Web Store: https://chromewebstore.google.com/detail/glider/njbidokkffhgpofcejgcfcgcinmeoalj');
     return false;
   }
   
@@ -363,42 +792,44 @@ async function ensureConnected() {
   
   // Need to create/attach to a tab
   try {
-    const tabUrl = execSync(`osascript -e 'tell application "Google Chrome" to return URL of active tab of front window'`).toString().trim();
-    if (tabUrl.startsWith('chrome://') || tabUrl.startsWith('chrome-extension://')) {
-      log.info('Creating new tab (current is chrome://)...');
-      execSync(`osascript -e 'tell application "Google Chrome" to make new tab at front window with properties {URL:"https://www.google.com"}'`);
-      await new Promise(r => setTimeout(r, 2000));
+    const tabUrl = activeBrowserTabUrl(browser);
+    if (isBrowserInternalUrl(tabUrl)) {
+      log.info(`Creating new tab (current URL is not attachable: ${tabUrl})...`);
+      createBrowserPage(browser, browser.bootstrapUrl);
+      await waitUntil(() => checkTab(), { timeoutMs: 4000, intervalMs: 100, label: 'tab attach' });
     }
   } catch {
     // No window exists, create one
-    log.info('Creating new Chrome window...');
-    execSync(`osascript -e 'tell application "Google Chrome" to make new window with properties {URL:"https://www.google.com"}'`);
-    await new Promise(r => setTimeout(r, 2000));
+    log.info(`Creating new ${browser.name} window...`);
+    createBrowserPage(browser, browser.bootstrapUrl, true);
+    await waitUntil(() => checkTab(), { timeoutMs: 4000, intervalMs: 100, label: 'tab attach' });
   }
   
   // Trigger attach via HTTP
   try {
-    const result = await fetch(`${SERVER_URL}/attach`, { method: 'POST' });
-    const data = await result.json();
+    const data = await requestActiveTabAttach();
     if (data.attached > 0) {
       log.ok('Auto-connected!');
       return true;
     }
   } catch {}
-  
+
   // Final fallback - create fresh tab
   log.info('Creating fresh tab...');
-  execSync(`osascript -e 'tell application "Google Chrome" to make new tab at front window with properties {URL:"https://www.google.com"}'`);
-  await new Promise(r => setTimeout(r, 2000));
-  
-  try {
-    const result = await fetch(`${SERVER_URL}/attach`, { method: 'POST' });
-    const data = await result.json();
-    if (data.attached > 0) {
-      log.ok('Auto-connected!');
-      return true;
+  createBrowserPage(browser, browser.bootstrapUrl);
+  await waitUntil(async () => {
+    try {
+      const data = await requestActiveTabAttach();
+      return data.attached > 0 || await checkTab();
+    } catch {
+      return checkTab();
     }
-  } catch {}
+  }, { timeoutMs: 4000, intervalMs: 100, label: 'fresh tab attach' });
+
+  if (await checkTab()) {
+    log.ok('Auto-connected!');
+    return true;
+  }
   
   log.fail('Could not auto-connect');
   return false;
@@ -406,18 +837,54 @@ async function ensureConnected() {
 
 // Commands
 async function cmdStatus() {
+  let relay = null;
+  try {
+    relay = await httpGet('/status');
+  } catch {}
+  const serverOk = relay !== null;
+  const extOk = serverOk && extensionReady(relay);
+  const targets = serverOk && relay.extension === true ? await getTargets() : [];
+  const healthy = serverOk && extOk && targets.length > 0;
+  const healthError = healthy
+    ? null
+    : !serverOk
+      ? 'relay unavailable'
+      : !relay.extension
+        ? 'extension disconnected'
+        : !extOk
+          ? 'extension worker not alive (socket up, no pong; click Glider icon or reload extension)'
+          : 'no attached targets';
+
+  if (jsonOutput) {
+    emitJson(healthy, {
+      healthy,
+      port: PORT,
+      server: serverOk,
+      extension: !!relay?.extension,
+      extensionWorkerAlive: relay?.extensionWorkerAlive ?? null,
+      reconnecting: relay?.reconnecting === true,
+      targetCount: targets.length,
+      targets: targets.map((target) => ({
+        sessionId: target.sessionId,
+        targetId: target.targetId,
+        title: target.title || target.targetInfo?.title || '',
+        url: target.url || target.targetInfo?.url || '',
+      })),
+    }, healthError);
+    return;
+  }
+
   showBanner();
   log.box('STATUS');
-  
-  const serverOk = await checkServer();
   console.log(serverOk ? `  ${GREEN}✓${NC} Server running on port ${PORT}` : `  ${RED}✗${NC} Server not running`);
   
   if (serverOk) {
-    const extOk = await checkExtension();
     console.log(extOk ? `  ${GREEN}✓${NC} Extension connected` : `  ${RED}✗${NC} Extension not connected`);
+    if (relay?.extension && !extOk) {
+      console.log(`      ${DIM}socket up but worker silent - click Glider icon or reload extension${NC}`);
+    }
     
     if (extOk) {
-      const targets = await getTargets();
       if (targets.length > 0) {
         console.log(`  ${GREEN}✓${NC} ${targets.length} tab(s) connected:`);
         targets.forEach(t => {
@@ -433,46 +900,146 @@ async function cmdStatus() {
     console.log(`      ${DIM}Run: glider install${NC}`);
   }
   console.log();
+  if (!healthy) process.exitCode = 1;
 }
 
-async function cmdStart() {
-  if (await checkServer()) {
-    log.ok('Server already running');
-    return;
+async function cmdStart({ render = true } = {}) {
+  if (!fs.existsSync(RELAY_ENTRY)) {
+    throw new Error(`bserve not found at ${RELAY_ENTRY}`);
   }
   
-  log.info('Starting glider server...');
-  const bserve = path.join(LIB_DIR, 'bserve.js');
-  
-  if (!fs.existsSync(bserve)) {
-    log.fail(`bserve not found at ${bserve}`);
-    process.exit(1);
-  }
-  
-  const child = spawn('node', [bserve], {
-    detached: true,
-    stdio: ['ignore', fs.openSync(LOG_FILE, 'a'), fs.openSync(LOG_FILE, 'a')],
-  });
-  child.unref();
-  
-  // Wait for server
-  for (let i = 0; i < 10; i++) {
-    await new Promise(r => setTimeout(r, 500));
-    if (await checkServer()) {
-      log.ok('Server started');
-      return;
-    }
-  }
-  log.fail('Server failed to start');
-  process.exit(1);
-}
+  fs.mkdirSync(GLIDER_HOME, { recursive: true });
+  if (render) log.info('Starting glider server...');
+  const locks = await acquireStandaloneRelayLocks();
 
-async function cmdStop() {
+  let child = null;
+  let identity = null;
   try {
-    execSync('pkill -f bserve', { stdio: 'ignore' });
-    log.ok('Server stopped');
-  } catch {
-    log.warn('Server was not running');
+    let status = null;
+    try {
+      status = await getRelayStatus();
+    } catch {}
+
+    const ownership = inspectDaemonOwnership();
+    if (status?.pid) {
+      if (
+        ownership.state === 'owned'
+        && (!daemonChildMatches(ownership.record) || status.pid !== ownership.record.childPid)
+      ) {
+        throw new Error(`Daemon PID ${ownership.record.pid} does not own the active relay on port ${PORT}`);
+      }
+      if (ownership.state === 'unverified') assertStandaloneRelayAllowed(ownership);
+      const result = {
+        running: true,
+        port: PORT,
+        pid: status.pid,
+        alreadyRunning: true,
+        managedBy: ownership.state === 'owned' ? 'daemon' : 'standalone',
+      };
+      if (render) {
+        if (jsonOutput) emitJson(true, result);
+        else log.ok('Server already running');
+      }
+      return result;
+    }
+
+    assertStandaloneRelayAllowed(ownership);
+
+    child = spawn(process.execPath, [RELAY_ENTRY], {
+      detached: true,
+      stdio: ['ignore', fs.openSync(LOG_FILE, 'a'), fs.openSync(LOG_FILE, 'a')],
+    });
+    identity = getProcessIdentity(child.pid);
+    if (!identity) {
+      child.kill('SIGTERM');
+      throw new Error('Server process identity could not be verified');
+    }
+    writeRelayPidRecord({
+      schema: 1,
+      pid: child.pid,
+      port: PORT,
+      entry: fs.realpathSync(RELAY_ENTRY),
+      started: identity.started,
+    });
+    child.unref();
+
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      let status = null;
+      try { status = await getRelayStatus(); } catch {}
+      if (status?.pid === child.pid && status.port === PORT) {
+        assertStandaloneRelayAllowed();
+        const result = { running: true, port: PORT, pid: child.pid };
+        if (render) {
+          if (jsonOutput) emitJson(true, result);
+          else log.ok('Server started');
+        }
+        return result;
+      }
+    }
+    throw new Error('Server failed to start');
+  } catch (error) {
+    if (child) {
+      try { child.kill('SIGTERM'); } catch {}
+      try { await waitForProcessExit(child.pid); } catch {}
+    }
+    if (identity) {
+      try { removeRelayPidRecordIfOwned(child.pid, identity.started); } catch {}
+    }
+    throw error;
+  } finally {
+    releaseStandaloneRelayLocks(locks);
+  }
+}
+
+async function cmdStop({ render = true } = {}) {
+  fs.mkdirSync(GLIDER_HOME, { recursive: true });
+  const locks = await acquireStandaloneRelayLocks();
+  try {
+  assertStandaloneRelayAllowed();
+  if (!fs.existsSync(RELAY_PID_FILE)) {
+    if (await checkServer()) {
+      throw new Error(`Relay is running but is not owned by this CLI (${RELAY_PID_FILE} is absent); stop its service manager instead`);
+    }
+    const result = { running: false, port: PORT, alreadyStopped: true };
+    if (render) {
+      if (jsonOutput) emitJson(true, result);
+      else log.warn('Server was not running');
+    }
+    return result;
+  }
+
+  const record = readRelayPidRecord(RELAY_PID_FILE);
+  const identity = record ? getProcessIdentity(record.pid) : null;
+  if (!relayPidRecordMatches(record, identity)) {
+    throw new Error(`Refusing to signal unverified relay PID record: ${RELAY_PID_FILE}`);
+  }
+  try {
+    process.kill(record.pid, 'SIGTERM');
+  } catch (error) {
+    if (error.code === 'ESRCH') {
+      try { removeRelayPidRecordIfOwned(record.pid, record.started); } catch {}
+      const result = { running: false, port: PORT, alreadyStopped: true };
+      if (render) {
+        if (jsonOutput) emitJson(true, result);
+        else log.warn('Server was not running');
+      }
+      return result;
+    }
+    throw error;
+  }
+  if (!await waitForProcessExit(record.pid)) {
+    throw new Error(`relay PID ${record.pid} did not exit after SIGTERM`);
+  }
+  removeRelayPidRecordIfOwned(record.pid, record.started);
+  const result = { running: false, port: PORT, pid: record.pid };
+  if (render) {
+    if (jsonOutput) emitJson(true, result);
+    else log.ok('Server stopped');
+  }
+  return result;
+  } finally {
+    releaseStandaloneRelayLocks(locks);
   }
 }
 
@@ -704,8 +1271,11 @@ async function cmdText() {
         returnByValue: true,
       }
     });
-    console.log(result.result?.value || '');
+    const value = result.result?.value || '';
+    if (jsonOutput) emitJson(true, value);
+    else console.log(value);
   } catch (e) {
+    if (jsonOutput) emitJson(false, null, e.message);
     log.fail(`Text extraction failed: ${e.message}`);
     process.exit(1);
   }
@@ -716,26 +1286,70 @@ async function cmdText() {
 // ═══════════════════════════════════════════════════════════════════
 
 async function cmdRestart() {
-  await cmdStop();
+  const stopped = await cmdStop({ render: false });
   await new Promise(r => setTimeout(r, 500));
-  await cmdStart();
+  const started = await cmdStart({ render: false });
+  const result = { stopped, started };
+  if (jsonOutput) emitJson(true, result);
+  else log.ok('Server restarted');
+  return result;
 }
 
 // reload-ext: automate extension reload + tab re-attachment
 async function cmdReloadExt() {
   try {
+    const before = await httpGetJson('/status');
+    if (!Number.isInteger(before?.extensionGeneration)) {
+      throw new Error('relay does not expose extension connection generation');
+    }
     const r = await postExtension({ method: 'reloadSelf', params: {} });
-    // v0.3.15: same response unwrap fix as attach-all - r.result was always undefined
     const persisted = (r.result?.persisted ?? r.persisted ?? '?');
     log.ok(`Extension reload triggered (persisted ${persisted} tab URLs).`);
-    log.info('Waiting 4s for extension to boot back up + reconnect...');
-    await new Promise(x => setTimeout(x, 4000));
-    // Extension reboots → autoAttachActiveTab restores from chrome.storage
-    // Confirm state
-    const st = await httpGetJson('/status');
-    log.ok(`relay reconnected: extension=${st.extension} targets=${st.targets}`);
+    const timeoutMs = Number.parseInt(process.env.GLIDER_RELOAD_TIMEOUT_MS || '15000', 10);
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 100) {
+      throw new Error('GLIDER_RELOAD_TIMEOUT_MS must be an integer >= 100');
+    }
+    const deadline = Date.now() + timeoutMs;
+    const needsTarget = Number.isInteger(persisted) && persisted > 0;
+    let status = null;
+    let sawDisconnect = before.extension !== true;
+    while (Date.now() < deadline) {
+      try {
+        status = await httpGetJson('/status');
+        if (status?.extension !== true) sawDisconnect = true;
+        if (
+          status?.extension === true
+          && status.extensionGeneration !== before.extensionGeneration
+          && (!needsTarget || status.targets > 0)
+        ) break;
+      } catch {
+        sawDisconnect = true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    if (
+      status?.extension !== true
+      || status.extensionGeneration === before.extensionGeneration
+      || (needsTarget && status.targets < 1)
+    ) {
+      if (!sawDisconnect && status?.extension === true
+          && status.extensionGeneration === before.extensionGeneration) {
+        throw new Error(
+          `extension did not reload (connection never dropped within ${timeoutMs}ms); `
+          + 'chrome.runtime.reload may be blocked in this browser/profile'
+        );
+      }
+      throw new Error(`extension did not reconnect within ${timeoutMs}ms`);
+    }
+    if (jsonOutput) emitJson(true, {
+      persisted,
+      extension: true,
+      targets: status.targets,
+      extensionGeneration: status.extensionGeneration,
+    });
+    log.ok(`Relay reconnected: extension=true targets=${status.targets}`);
   } catch (e) {
-    log.fail(`reload-ext failed: ${e.message}`);
+    emitCommandFailure(`reload-ext failed: ${e.message}`);
     log.info('First-time bootstrap: open your browser extensions page and reload Glider (one time only).');
   }
 }
@@ -757,97 +1371,171 @@ async function cmdAttachAll(filter) {
     }
   } catch (e) {
     log.fail(`attach-all failed: ${e.message}`);
+    process.exit(1);
   }
 }
 
 // Helper: POST to relay's /extension endpoint (already exists in bserve.js)
 async function postExtension(body) {
-  return new Promise((resolve, reject) => {
-    const data = JSON.stringify(body);
-    const req = http.request({
-      hostname: '127.0.0.1', port: 19988, path: '/extension', method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
-    }, (res) => {
-      let s = '';
-      res.on('data', c => s += c);
-      res.on('end', () => {
-        try {
-          const j = JSON.parse(s);
-          if (j.error) reject(new Error(j.error.message || j.error));
-          else resolve(j);
-        } catch(e) { reject(new Error('bad JSON from /extension: ' + s.slice(0,200))); }
-      });
-    });
-    req.on('error', reject);
-    req.write(data); req.end();
-  });
+  const result = await httpPost('/extension', body);
+  if (result?.error) throw new Error(result.error.message || result.error);
+  return result;
 }
 
 async function httpGetJson(pathStr) {
-  return new Promise((resolve, reject) => {
-    http.get({ hostname: '127.0.0.1', port: 19988, path: pathStr }, (res) => {
-      let s = ''; res.on('data', c => s += c);
-      res.on('end', () => { try { resolve(JSON.parse(s)); } catch(e) { reject(e); } });
-    }).on('error', reject);
-  });
+  return httpGet(pathStr);
 }
 
 // Daemon management - runs forever, respawns on crash
 async function cmdInstallDaemon() {
   const home = os.homedir();
-  const daemonScript = path.join(LIB_DIR, 'glider-daemon.sh');
-  const logDir = path.join(home, '.glider');
-  const pidFile = path.join(logDir, 'daemon.pid');
+  const daemonScript = DAEMON_ENTRY;
+  const logDir = GLIDER_HOME;
+  const pidFile = DAEMON_PID_FILE;
+  const legacyPidFile = path.join(logDir, 'daemon.pid');
   
   // Create log directory
   if (!fs.existsSync(logDir)) {
     fs.mkdirSync(logDir, { recursive: true });
   }
-  
-  // Kill existing daemon
-  if (fs.existsSync(pidFile)) {
-    try {
-      const pid = fs.readFileSync(pidFile, 'utf8').trim();
-      execSync(`kill ${pid} 2>/dev/null || true`, { stdio: 'ignore' });
-    } catch {}
+  const managementLock = await acquireDaemonManagementLock();
+  try {
+
+  const legacy = inspectLegacyDaemonRecord(legacyPidFile, daemonScript);
+  if (legacy.state === 'live-unverified') {
+    emitCommandFailure(`Legacy daemon PID ${legacy.pid} is still running, but ${legacyPidFile} lacks safe ownership metadata; stop its service manager, then rerun glider install`);
+    return;
+  }
+  if (legacy.state === 'stale') {
+    try { fs.unlinkSync(legacyPidFile); } catch {}
   }
   
-  // Start daemon in background, detached from terminal
-  const child = spawn('nohup', [daemonScript], {
+  if (fs.existsSync(pidFile)) {
+    const record = readDaemonPidRecord(pidFile);
+    const identity = record ? getProcessIdentity(record.pid) : null;
+    if (daemonSupervisorMatches(record, identity, daemonScript)) {
+      let status = null;
+      try { status = await getRelayStatus(); } catch {}
+      if (
+        record.ready === true
+        && daemonChildMatches(record)
+        && status?.pid === record.childPid
+        && status.port === PORT
+      ) {
+        if (jsonOutput) emitJson(true, { running: true, port: PORT, pid: record.pid, childPid: record.childPid, alreadyRunning: true });
+        log.ok('Daemon already running');
+        return;
+      }
+      emitCommandFailure(`Daemon PID ${record.pid} is running but does not own the relay on port ${PORT}`);
+      return;
+    }
+    const claimDir = DAEMON_CLAIM_DIR;
+    if (fs.existsSync(claimDir)) {
+      emitCommandFailure(`Daemon claim exists without a verified ownership record: ${claimDir}`);
+      return;
+    }
+    if (record) removeDaemonPidRecordIfOwned(pidFile, record);
+    else fs.unlinkSync(pidFile);
+  }
+  
+  const child = spawn(daemonScript, [], {
     detached: true,
     stdio: ['ignore', 'ignore', 'ignore'],
-    cwd: home
+    cwd: home,
+    env: {
+      ...process.env,
+      GLIDER_PORT: String(PORT),
+      GLIDER_DAEMON_MANAGEMENT_OWNER_PID: String(managementLock.pid),
+      GLIDER_DAEMON_MANAGEMENT_OWNER_STARTED: managementLock.started,
+    },
   });
   child.unref();
   
-  await new Promise(r => setTimeout(r, 1000));
-  
-  if (fs.existsSync(pidFile)) {
-    log.ok('Daemon started');
-    log.info('Relay will auto-restart on crash');
-    log.info(`Logs: ${logDir}/daemon.log`);
-    log.info(`PID: ${fs.readFileSync(pidFile, 'utf8').trim()}`);
-  } else {
-    log.fail('Daemon failed to start');
+  for (let i = 0; i < 20; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const record = readDaemonPidRecord(pidFile);
+    const identity = record ? getProcessIdentity(record.pid) : null;
+    let status = null;
+    try { status = await getRelayStatus(); } catch {}
+    if (
+      daemonSupervisorMatches(record, identity, daemonScript)
+      && record.ready === true
+      && daemonChildMatches(record)
+      && status?.pid === record.childPid
+      && status.port === PORT
+    ) {
+      const alreadyRunning = record.pid !== child.pid;
+      if (jsonOutput) emitJson(true, { running: true, port: PORT, pid: record.pid, childPid: record.childPid, alreadyRunning });
+      log.ok(alreadyRunning ? 'Daemon already running' : 'Daemon started');
+      log.info('Relay will auto-restart on crash');
+      log.info(`Logs: ${logDir}/daemon.log`);
+      log.info(`PID: ${record.pid}`);
+      return;
+    }
+    if (child.exitCode !== null && child.exitCode !== 0) break;
+  }
+
+  const identity = getProcessIdentity(child.pid);
+  if (identity && commandIncludesPath(identity.command, daemonScript)) {
+    try {
+      process.kill(child.pid, 'SIGTERM');
+      await waitForProcessExit(child.pid);
+    } catch {}
+  }
+  const failedRecord = readDaemonPidRecord(pidFile);
+  if (failedRecord?.pid === child.pid) removeDaemonPidRecordIfOwned(pidFile, failedRecord);
+  emitCommandFailure(`Daemon failed to start a relay on port ${PORT}`);
+  } finally {
+    releaseDaemonManagementLock(managementLock);
   }
 }
 
 async function cmdUninstallDaemon() {
-  const home = os.homedir();
-  const pidFile = path.join(home, '.glider', 'daemon.pid');
+  fs.mkdirSync(GLIDER_HOME, { recursive: true });
+  const pidFile = DAEMON_PID_FILE;
+  const legacyPidFile = path.join(GLIDER_HOME, 'daemon.pid');
+  const daemonScript = DAEMON_ENTRY;
+  const claimDir = DAEMON_CLAIM_DIR;
+  const managementLock = await acquireDaemonManagementLock();
+  try {
+  const legacy = inspectLegacyDaemonRecord(legacyPidFile, daemonScript);
+  if (legacy.state === 'live-unverified') {
+    emitCommandFailure(`Legacy daemon PID ${legacy.pid} is still running, but ${legacyPidFile} lacks safe ownership metadata; stop its service manager, then rerun glider uninstall`);
+    return;
+  }
+  const legacyRecordRemoved = legacy.state === 'stale';
+  if (legacyRecordRemoved) {
+    try { fs.unlinkSync(legacyPidFile); } catch {}
+  }
   
   if (!fs.existsSync(pidFile)) {
+    if (fs.existsSync(claimDir)) {
+      emitCommandFailure(`Daemon claim exists without a verified ownership record: ${claimDir}`);
+      return;
+    }
+    if (jsonOutput) emitJson(true, { running: false, port: PORT, legacyRecordRemoved });
     log.info('Daemon not running');
     return;
   }
   
-  try {
-    const pid = fs.readFileSync(pidFile, 'utf8').trim();
-    execSync(`kill ${pid}`, { stdio: 'ignore' });
-    fs.unlinkSync(pidFile);
+    const record = readDaemonPidRecord(pidFile);
+    const identity = record ? getProcessIdentity(record.pid) : null;
+    const childIsValid = record?.childPid == null || daemonChildMatches(record);
+    if (!daemonSupervisorMatches(record, identity, daemonScript) || !childIsValid) {
+      emitCommandFailure(`Refusing to signal unverified daemon PID record: ${pidFile}`);
+      return;
+    }
+    process.kill(record.pid, 'SIGTERM');
+    if (!await waitForProcessExit(record.pid)) {
+      throw new Error(`daemon PID ${record.pid} did not exit after SIGTERM`);
+    }
+    if (fs.existsSync(pidFile)) removeDaemonPidRecordIfOwned(pidFile, record);
+    if (jsonOutput) emitJson(true, { running: false, port: PORT, pid: record.pid });
     log.ok('Daemon stopped');
   } catch (e) {
-    log.fail(`Failed to stop: ${e.message}`);
+    emitCommandFailure(`Failed to stop daemon: ${e.message}`);
+  } finally {
+    releaseDaemonManagementLock(managementLock);
   }
 }
 
@@ -857,29 +1545,20 @@ async function cmdConnect() {
   
   // 1. Ensure relay is running
   if (!await checkServer()) {
-    await cmdStart();
-    await new Promise(r => setTimeout(r, 1000));
+    await cmdStart({ render: false });
+    await waitUntil(() => checkServer(), { timeoutMs: 5000, intervalMs: 50, label: 'relay ready' });
   }
   
   // 2. Ensure browser is running (see getBrowserConfig + README.md#Browsers)
   const browser = getBrowserConfig();
-  try {
-    execSync(`pgrep -x "${browser.processName}"`, { stdio: 'ignore' });
-  } catch {
+  if (!browserIsRunning(browser)) {
     log.info(`Starting ${browser.name}...`);
-    if (browser.path) {
-      execSync(`open "${browser.path}"`, { stdio: 'ignore' });
-    } else {
-      execSync(`open -a "${browser.name}"`);
-    }
-    await new Promise(r => setTimeout(r, 3000));
+    launchBrowser(browser);
+    await waitUntil(() => browserIsRunning(browser), { timeoutMs: 8000, intervalMs: 100, label: 'browser launch' });
   }
   
   // 3. Wait for extension to connect to relay
-  for (let i = 0; i < 10; i++) {
-    if (await checkExtension()) break;
-    await new Promise(r => setTimeout(r, 500));
-  }
+  await waitUntil(() => checkExtension(), { timeoutMs: 5000, intervalMs: 100, label: 'extension' });
   
   if (!await checkExtension()) {
     log.fail('Extension not connected to relay');
@@ -887,9 +1566,6 @@ async function cmdConnect() {
     process.exit(1);
   }
   log.ok('Extension connected');
-  
-  // Wait for extension to fully initialize
-  await new Promise(r => setTimeout(r, 500));
   
   // 4. Check if already have targets
   if (await checkTab()) {
@@ -903,24 +1579,23 @@ async function cmdConnect() {
   
   // 5. Ensure we have a real tab (not chrome:// or arc://)
   try {
-    const tabUrl = execSync(`osascript -e 'tell application "${browser.name}" to return URL of active tab of front window'`).toString().trim();
-    if (tabUrl.startsWith('chrome://') || tabUrl.startsWith('chrome-extension://') || tabUrl.startsWith('arc://')) {
+    const tabUrl = activeBrowserTabUrl(browser);
+    if (isBrowserInternalUrl(tabUrl)) {
       log.info('Creating new tab...');
-      execSync(`osascript -e 'tell application "${browser.name}" to make new tab at front window with properties {URL:"https://google.com"}'`);
-      await new Promise(r => setTimeout(r, 2000));
+      createBrowserPage(browser, browser.bootstrapUrl);
+      await waitUntil(() => checkTab(), { timeoutMs: 4000, intervalMs: 100, label: 'tab attach' });
     }
   } catch {
     // No window, create one
     log.info('Creating new window...');
-    execSync(`osascript -e 'tell application "${browser.name}" to make new window with properties {URL:"https://google.com"}'`);
-    await new Promise(r => setTimeout(r, 2000));
+    createBrowserPage(browser, browser.bootstrapUrl, true);
+    await waitUntil(() => checkTab(), { timeoutMs: 4000, intervalMs: 100, label: 'tab attach' });
   }
   
   // 6. Trigger attach via HTTP endpoint (no pixel clicking needed!)
   log.info('Attaching to tab...');
   try {
-    const result = await fetch(`${SERVER_URL}/attach`, { method: 'POST' });
-    const data = await result.json();
+    const data = await requestActiveTabAttach();
     
     if (data.attached > 0) {
       log.ok('Connected!');
@@ -936,27 +1611,28 @@ async function cmdConnect() {
   
   // 7. Fallback: create fresh tab and retry
   log.info('Creating fresh tab...');
-  execSync(`osascript -e 'tell application "${browser.name}" to make new tab at front window with properties {URL:"https://google.com"}'`);
-  await new Promise(r => setTimeout(r, 2000));
-  
-  try {
-    const result = await fetch(`${SERVER_URL}/attach`, { method: 'POST' });
-    const data = await result.json();
-    
-    if (data.attached > 0) {
-      log.ok('Connected!');
-      const targets = await getTargets();
-      targets.slice(0, 3).forEach(t => {
-        console.log(`  ${CYAN}${t.targetInfo?.url || 'unknown'}${NC}`);
-      });
-      return;
+  createBrowserPage(browser, browser.bootstrapUrl);
+  const attached = await waitUntil(async () => {
+    try {
+      const data = await requestActiveTabAttach();
+      return data.attached > 0 || await checkTab();
+    } catch {
+      return checkTab();
     }
-  } catch {}
+  }, { timeoutMs: 4000, intervalMs: 100, label: 'fresh tab attach' });
   
+  if (attached || await checkTab()) {
+    log.ok('Connected!');
+    const targets = await getTargets();
+    targets.slice(0, 3).forEach(t => {
+      console.log(`  ${CYAN}${t.targetInfo?.url || 'unknown'}${NC}`);
+    });
+    return;
+  }
   // 8. Need manual click - activate browser and show instructions
   log.warn(`Click the Glider extension icon in ${browser.name}`);
-  console.log(`  ${B5}(on any real webpage, not chrome:// or arc:// pages)${NC}`);
-  execSync(`osascript -e 'tell application "${browser.name}" to activate'`);
+  console.log(`  ${B5}(on any real webpage, not a browser-internal page)${NC}`);
+  execFileSync('osascript', ['-e', `tell application "${appleScriptString(browser.name)}" to activate`]);
   
   // Send macOS notification so user sees it even if not looking at terminal
   notify('Glider', `Click the extension icon in ${browser.name} to connect`, true);
@@ -979,79 +1655,119 @@ async function cmdConnect() {
   log.fail('Timed out waiting for connection');
   notify('Glider', 'Connection timed out - click extension icon', true);
   log.info('Make sure you clicked the extension icon on a real webpage');
+  process.exit(1);
 }
 
 function cmdBrowser() {
   const b = getBrowserConfig();
+  if (jsonOutput) {
+    emitJson(true, {
+      name: b.name,
+      path: b.path,
+      processName: b.processName,
+      bootstrapUrl: b.bootstrapUrl,
+      use: b.use,
+      source: b.source,
+      registrySource: b.registrySource,
+    });
+    return;
+  }
   console.log('Browser config (used by glider connect):');
   console.log(`  name:         ${b.name}`);
   console.log(`  path:         ${b.path || '(default launch via name)'}`);
   console.log(`  processName:  ${b.processName}`);
-  if (BROWSER_CONFIG.use) {
-    console.log(`  use:          ${BROWSER_CONFIG.use} ${DIM}(from registry)${NC}`);
+  console.log(`  bootstrapUrl: ${b.bootstrapUrl}`);
+  if (b.use) {
+    console.log(`  use:          ${b.use} ${DIM}(from registry)${NC}`);
   }
   console.log('');
-  console.log('Source: ~/.glider/config/browser.json { "use": "<key>" } or { name, path } → default "Google Chrome"');
-  console.log('Registry: ~/.glider/config/browsers-registry.json. Keys: ' + (Object.keys(BROWSERS_REGISTRY).join(', ') || '(none loaded)'));
+  console.log(`Source: ${b.source || path.join(GLIDER_HOME, 'config', 'browser.json')} { "use": "<key>" } or { name, path } -> default "Google Chrome"`);
+  console.log(`Registry: ${b.registrySource || path.join(GLIDER_HOME, 'config', 'browsers-registry.json')}. Keys: ` + (Object.keys(b.registry).join(', ') || '(none loaded)'));
   console.log('See README.md#browsers for compatibility and examples.');
 }
 
 function cmdUse(key) {
+  const browser = getBrowserConfig();
   if (!key) {
     console.log('Usage: glider use <key>');
-    console.log('Keys in registry: ' + (Object.keys(BROWSERS_REGISTRY).length ? Object.keys(BROWSERS_REGISTRY).join(', ') : '(no registry loaded)'));
-    if (BROWSER_CONFIG.use) console.log('Current: ' + BROWSER_CONFIG.use);
+    console.log('Keys in registry: ' + (Object.keys(browser.registry).length ? Object.keys(browser.registry).join(', ') : '(no registry loaded)'));
+    if (browser.use) console.log('Current: ' + browser.use);
     return;
   }
-  if (!BROWSERS_REGISTRY[key]) {
-    console.error('Unknown key: ' + key + '. Available: ' + Object.keys(BROWSERS_REGISTRY).join(', '));
+  if (!browser.registry[key]) {
+    console.error('Unknown key: ' + key + '. Available: ' + Object.keys(browser.registry).join(', '));
     process.exit(1);
   }
-  const configDir = path.join(os.homedir(), '.glider', 'config');
+  const configDir = path.join(GLIDER_HOME, 'config');
   const browserPath = path.join(configDir, 'browser.json');
   if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
   fs.writeFileSync(browserPath, JSON.stringify({ use: key }, null, 2) + '\n');
-  console.log('Set browser to: ' + key + ' → ' + BROWSERS_REGISTRY[key].name);
+  console.log('Set browser to: ' + key + ' -> ' + browser.registry[key].name);
   console.log('Run: glider connect');
 }
 
 async function cmdTest() {
-  showBanner();
-  log.box('DIAGNOSTICS');
-  
-  // Test 1: Server
-  const serverOk = await checkServer();
-  console.log(serverOk ? `  ${GREEN}✓${NC} ${B5}[1/4]${NC} Server` : `  ${RED}✗${NC} ${B5}[1/4]${NC} Server`);
-  if (!serverOk) {
-    log.info('Starting server...');
-    await cmdStart();
-  }
-  
-  // Test 2: Extension
-  const extOk = await checkExtension();
-  console.log(extOk ? `  ${GREEN}✓${NC} ${B5}[2/4]${NC} Extension` : `  ${RED}✗${NC} ${B5}[2/4]${NC} Extension`);
-  
-  // Test 3: Tab
-  const tabOk = await checkTab();
-  console.log(tabOk ? `  ${GREEN}✓${NC} ${B5}[3/4]${NC} Tab attached` : `  ${RED}✗${NC} ${B5}[3/4]${NC} No tabs`);
-  
-  // Test 4: CDP command
-  if (tabOk) {
+  let relay = null;
+  try {
+    relay = await httpGet('/status');
+  } catch {}
+  const serverOk = relay !== null;
+  const extOk = serverOk && extensionReady(relay);
+  const tabOk = serverOk && Number(relay.targets || 0) > 0;
+  let cdpOk = false;
+  let cdpError = null;
+  if (tabOk && extOk) {
     try {
       const result = await httpPost('/cdp', {
         method: 'Runtime.evaluate',
         params: { expression: '1+1', returnByValue: true }
       });
-      const cdpOk = result.result?.value === 2;
-      console.log(cdpOk ? `${GREEN}[4/4]${NC} CDP: OK` : `${RED}[4/4]${NC} CDP: FAIL`);
-    } catch {
-      console.log(`${RED}[4/4]${NC} CDP: FAIL`);
+      cdpOk = result.result?.value === 2;
+      if (!cdpOk) cdpError = 'unexpected Runtime.evaluate result';
+    } catch (error) {
+      cdpError = error.message;
     }
+  } else if (tabOk && !extOk) {
+    cdpError = 'extension worker not alive';
+  }
+  const healthy = serverOk && extOk && tabOk && cdpOk;
+  const diagnosticError = healthy
+    ? null
+    : cdpError || (!serverOk ? 'relay unavailable' : !extOk ? 'extension worker not alive' : !tabOk ? 'no attached target' : 'CDP probe failed');
+
+  if (jsonOutput) {
+    emitJson(healthy, {
+      healthy,
+      server: serverOk,
+      extension: !!relay?.extension,
+      extensionWorkerAlive: relay?.extensionWorkerAlive ?? null,
+      tab: tabOk,
+      cdp: cdpOk,
+    }, diagnosticError);
+    return;
+  }
+
+  showBanner();
+  log.box('DIAGNOSTICS');
+  
+  // Test 1: Server
+  console.log(serverOk ? `  ${GREEN}✓${NC} ${B5}[1/4]${NC} Server` : `  ${RED}✗${NC} ${B5}[1/4]${NC} Server`);
+  
+  // Test 2: Extension
+  console.log(extOk ? `  ${GREEN}✓${NC} ${B5}[2/4]${NC} Extension` : `  ${RED}✗${NC} ${B5}[2/4]${NC} Extension`);
+  
+  // Test 3: Tab
+  console.log(tabOk ? `  ${GREEN}✓${NC} ${B5}[3/4]${NC} Tab attached` : `  ${RED}✗${NC} ${B5}[3/4]${NC} No tabs`);
+  
+  // Test 4: CDP command
+  if (tabOk) {
+    console.log(cdpOk ? `${GREEN}[4/4]${NC} CDP: OK` : `${RED}[4/4]${NC} CDP: FAIL${cdpError ? ` (${cdpError})` : ''}`);
   } else {
     console.log(`${YELLOW}[4/4]${NC} CDP: SKIPPED (no tab)`);
   }
   
   console.log('═══════════════════════════════════════');
+  if (!healthy) process.exitCode = 1;
 }
 
 async function cmdTabs() {
@@ -1228,8 +1944,11 @@ async function cmdHtml(selector) {
       method: 'Runtime.evaluate',
       params: { expression, returnByValue: true }
     });
-    console.log(result.result?.value || '');
+    const value = result.result?.value || '';
+    if (jsonOutput) emitJson(true, value);
+    else console.log(value);
   } catch (e) {
+    if (jsonOutput) emitJson(false, null, e.message);
     log.fail(`HTML extraction failed: ${e.message}`);
     process.exit(1);
   }
@@ -1246,8 +1965,11 @@ async function cmdTitle() {
       method: 'Runtime.evaluate',
       params: { expression: 'document.title', returnByValue: true }
     });
-    console.log(result.result?.value || '');
+    const value = result.result?.value || '';
+    if (jsonOutput) emitJson(true, value);
+    else console.log(value);
   } catch (e) {
+    if (jsonOutput) emitJson(false, null, e.message);
     log.fail(`Title extraction failed: ${e.message}`);
     process.exit(1);
   }
@@ -1332,31 +2054,35 @@ async function cmdTargets() {
 }
 
 async function cmdUseSession(arg, opts = []) {
-  let sessionId = arg;
-  const urlIdx = opts.indexOf('--url');
-  if (urlIdx >= 0 && opts[urlIdx + 1]) {
-    const needle = opts[urlIdx + 1];
-    const raw = await httpGet('/targets');
-    const targets = Array.isArray(raw) ? raw : [];
-    const hit = targets.find((t) => {
-      const u = t.url || t.targetInfo?.url || '';
-      return u.includes(needle);
-    });
-    if (!hit) {
-      const msg = `no target matching --url ${needle}`;
-      if (jsonOutput) emitJson(false, null, msg);
-      log.fail(msg);
-      process.exit(1);
-    }
-    sessionId = hit.sessionId;
-  }
-  if (!sessionId) {
+  const argv = [arg, ...opts].filter((value) => value !== undefined);
+  const parsed = parseFlags(argv, { url: { type: 'string' } });
+  const requestedSession = parsed._[0] || null;
+  if (!requestedSession && !parsed.url) {
     log.fail('Usage: glider use-session <sessionId> | glider use-session --url <host-fragment>');
     process.exit(1);
   }
+  const raw = await httpGet('/targets');
+  const targets = Array.isArray(raw) ? raw : [];
+  const hit = parsed.url
+    ? targets.find((target) => (target.url || target.targetInfo?.url || '').includes(parsed.url))
+    : targets.find((target) => target.sessionId === requestedSession || target.targetId === requestedSession);
+  if (!hit) {
+    const message = parsed.url
+      ? `no live target matching --url ${parsed.url}`
+      : `session is not live: ${requestedSession}`;
+    if (jsonOutput) emitJson(false, null, message);
+    log.fail(message);
+    process.exit(1);
+  }
+  const sessionId = hit.sessionId;
   persistSession(sessionId);
   if (jsonOutput) {
-    emitJson(true, { sessionId, persisted: SESSION_STORE });
+    emitJson(true, {
+      sessionId,
+      targetId: hit.targetId,
+      url: hit.url || hit.targetInfo?.url || '',
+      persisted: SESSION_STORE,
+    });
   } else {
     log.ok(`Active session: ${sessionId}`);
     console.log(SESSION_STORE);
@@ -1378,14 +2104,10 @@ async function cmdFetch(url, opts = []) {
     process.exit(1);
   }
 
+  if (!await ensureConnected()) process.exit(1);
   if (!jsonOutput) log.info(`Fetching: ${url}`);
-  
-  let outputFile = null;
-  for (let i = 0; i < opts.length; i++) {
-    if (opts[i] === '--output' || opts[i] === '-o') {
-      outputFile = opts[++i];
-    }
-  }
+  const parsed = parseFlags(opts, { output: { short: 'o', type: 'string' } });
+  const outputFile = parsed.output || null;
   
   try {
     const result = await httpPost('/cdp', {
@@ -1427,23 +2149,25 @@ async function cmdCorsFetch(url, opts = []) {
     log.fail('Usage: glider cfetch <url> [--output file] [--method POST] [--body JSON]');
     process.exit(1);
   }
-  
-  log.info(`CORS Fetch: ${url}`);
-  
-  let outputFile = null;
-  let method = 'GET';
-  let body = null;
-  
-  for (let i = 0; i < opts.length; i++) {
-    if (opts[i] === '--output' || opts[i] === '-o') {
-      outputFile = opts[++i];
-    } else if (opts[i] === '--method' || opts[i] === '-X') {
-      method = opts[++i];
-    } else if (opts[i] === '--body' || opts[i] === '-d') {
-      body = opts[++i];
-    }
+
+  try {
+    assertUrlAllowed(url, allowedDomainList, 'cfetch');
+  } catch (error) {
+    if (jsonOutput) emitJson(false, null, error.message);
+    log.fail(error.message);
+    process.exit(1);
   }
-  
+
+  const parsed = parseFlags(opts, {
+    output: { short: 'o', type: 'string' },
+    method: { short: 'X', type: 'string', default: 'GET' },
+    body: { short: 'd', type: 'string' },
+  });
+  const outputFile = parsed.output || null;
+  const method = parsed.method.toUpperCase();
+  const body = parsed.body ?? null;
+  if (!jsonOutput) log.info(`CORS Fetch: ${url}`);
+
   try {
     // Browser-typical Accept by default (unlocks Yammer-family 406-strict endpoints).
     const defaultAccept = 'application/json, text/plain, */*';
@@ -1466,9 +2190,13 @@ async function cmdCorsFetch(url, opts = []) {
       payload = result?.result ?? result;
     }
 
-    if (result?.error) {
-      log.fail(`Fetch error: ${result.error}`);
-      process.exit(1);
+    const fetchError = result?.error || payload?.error;
+    if (fetchError) {
+      const message = typeof fetchError === 'object'
+        ? fetchError.message || JSON.stringify(fetchError)
+        : String(fetchError);
+      emitCommandFailure(`CORS Fetch failed: ${message}`);
+      return;
     }
 
     // cli_gap: cfetch_empty_response_crash - data may be undefined/null on empty bodies
@@ -1478,13 +2206,15 @@ async function cmdCorsFetch(url, opts = []) {
     
     if (outputFile) {
       fs.writeFileSync(outputFile, output);
-      log.ok(`Saved to ${outputFile} (status: ${payload?.status})`);
+      if (jsonOutput) emitJson(true, { url, status: payload?.status, ok: payload?.ok, output: outputFile });
+      else log.ok(`Saved to ${outputFile} (status: ${payload?.status})`);
+    } else if (jsonOutput) {
+      emitJson(true, { url, status: payload?.status, ok: payload?.ok, data });
     } else {
       console.log(output);
     }
   } catch (e) {
-    log.fail(`CORS Fetch failed: ${e.message}`);
-    process.exit(1);
+    emitCommandFailure(`CORS Fetch failed: ${e.message}`);
   }
 }
 
@@ -1611,8 +2341,9 @@ async function cmdThaw(opts = []) {
     }
   }
 
+  const failed = results.filter((result) => !result.thawed);
   if (jsonOutput) {
-    emitJson(true, all ? { thawed: results } : results[0]);
+    emitJson(failed.length === 0, all ? { thawed: results } : results[0], failed.length ? `${failed.length} target(s) failed to thaw` : null);
   } else {
     for (const r of results) {
       if (!r.thawed) { log.fail(`thaw failed (${r.sessionId}): ${r.error}`); continue; }
@@ -1620,6 +2351,7 @@ async function cmdThaw(opts = []) {
       if (verify) extra = ` - visibilityState=${r.visibilityState} asyncAlive=${r.asyncAlive}`;
       log.ok(`thawed ${r.sessionId}${extra}`);
     }
+    if (failed.length) process.exitCode = 1;
   }
 }
 
@@ -1735,8 +2467,9 @@ async function cmdFreeze(opts = []) {
     }
   }
 
+  const failed = results.filter((result) => !result.frozen && !result.skipped);
   if (jsonOutput) {
-    emitJson(true, all ? { frozen: results, totalReclaimedMb: totalReclaimed } : results[0]);
+    emitJson(failed.length === 0, all ? { frozen: results, totalReclaimedMb: totalReclaimed } : results[0], failed.length ? `${failed.length} target(s) failed to freeze` : null);
   } else {
     for (const r of results) {
       if (r.skipped) { log.info(`skipped ${r.sessionId} (${r.skipped})`); continue; }
@@ -1746,6 +2479,7 @@ async function cmdFreeze(opts = []) {
       log.ok(`froze ${r.sessionId}${r.pid ? ` pid=${r.pid}` : ''}${extra}`);
     }
     if (all && verify) log.ok(`total heapΔ (V8 GC of quiesced tabs): ${totalReclaimed}MB across ${results.filter(r => r.frozen).length} tab(s)`);
+    if (failed.length) process.exitCode = 1;
   }
 }
 
@@ -2506,10 +3240,10 @@ ${B5}USAGE${NC}
     ${DIM}GLIDER_SESSION_ID=session-N${NC}  ${DIM}pin tab for all /cdp commands${NC}
 
 ${B5}SETUP${NC}
-    ${BW}install${NC}             Install daemon ${DIM}(runs at login, auto-restarts)${NC}
+    ${BW}install${NC}             Install detached relay supervisor ${DIM}(current session, auto-restarts)${NC}
     ${BW}uninstall${NC}           Remove daemon
     ${BW}update${NC}              Update to latest version
-    ${BW}connect${NC}             Connect to browser ${DIM}(run once per Chrome session)${NC}
+    ${BW}connect${NC}             Connect to browser ${DIM}(uses $GLIDER_HOME/config/browser.json)${NC}
 
 ${B5}STATUS${NC}
     ${BW}status${NC}              Check server, extension, tabs
@@ -2574,7 +3308,7 @@ ${B5}LOOP OPTIONS${NC}
 
 ${B5}EXAMPLES${NC}
     ${DIM}$${NC} glider install              ${DIM}# one-time setup${NC}
-    ${DIM}$${NC} glider connect              ${DIM}# connect to Chrome${NC}
+    ${DIM}$${NC} glider connect              ${DIM}# connect to the configured Chromium browser${NC}
     ${DIM}$${NC} glider goto "https://x.com" ${DIM}# navigate${NC}
     ${DIM}$${NC} glider eval "document.title"${DIM}# run JS${NC}
     ${DIM}$${NC} glider run scrape.yaml      ${DIM}# run task${NC}
@@ -2610,10 +3344,10 @@ ${YELLOW}RALPH WIGGUM PATTERN:${NC}
 
 ${YELLOW}REQUIREMENTS:${NC}
     - Node.js 18+
-    - Glider Chrome extension connected
+    - Glider extension from Chrome Web Store connected in a Chromium browser
 
 ${YELLOW}DOMAIN EXTENSIONS:${NC}
-    Add custom domain commands via ~/.glider/config/domains.json:
+    Add custom domain commands via $GLIDER_HOME/config/domains.json:
     {
       "mysite": { "url": "https://mysite.com/dashboard" },
       "mytool": { "script": "~/scripts/mytool.sh" }
@@ -2649,7 +3383,7 @@ ${YELLOW}DOMAIN EXTENSIONS:${NC}
     pluginVerbs.push({ verb, def });
   }
   if (pluginVerbs.length > 0) {
-    console.log(`${YELLOW}PLUGINS:${NC} (from ~/.glider/plugins/)`);
+    console.log(`${YELLOW}PLUGINS:${NC} (from $GLIDER_HOME/plugins/)`);
     for (const { verb, def } of pluginVerbs) {
       const desc = (Array.isArray(def.help) ? def.help.find(l => !/^Usage:/i.test(l)) : def.help) || '(no description)';
       const shortDesc = String(desc).replace(/^\s+/, '').slice(0, 60);
@@ -2661,7 +3395,7 @@ ${YELLOW}DOMAIN EXTENSIONS:${NC}
   console.log(`    ${GREEN}${'read'.padEnd(16)}${NC} ${DIM}read attr/prop/text/html/value; --all --count --exists --visible --enabled${NC}`);
   console.log(`    ${GREEN}${'click'.padEnd(16)}${NC} ${DIM}--text --contains --regex --nth --role --inside --wait --double --right --hold${NC}`);
   console.log(`    ${GREEN}${'type'.padEnd(16)}${NC} ${DIM}--editor auto|ckeditor|tinymce|prosemirror|monaco|slate|contentEditable ; --file --clear-first --commit${NC}`);
-  console.log(`    ${GREEN}${'wait'.padEnd(16)}${NC} ${DIM}--selector --text --gone --matches --stable --url-matches --timeout${NC}`);
+  console.log(`    ${GREEN}${'wait'.padEnd(16)}${NC} ${DIM}--selector --text --gone --matches --stable --url-matches --timeout; --network-idle is partial${NC}`);
   console.log(`    ${GREEN}${'hover'.padEnd(16)}${NC} ${DIM}hover a target${NC}`);
   console.log(`    ${GREEN}${'focus/blur'.padEnd(16)}${NC} ${DIM}focus/blur an element${NC}`);
   console.log(`    ${GREEN}${'scroll'.padEnd(16)}${NC} ${DIM}scroll to <sel> | by <dx> <dy> | until <sel>${NC}`);
@@ -2682,9 +3416,9 @@ ${YELLOW}DOMAIN EXTENSIONS:${NC}
   console.log(`    ${GREEN}${'cookies'.padEnd(16)}${NC} ${DIM}(read: no flags) | --set NAME=VAL --host H | --delete NAME --host H${NC}`);
   console.log(`    ${GREEN}${'history'.padEnd(16)}${NC} ${DIM}back | forward | reload${NC}`);
   console.log(`    ${GREEN}${'dialog'.padEnd(16)}${NC} ${DIM}dialog auto accept|dismiss${NC}`);
-  console.log(`    ${GREEN}${'console'.padEnd(16)}${NC} ${DIM}console tail | dump${NC}`);
+  console.log(`    ${GREEN}${'console'.padEnd(16)}${NC} ${DIM}tail | dump (partial: exits 2 until event streaming lands)${NC}`);
   console.log(`    ${GREEN}${'pdf'.padEnd(16)}${NC} ${DIM}[PATH] [--landscape] [--margin N] [--scale F]${NC}`);
-  console.log(`    ${GREEN}${'mock'.padEnd(16)}${NC} ${DIM}<url-glob> --status N --body FILE | mock clear${NC}`);
+  console.log(`    ${GREEN}${'mock'.padEnd(16)}${NC} ${DIM}<url-glob> --status N --body FILE (partial; exits 2) | mock clear${NC}`);
   console.log(`    ${GREEN}${'a11y'.padEnd(16)}${NC} ${DIM}Accessibility.getFullAXTree (snapshot --a11y flag equivalent)${NC}`);
   console.log(`    ${GREEN}${'frozen'.padEnd(16)}${NC} ${DIM}detect if tab is macrotask-frozen (hidden); exit 1 = frozen${NC}`);
   console.log(`    ${GREEN}${'thaw'.padEnd(16)}${NC} ${DIM}un-throttle a frozen/hidden tab in place (--all --verify); aka unfreeze/wake${NC}`);
@@ -2789,7 +3523,7 @@ const GLIDER_PLUGIN_REGISTRY = new Map(); // verb → plugin def
 function pluginDirs() {
   const dirs = [];
   if (process.env.GLIDER_PLUGIN_DIR) dirs.push(process.env.GLIDER_PLUGIN_DIR);
-  dirs.push(path.join(os.homedir(), '.glider', 'plugins'));
+  dirs.push(path.join(GLIDER_HOME, 'plugins'));
   return dirs.filter(d => { try { return fs.statSync(d).isDirectory(); } catch { return false; } });
 }
 
@@ -2955,28 +3689,62 @@ function parseJsonPluginArgs(argv, schema) {
 function parseFlags(argv, specs) {
   // specs: { longName: {short?, type: 'boolean'|'string'|'int'|'float', default?} }
   const out = { _: [] };
+  Object.defineProperty(out, '_provided', { value: new Set(), enumerable: false });
   for (const k of Object.keys(specs)) if ('default' in specs[k]) out[k] = specs[k].default;
   const shortMap = {};
   for (const [k, s] of Object.entries(specs)) if (s.short) shortMap['-' + s.short] = k;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
+    let inlineValue;
+    let flagToken = a;
+    if (a.startsWith('--') && a.includes('=')) {
+      const eq = a.indexOf('=');
+      flagToken = a.slice(0, eq);
+      inlineValue = a.slice(eq + 1);
+    }
     let key = null;
-    if (a.startsWith('--')) key = a.slice(2);
-    else if (shortMap[a]) key = shortMap[a];
+    if (flagToken.startsWith('--')) key = flagToken.slice(2);
+    else if (shortMap[flagToken]) key = shortMap[flagToken];
     if (key && specs[key]) {
       const s = specs[key];
-      if (s.type === 'boolean') out[key] = true;
-      else {
-        const v = argv[++i];
-        out[key] = s.type === 'int' ? parseInt(v, 10)
-                 : s.type === 'float' ? parseFloat(v)
-                 : v;
+      out._provided.add(key);
+      if (s.type === 'boolean') {
+        if (inlineValue === undefined) out[key] = true;
+        else if (inlineValue === 'true') out[key] = true;
+        else if (inlineValue === 'false') out[key] = false;
+        else throw new Error(`${flagToken} expects true or false`);
+      } else {
+        let value = inlineValue;
+        if (value === undefined) {
+          const next = argv[i + 1];
+          if (next === undefined || next.startsWith('--') || shortMap[next]) {
+            throw new Error(`${flagToken} requires a value`);
+          }
+          value = argv[++i];
+        }
+        if (value === '') throw new Error(`${flagToken} requires a value`);
+        if (s.type === 'int') {
+          if (!/^-?\d+$/.test(value)) throw new Error(`${flagToken} expects an integer`);
+          out[key] = parseInt(value, 10);
+        } else if (s.type === 'float') {
+          if (value.trim() === '' || !Number.isFinite(Number(value))) throw new Error(`${flagToken} expects a number`);
+          out[key] = parseFloat(value);
+        } else {
+          out[key] = value;
+        }
       }
     } else {
       out._.push(a);
     }
   }
   return out;
+}
+
+function assertExclusiveFlags(opts, names) {
+  const present = names.filter((name) => opts._provided.has(name));
+  if (present.length > 1) {
+    throw new Error(`Mutually exclusive flags: ${present.map((name) => `--${name}`).join(', ')}`);
+  }
 }
 
 // --- guard: allow-list check + auto-connect --------------------------
@@ -3019,6 +3787,7 @@ async function cmdRead(argv) {
     visible: { type: 'boolean' },
     enabled: { type: 'boolean' },
   });
+  assertExclusiveFlags(opts, ['attr', 'prop', 'text', 'html', 'value', 'count', 'exists', 'visible', 'enabled']);
   const sel = opts._[0];
   if (!sel) { log.fail('Usage: glider read <selector> [--attr X | --prop Y | --text | --html | --value | --all | --count | --exists | --visible | --enabled]'); process.exit(1); }
   await _guardAndConnect('read');
@@ -3386,9 +4155,20 @@ async function cmdWait(argv) {
     'url-changes-from': { type: 'string' },
     timeout: { type: 'int', default: 10000 }, poll: { type: 'int', default: 200 },
   });
+  assertExclusiveFlags(opts, ['selector', 'gone', 'matches', 'network-idle', 'url-matches', 'url-changes-from']);
+  if (opts._provided.has('text') && !opts.selector) throw new Error('--text requires --selector');
+  if (opts._provided.has('stable') && !opts.selector) throw new Error('--stable requires --selector');
+  if (opts._provided.has('network-idle')) {
+    failUnsupported('wait --network-idle', 'the relay does not yet persist Network event state');
+  }
   const positional = opts._[0];
+  const conditionFlags = [
+    'selector', 'text', 'gone', 'matches', 'stable',
+    'network-idle', 'url-matches', 'url-changes-from',
+  ];
+  const conditionProvided = conditionFlags.some((flag) => opts._provided.has(flag));
   // Back-compat: bare number = sleep in seconds
-  if (positional && /^\d+(\.\d+)?$/.test(positional) && !opts.selector && !opts.matches && !opts.text && !opts.gone && !opts['url-matches']) {
+  if (positional && /^\d+(\.\d+)?$/.test(positional) && !conditionProvided) {
     await new Promise(r => setTimeout(r, parseFloat(positional) * 1000));
     if (jsonOutput) emitJson(true, { slept_ms: parseFloat(positional) * 1000 });
     return;
@@ -3509,20 +4289,77 @@ async function cmdDrag(argv) {
   })()`);
   const v = r.result?.value;
   if (v?.error) { log.fail(v.error); process.exit(1); }
-  await httpPost('/cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', x: v.sx, y: v.sy, button: 'left', clickCount: 1 } });
-  for (let i = 1; i <= opts.steps; i++) {
-    const x = v.sx + Math.round((v.dx - v.sx) * i / opts.steps);
-    const y = v.sy + Math.round((v.dy - v.sy) * i / opts.steps);
-    await httpPost('/cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mouseMoved', x, y, button: 'left' } });
+  const dropMarker = `__gliderDrop_${process.pid}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  await _rtEval(`(() => {
+    const state = { dropped: false };
+    state.handler = () => { state.dropped = true; };
+    document.addEventListener('drop', state.handler, true);
+    window[${JSON.stringify(dropMarker)}] = state;
+  })()`);
+  let mechanism = 'cdp';
+  let mouseDown = false;
+  try {
+    await httpPost('/cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', x: v.sx, y: v.sy, button: 'left', buttons: 1, clickCount: 1 } });
+    mouseDown = true;
+    for (let i = 1; i <= opts.steps; i++) {
+      const x = v.sx + Math.round((v.dx - v.sx) * i / opts.steps);
+      const y = v.sy + Math.round((v.dy - v.sy) * i / opts.steps);
+      await httpPost('/cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mouseMoved', x, y, button: 'left', buttons: 1 } });
+      await new Promise((resolve) => setTimeout(resolve, 16));
+    }
+    const dragData = {
+      items: [{ mimeType: 'text/plain', data: 'glider' }],
+      dragOperationsMask: 1,
+    };
+    await httpPost('/cdp', { method: 'Input.dispatchDragEvent', params: { type: 'dragEnter', x: v.dx, y: v.dy, data: dragData } });
+    await httpPost('/cdp', { method: 'Input.dispatchDragEvent', params: { type: 'dragOver', x: v.dx, y: v.dy, data: dragData } });
+    await httpPost('/cdp', { method: 'Input.dispatchDragEvent', params: { type: 'drop', x: v.dx, y: v.dy, data: dragData } });
+    await httpPost('/cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mouseReleased', x: v.dx, y: v.dy, button: 'left', buttons: 0, clickCount: 1 } });
+    mouseDown = false;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const delivered = await _rtEval(`!!window[${JSON.stringify(dropMarker)}]?.dropped`);
+    if (delivered.result?.value !== true) {
+      mechanism = 'html5-fallback';
+      const fallback = await _rtEval(`(() => {
+        const src = document.querySelector(${JSON.stringify(src)});
+        const dst = document.querySelector(${JSON.stringify(dst)});
+        if (!src || !dst) return { error: 'src or dst disappeared during drag' };
+        const dataTransfer = new DataTransfer();
+        dataTransfer.setData('text/plain', 'glider');
+        const event = (type, target, x, y) => target.dispatchEvent(new DragEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: x,
+          clientY: y,
+          dataTransfer,
+        }));
+        event('dragstart', src, ${v.sx}, ${v.sy});
+        event('dragenter', dst, ${v.dx}, ${v.dy});
+        event('dragover', dst, ${v.dx}, ${v.dy});
+        event('drop', dst, ${v.dx}, ${v.dy});
+        event('dragend', src, ${v.dx}, ${v.dy});
+        return { dispatched: true };
+      })()`);
+      if (fallback.result?.value?.error) throw new Error(fallback.result.value.error);
+    }
+  } finally {
+    if (mouseDown) {
+      await httpPost('/cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mouseReleased', x: v.dx, y: v.dy, button: 'left', buttons: 0, clickCount: 1 } });
+    }
+    await _rtEval(`(() => {
+      const state = window[${JSON.stringify(dropMarker)}];
+      if (state?.handler) document.removeEventListener('drop', state.handler, true);
+      delete window[${JSON.stringify(dropMarker)}];
+    })()`);
   }
-  await httpPost('/cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mouseReleased', x: v.dx, y: v.dy, button: 'left', clickCount: 1 } });
-  if (jsonOutput) emitJson(true, { dragged: {from: [v.sx,v.sy], to: [v.dx,v.dy]} });
+  if (jsonOutput) emitJson(true, { dragged: {from: [v.sx,v.sy], to: [v.dx,v.dy]}, mechanism });
   else log.ok(`Dragged ${v.sx},${v.sy} -> ${v.dx},${v.dy}`);
 }
 
 // --- WAVE 2: cmdSelect ----------------------------------------------
 async function cmdSelect(argv) {
   const opts = parseFlags(argv, { 'by-text': { type: 'string' }, 'by-value': { type: 'string' }, nth: { type: 'int', default: 0 } });
+  assertExclusiveFlags(opts, ['by-text', 'by-value', 'nth']);
   const sel = opts._[0];
   if (!sel || (!opts['by-text'] && !opts['by-value'] && opts.nth === undefined)) {
     log.fail('Usage: glider select <selector> --by-text S | --by-value V | --nth N'); process.exit(1);
@@ -3582,9 +4419,19 @@ async function cmdEvalV2(argv) {
   // So we re-walk argv for all --arg / --arg-file occurrences.
   const args = {};
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--arg' && argv[i+1]) { const [k, ...rest] = argv[++i].split('='); args[k] = rest.join('='); }
-    else if (argv[i] === '--arg-file' && argv[i+1]) {
-      const spec = argv[++i]; const [k, ...rest] = spec.split('='); const path = rest.join('=');
+    let argSpec = null;
+    let fileSpec = null;
+    if (argv[i] === '--arg' && argv[i + 1]) argSpec = argv[++i];
+    else if (argv[i].startsWith('--arg=')) argSpec = argv[i].slice('--arg='.length);
+    else if (argv[i] === '--arg-file' && argv[i + 1]) fileSpec = argv[++i];
+    else if (argv[i].startsWith('--arg-file=')) fileSpec = argv[i].slice('--arg-file='.length);
+    if (argSpec !== null) {
+      const [k, ...rest] = argSpec.split('=');
+      if (!k || rest.length === 0) throw new Error('--arg expects K=V');
+      args[k] = rest.join('=');
+    } else if (fileSpec !== null) {
+      const spec = fileSpec; const [k, ...rest] = spec.split('='); const path = rest.join('=');
+      if (!k || !path) throw new Error('--arg-file expects K=@path');
       const p = path.replace(/^@/, '');
       args[k] = fs.readFileSync(p, 'utf8');
     }
@@ -3610,6 +4457,7 @@ async function cmdScreenshotV2(argv) {
     'full-page': { type: 'boolean' }, format: { type: 'string', default: 'png' },
     pad: { type: 'int', default: 0 },
   });
+  assertExclusiveFlags(opts, ['selector', 'clip', 'full-page']);
   const outPath = opts._[0] || `/tmp/glider-screenshot-${Date.now()}.${opts.format}`;
   if (!await ensureConnected()) process.exit(1);
   const params = { format: opts.format };
@@ -3635,24 +4483,7 @@ async function cmdScreenshotV2(argv) {
 
 // --- WAVE 2: session_liveness_probe (upgrade cmdUseSession) ---
 async function cmdUseSessionV2(arg, opts = []) {
-  // Try normal path first
-  try {
-    await cmdUseSession(arg, opts);
-    return;
-  } catch (_) { /* fall through to re-probe */ }
-  // Re-probe: connect + fetch targets, re-match on --url if provided
-  const urlIdx = opts.indexOf('--url');
-  if (urlIdx >= 0 && opts[urlIdx+1]) {
-    log.warn('use-session failed - re-probing');
-    try {
-      const result = await httpPost('/list-targets', {});
-      const targets = result.targets || [];
-      const want = opts[urlIdx+1].toLowerCase();
-      const hit = targets.find(t => (t.url||'').toLowerCase().includes(want));
-      if (hit) { await cmdUseSession(hit.sessionId, opts); return; }
-    } catch (e) { log.fail(`re-probe failed: ${e.message}`); }
-  }
-  log.fail(`use-session: session not live and no --url to re-probe`); process.exit(1);
+  await cmdUseSession(arg, opts);
 }
 
 // --- WAVE 3: frames + iframe-scope-eval + upload-file ---
@@ -3700,9 +4531,9 @@ async function cmdUpload(argv) {
 // not implemented"). Now delegates to the same code path `explore --har` uses.
 async function cmdHar(argv) {
   const sub = argv[0];
-  const STATE_PATH = path.join(os.homedir(), '.glider', 'har-state.json');
-  const BUF_HAR = path.join(os.homedir(), '.glider', 'har-buffer.har');
-  const BUF_OUT = path.join(os.homedir(), '.glider', 'har-buffer-out');
+  const STATE_PATH = path.join(GLIDER_HOME, 'har-state.json');
+  const BUF_HAR = path.join(GLIDER_HOME, 'har-buffer.har');
+  const BUF_OUT = path.join(GLIDER_HOME, 'har-buffer-out');
   const readState = () => { try { return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8')); } catch { return null; } };
   const writeState = (st) => { try { fs.mkdirSync(path.dirname(STATE_PATH), { recursive: true }); } catch {} fs.writeFileSync(STATE_PATH, JSON.stringify(st, null, 2)); };
   const pidAlive = (pid) => { if (!pid) return false; try { process.kill(pid, 0); return true; } catch { return false; } };
@@ -3858,11 +4689,7 @@ async function cmdDialog(argv) {
 }
 async function cmdConsole(argv) {
   const sub = argv[0]; if (sub !== 'tail' && sub !== 'dump') { log.fail('Usage: glider console tail | dump [PATH]'); process.exit(1); }
-  await _guardAndConnect('console');
-  await httpPost('/cdp', { method: 'Runtime.enable', params: {} });
-  // Persistent tail requires bg WS; here we do a one-shot poll: enable console + report installed
-  log.warn('console tail is stub - needs bg WS subscription to Runtime.consoleAPICalled');
-  if (jsonOutput) emitJson(true, { installed: true, note: 'stub - bg subscription required' });
+  failUnsupported(`console ${sub}`, 'the CLI does not yet subscribe to Runtime.consoleAPICalled events');
 }
 async function cmdPdf(argv) {
   const opts = parseFlags(argv, { landscape: { type: 'boolean' }, margin: { type: 'float' }, scale: { type: 'float', default: 1.0 } });
@@ -3877,17 +4704,29 @@ async function cmdPdf(argv) {
   } catch (e) { log.fail(`pdf failed: ${e.message}`); process.exit(1); }
 }
 async function cmdCookieWrite(argv) {
-  const opts = parseFlags(argv, { set: { type: 'string' }, delete: { type: 'string' }, host: { type: 'string' } });
-  if (!opts.host) { log.fail('Usage: glider cookies --set NAME=VAL --host H  |  --delete NAME --host H'); process.exit(1); }
+  const opts = parseFlags(argv, {
+    set: { type: 'string' },
+    delete: { type: 'string' },
+    host: { type: 'string' },
+    url: { type: 'string' },
+  });
+  assertExclusiveFlags(opts, ['set', 'delete']);
+  assertExclusiveFlags(opts, ['host', 'url']);
+  if ((!opts.host && !opts.url) || (!opts.set && !opts.delete)) {
+    log.fail('Usage: glider cookies --set NAME=VAL (--host H | --url U)  |  --delete NAME (--host H | --url U)');
+    process.exit(1);
+  }
   await _guardAndConnect('cookies-write');
+  const cookieUrl = opts.url || (/^https?:\/\//i.test(opts.host) ? opts.host : `https://${opts.host}`);
   try {
     if (opts.set) {
       const [name, ...rest] = opts.set.split('='); const value = rest.join('=');
-      const r = await httpPost('/extension', { method: 'setCookie', params: { url: 'https://' + opts.host, name, value } });
-      if (jsonOutput) emitJson(true, r); else log.ok(`cookie set: ${name}@${opts.host}`);
+      if (!name || rest.length === 0) throw new Error('--set expects NAME=VALUE');
+      const r = await httpPost('/extension', { method: 'setCookie', params: { url: cookieUrl, name, value } });
+      if (jsonOutput) emitJson(true, r); else log.ok(`cookie set: ${name}@${new URL(cookieUrl).host}`);
     } else if (opts.delete) {
-      const r = await httpPost('/extension', { method: 'removeCookie', params: { url: 'https://' + opts.host, name: opts.delete } });
-      if (jsonOutput) emitJson(true, r); else log.ok(`cookie deleted: ${opts.delete}@${opts.host}`);
+      const r = await httpPost('/extension', { method: 'removeCookie', params: { url: cookieUrl, name: opts.delete } });
+      if (jsonOutput) emitJson(true, r); else log.ok(`cookie deleted: ${opts.delete}@${new URL(cookieUrl).host}`);
     }
   } catch (e) { log.fail(`cookie write failed: ${e.message}`); process.exit(1); }
 }
@@ -3895,8 +4734,8 @@ async function cmdCookieWrite(argv) {
 // --- WAVE 5: cmdMock + cmdA11ySnapshot + cmdRecord/Replay ---
 async function cmdMock(argv) {
   const sub = argv[0];
-  await _guardAndConnect('mock');
   if (sub === 'clear') {
+    await _guardAndConnect('mock');
     await httpPost('/cdp', { method: 'Fetch.disable', params: {} });
     if (jsonOutput) emitJson(true, { cleared: true }); else log.ok('mocks cleared');
     return;
@@ -3904,11 +4743,7 @@ async function cmdMock(argv) {
   const opts = parseFlags(argv.slice(1), { status: { type: 'int', default: 200 }, body: { type: 'string' } });
   const glob = argv[0];
   if (!glob || !opts.body) { log.fail('Usage: glider mock <url-glob> --status N --body FILE  |  glider mock clear'); process.exit(1); }
-  try {
-    await httpPost('/cdp', { method: 'Fetch.enable', params: { patterns: [{ urlPattern: glob }] } });
-    log.warn('mock is stub - needs bg WS subscription to Fetch.requestPaused + Fetch.fulfillRequest');
-    if (jsonOutput) emitJson(true, { registered: glob, note: 'stub' });
-  } catch (e) { log.fail(`mock failed: ${e.message}`); process.exit(1); }
+  failUnsupported('mock response', 'the relay does not yet route Fetch.requestPaused events back to this command');
 }
 async function cmdA11y(argv) {
   await _guardAndConnect('a11y');
@@ -3925,6 +4760,7 @@ async function cmdA11y(argv) {
 
 // Main
 async function main() {
+  resetCommandTiming();
   const args = parseGlobalFlags(process.argv.slice(2));
   loadPersistedSession();
   loadPlugins();  // hydrate ~/.glider/plugins/*.plugin.{json,js} - verb-agnostic core
@@ -3933,11 +4769,6 @@ async function main() {
   // v0.3.15: reload-ext command aliases -
   // Accept common natural-language variants + typos for high-frequency commands.
   // Rewrites args in place so downstream switch stays clean.
-  const RELOAD_EXT_TWO_WORD = new Set([
-    'ext-reload', 'ext reload',
-    'reload-extension', 'reload extension',
-    'reload-ext'
-  ]);
   const RELOAD_EXT_ALIASES = new Set(['rex', 'reloadext', 'reloadExt']);
   if (cmd === 'ext' && args[1] === 'reload') {
     cmd = 'reload-ext';
@@ -3956,6 +4787,14 @@ async function main() {
     showHelp();
     process.exit(0);
   }
+
+  const relayIndependent = new Set([
+    'help', '--help', '-h', 'update', 'version', '-v', '--version',
+    'browser', 'use', 'domains', 'resolve',
+  ]);
+  if (relayConfigError && !relayIndependent.has(cmd)) {
+    throw relayConfigError;
+  }
   
   // Background version check (non-blocking) - skip for update/version commands.
   // Opt out via GLIDER_NO_UPDATE=1 or CI (operator sockets - set outside this repo).
@@ -3964,11 +4803,17 @@ async function main() {
     checkForUpdates();
   }
   
-  // Ensure server is running for most commands
-  if (!['start', 'stop', 'help', '--help', '-h', 'update', 'version', '-v', '--version', 'domains', 'resolve'].includes(cmd)) {
+  // Config, diagnostics, and relay-management commands handle availability themselves.
+  const noRelayPreflight = new Set([
+    'start', 'stop', 'restart', 'status', 'test', 'connect',
+    'install', 'uninstall', 'browser', 'use',
+    'help', '--help', '-h', 'update', 'version', '-v', '--version',
+    'domains', 'resolve',
+  ]);
+  if (!noRelayPreflight.has(cmd)) {
     if (!await checkServer()) {
       log.info('Server not running, starting...');
-      await cmdStart();
+      await cmdStart({ render: false });
     }
   }
   
@@ -4179,7 +5024,7 @@ async function main() {
       await cmdFreeze(args.slice(1));
       break;
     case 'cookies':
-      if (args.slice(1).some(a => a === '--set' || a === '--delete')) {
+      if (args.slice(1).some(a => a === '--set' || a === '--delete' || a.startsWith('--set=') || a.startsWith('--delete='))) {
         await cmdCookieWrite(args.slice(1));
       } else {
         await cmdCookies(args.slice(1));
@@ -4280,7 +5125,19 @@ async function main() {
   }
 }
 
-main().catch(e => {
-  log.fail(e.message);
-  process.exit(1);
-});
+module.exports = {
+  getBrowserConfig,
+  isBrowserInternalUrl,
+  parseFlags,
+  parseGlobalFlags,
+};
+
+if (require.main === module) {
+  main().catch(e => {
+    if (jsonOutput) {
+      console.log(JSON.stringify({ ok: false, observation: null, error: e.message, warnings: [] }, null, 2));
+    }
+    log.fail(e.message);
+    process.exit(1);
+  });
+}

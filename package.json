@@ -1,13 +1,19 @@
 {
   "name": "glidercli",
-  "version": "0.4.6",
-  "description": "Browser automation CLI. Control Chrome from terminal via CDP, run YAML task files, autonomous loops until completion.",
-  "main": "index.js",
+  "version": "0.4.7",
+  "description": "Browser automation CLI. Control a configured Chromium browser through an extension CDP relay, run YAML tasks, and execute bounded autonomous loops.",
   "bin": {
     "glider": "bin/glider.js"
   },
   "scripts": {
-    "test": "node bin/glider.js --help"
+    "test": "node --test tests/*.test.js",
+    "test:syntax": "node --check bin/glider.js && node --check lib/bserve.js",
+    "test:regression": "node --test tests/browser-config.test.js tests/core.test.js tests/cli-regression.test.js",
+    "test:integration": "node --test tests/relay-integration.test.js tests/daemon-lifecycle.test.js",
+    "test:pack": "node --test tests/npm-tarball.test.js",
+    "test:smoke": "node tests/live-browser.smoke.js",
+    "test:live": "node tests/live-browser.smoke.js",
+    "prepublishOnly": "npm run test:syntax && npm test"
   },
   "keywords": [
     "browser",
@@ -39,7 +45,6 @@
     "lib/",
     "docs/",
     "config/",
-    "index.js",
     "README.md"
   ]
 }
