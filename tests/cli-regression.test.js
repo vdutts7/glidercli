@@ -786,6 +786,78 @@ test('status treats socket-only extension as unhealthy until worker pong', async
   assert.match(body.error, /worker not alive/);
 });
 
+test('doctor reports nextAction when worker is dead', async (t) => {
+  const relay = await createMockRelay({
+    status: {
+      extension: true,
+      extensionWorkerAlive: false,
+      extensionGeneration: 3,
+      targets: 1,
+      clients: 0,
+    },
+  });
+  t.after(() => relay.close());
+  const result = await runCli(['--json', 'doctor'], {
+    env: { GLIDER_PORT: String(relay.port), GLIDER_EXTENSION_ID: 'njbidokkffhgpofcejgcfcgcinmeoalj' },
+  });
+  assert.equal(result.code, 1);
+  const body = jsonFromStdout(result.stdout);
+  assert.equal(body.ok, false);
+  assert.equal(body.observation.extensionWorkerAlive, false);
+  assert.match(body.observation.nextAction, /glider heal/);
+});
+
+test('heal skips browser wake when GLIDER_HEAL_NO_WAKE=1', async (t) => {
+  const relay = await createMockRelay({
+    status: {
+      extension: true,
+      extensionWorkerAlive: false,
+      extensionGeneration: 3,
+      targets: 0,
+      clients: 0,
+    },
+    targets: [],
+  });
+  t.after(() => relay.close());
+  const result = await runCli(['--json', 'heal'], {
+    env: {
+      GLIDER_PORT: String(relay.port),
+      GLIDER_HEAL_NO_WAKE: '1',
+      GLIDER_EXTENSION_ID: 'njbidokkffhgpofcejgcfcgcinmeoalj',
+    },
+  });
+  assert.equal(result.code, 1);
+  const body = jsonFromStdout(result.stdout);
+  assert.equal(body.ok, false);
+  const wake = body.observation.actions.find((a) => a.step === 'wake_extension');
+  assert.ok(wake);
+  assert.equal(wake.attempted, false);
+  assert.match(wake.reason, /GLIDER_HEAL_NO_WAKE/);
+});
+
+test('heal --clear-pin removes stale session pin', async (t) => {
+  const home = makeTempGliderHome();
+  t.after(() => removeTree(home));
+  fs.writeFileSync(path.join(home, 'config', 'active-session.json'), JSON.stringify({
+    sessionId: 'session-stale',
+    updated: new Date().toISOString(),
+  }));
+  const relay = await createMockRelay();
+  t.after(() => relay.close());
+  const result = await runCli(['--json', 'heal', '--clear-pin'], {
+    env: {
+      GLIDER_HOME: home,
+      GLIDER_PORT: String(relay.port),
+      GLIDER_HEAL_NO_WAKE: '1',
+    },
+  });
+  assert.equal(result.code, 0, result.stderr);
+  const body = jsonFromStdout(result.stdout);
+  assert.equal(body.ok, true);
+  assert.equal(fs.existsSync(path.join(home, 'config', 'active-session.json')), false);
+  assert.ok(body.observation.actions.some((a) => a.step === 'clear_pin' && a.ok));
+});
+
 test('stale session pin heals to a live target on Session not found', async (t) => {
   const home = makeTempGliderHome();
   t.after(() => removeTree(home));

@@ -8,8 +8,8 @@
 <h1 align="center">glider CLI</h1>
 <p align="center"><i><b>Browser automation CLI with autonomous loop execution</b></i></p>
 
-<a href="https://github.com/vdutts7/glidercli"><img src="./assets/badges/github.badge.svg" alt="GitHub" height="34" /></a>
-<a href="https://www.npmjs.com/package/glidercli"><img src="./assets/badges/npm.badge.svg" alt="glidercli on npm" height="34" /></a>
+<a href="https://github.com/vdutts7/glidercli"><img src="./assets/badges/github.badge.svg" alt="GitHub" height="40" /></a>
+<a href="https://www.npmjs.com/package/glidercli"><img src="./assets/badges/npm.badge.svg" alt="glidercli on npm" height="40" /></a>
 
 </div>
 
@@ -63,11 +63,11 @@ Extension + relay model uses Chromium + Glider extension from Chrome Web Store i
 
 | | Browser | Config |
 |---|--------|--------|
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chrome.webp" width="16" alt=""> | Google Chrome | default for `glider connect` |
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/arc.webp" width="16" alt=""> | Arc | [`config/browser.json.example`](config/browser.json.example) |
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/microsoft/microsoft-edge.webp" width="16" alt=""> | Microsoft Edge | registry key `edge` |
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/brave.webp" width="16" alt=""> | Brave | registry key `brave` |
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/vivaldi.webp" width="16" alt=""> | Vivaldi | registry key `vivaldi` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chrome.webp" width="40" height="40" alt=""> | Google Chrome | default for `glider connect` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/arc.webp" width="40" height="40" alt=""> | Arc | [`config/browser.json.example`](config/browser.json.example) |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/microsoft/microsoft-edge.webp" width="40" height="40" alt=""> | Microsoft Edge | registry key `edge` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/brave.webp" width="40" height="40" alt=""> | Brave | registry key `brave` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/vivaldi.webp" width="40" height="40" alt=""> | Vivaldi | registry key `vivaldi` |
 
 Not supported today: Firefox/Safari/WebKit/Gecko, DuckDuckGo, browsers without Chrome Web Store extension path.
 
@@ -166,7 +166,7 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 | problem | fix | stability | why |
 |---------|-----|-----------|-----|
 | extension not connected | install/enable [`Glider` on Chrome Web Store](https://chromewebstore.google.com/detail/glider/njbidokkffhgpofcejgcfcgcinmeoalj) in selected browser profile; click Glider icon, then run `glider connect` | per browser launch | relay waits on extension WS |
-| extension socket up but worker dead | click Glider icon or reload the extension; `glider status --json` shows `extensionWorkerAlive: false` | MV3 worker | status refuses healthy until pong |
+| extension socket up but worker dead | `glider heal` (opens extension URL to wake SW); else click Glider icon / `glider reload-ext`; `glider doctor --json` shows `nextAction` | MV3 worker | status refuses healthy until pong |
 | custom relay port has no extension | use `19988` with Chrome Web Store build | install-stable | published extension connects to `ws://localhost:19988/extension` |
 | wrong tab targeted | `glider targets` → `glider use-session session-6` | session-stable | multi-tab needs explicit session |
 | explore HAR empty bodies | replay in-tab with auth hook on XHR/fetch | site-specific | some SPAs never expose bearer in storage |
@@ -181,6 +181,8 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 | `glider install` / `uninstall` | background relay supervisor |
 | `glider connect` | attach relay to browser |
 | `glider status` | server + extension + tabs; nonzero unless full stack is healthy |
+| `glider doctor` | relay + SW + targets + one next action (`--json`) |
+| `glider heal` | ensure relay, best-effort SW wake, optional `--clear-pin` |
 | `glider test` | relay + extension + target + live CDP `1+1` diagnostic |
 | `glider goto` / `eval` / `click` / `type` | page ops |
 | `glider frozen` / `thaw` | detect / un-throttle a hidden (macrotask-frozen) tab in place |
@@ -220,6 +222,4 @@ Incomplete event-stream features fail closed: `wait --network-idle`, console str
 
 ## Contact
 
-[![`vd7.io`](https://res.cloudinary.com/ddyc1es5v/image/upload/v1773910810/readme-badges/readme-badge-vd7.png)](https://vd7.io)
-
-[![`@vdutts7`](https://res.cloudinary.com/ddyc1es5v/image/upload/v1773910817/readme-badges/readme-badge-x.png)](https://x.com/vdutts7)
+<a href="https://vd7.io"><img src="https://res.cloudinary.com/ddyc1es5v/image/upload/v1773910810/readme-badges/readme-badge-vd7.png" alt="vd7.io" height="40" /></a> &nbsp; <a href="https://x.com/vdutts7"><img src="https://res.cloudinary.com/ddyc1es5v/image/upload/v1773910817/readme-badges/readme-badge-x.png" alt="/vdutts7" height="40" /></a>
