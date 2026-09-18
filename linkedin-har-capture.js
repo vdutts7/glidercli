@@ -152,7 +152,12 @@ class HARCapture {
 }
 
 async function main() {
-  const outputDir = process.argv[2] || '/tmp/linkedin-capture';
+  const requestedDir = process.argv[2] || path.join(os.tmpdir(), 'linkedin-capture');
+  const baseDir = path.resolve(os.tmpdir());
+  const outputDir = path.resolve(baseDir, requestedDir);
+  if (outputDir !== baseDir && !outputDir.startsWith(baseDir + path.sep)) {
+    throw new Error('Invalid output directory: must resolve within ' + baseDir);
+  }
   fs.mkdirSync(outputDir, { recursive: true });
   
   const capture = new HARCapture();
