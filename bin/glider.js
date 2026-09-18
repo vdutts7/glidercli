@@ -1770,6 +1770,205 @@ async function cmdTest() {
   if (!healthy) process.exitCode = 1;
 }
 
+// CWS extension id (override for unpacked/corp builds via GLIDER_EXTENSION_ID)
+const GLIDER_EXTENSION_ID = process.env.GLIDER_EXTENSION_ID || 'njbidokkffhgpofcejgcfcgcinmeoalj';
+const GLIDER_CWS_URL = `https://chromewebstore.google.com/detail/glider/${GLIDER_EXTENSION_ID}`;
+
+function extensionWakeUrl() {
+  return `chrome-extension://${GLIDER_EXTENSION_ID}/`;
+}
+
+function tryWakeExtensionWorker() {
+  if (process.env.GLIDER_HEAL_NO_WAKE === '1') {
+    return { attempted: false, reason: 'GLIDER_HEAL_NO_WAKE=1' };
+  }
+  let browser;
+  try {
+    browser = getBrowserConfig();
+  } catch (e) {
+    return { attempted: false, reason: e.message };
+  }
+  if (!browserIsRunning(browser)) {
+    return { attempted: false, reason: 'browser not running' };
+  }
+  try {
+    createBrowserPage(browser, extensionWakeUrl());
+    return { attempted: true, url: extensionWakeUrl(), browser: browser.name };
+  } catch (e) {
+    return { attempted: false, reason: e.message };
+  }
+}
+
+function doctorNextAction({ serverOk, socketOk, workerOk, targetCount, portOk }) {
+  if (!serverOk) return 'glider start';
+  if (!portOk) return `use port 19988 (CWS build) or set matching GLIDER_EXTENSION_ID; current=${PORT}`;
+  if (!socketOk) return `install/enable Glider (${GLIDER_CWS_URL}); click icon; glider connect`;
+  if (!workerOk) return 'glider heal  # or click Glider icon / glider reload-ext';
+  if (targetCount < 1) return 'glider connect';
+  return null;
+}
+
+async function cmdDoctor() {
+  let relay = null;
+  try {
+    relay = await httpGet('/status');
+  } catch {}
+  const serverOk = relay !== null;
+  const socketOk = serverOk && relay.extension === true;
+  const workerOk = extensionReady(relay);
+  const targets = serverOk && socketOk ? await getTargets() : [];
+  const portOk = PORT === 19988 || Boolean(process.env.GLIDER_EXTENSION_ID);
+  let browserRunning = false;
+  let browserName = null;
+  try {
+    const browser = getBrowserConfig();
+    browserName = browser.name;
+    browserRunning = browserIsRunning(browser);
+  } catch {}
+  const nextAction = doctorNextAction({
+    serverOk,
+    socketOk,
+    workerOk,
+    targetCount: targets.length,
+    portOk,
+  });
+  const healthy = serverOk && workerOk && targets.length > 0 && portOk;
+  const observation = {
+    healthy,
+    port: PORT,
+    portMatchesCws: PORT === 19988,
+    extensionId: GLIDER_EXTENSION_ID,
+    cws: GLIDER_CWS_URL,
+    server: serverOk,
+    extension: socketOk,
+    extensionWorkerAlive: relay?.extensionWorkerAlive ?? null,
+    reconnecting: relay?.reconnecting === true,
+    targetCount: targets.length,
+    browser: browserName,
+    browserRunning,
+    nextAction,
+  };
+
+  if (jsonOutput) {
+    emitJson(healthy, observation, healthy ? null : (nextAction || 'unhealthy'));
+    return;
+  }
+
+  showBanner();
+  log.box('DOCTOR');
+  console.log(serverOk ? `  ${GREEN}✓${NC} Relay :${PORT}` : `  ${RED}✗${NC} Relay down`);
+  console.log(portOk ? `  ${GREEN}✓${NC} Port/extension id contract` : `  ${YELLOW}⚠${NC} Port ${PORT} ≠ CWS 19988 (set GLIDER_EXTENSION_ID if custom build)`);
+  console.log(socketOk ? `  ${GREEN}✓${NC} Extension socket` : `  ${RED}✗${NC} Extension socket`);
+  console.log(workerOk ? `  ${GREEN}✓${NC} Worker alive` : `  ${RED}✗${NC} Worker not alive`);
+  console.log(targets.length > 0 ? `  ${GREEN}✓${NC} ${targets.length} target(s)` : `  ${YELLOW}⚠${NC} No targets`);
+  if (browserName) {
+    console.log(browserRunning ? `  ${GREEN}✓${NC} ${browserName} running` : `  ${YELLOW}⚠${NC} ${browserName} not running`);
+  }
+  if (nextAction) console.log(`\n  next: ${CYAN}${nextAction}${NC}`);
+  console.log();
+  if (!healthy) process.exitCode = 1;
+}
+
+async function cmdHeal(args = []) {
+  const clearPin = args.includes('--clear-pin') || process.env.GLIDER_HEAL_CLEAR_PIN === '1';
+  const actions = [];
+  let relay = null;
+
+  if (!await checkServer()) {
+    await cmdStart({ render: false });
+    actions.push({ step: 'start_relay', ok: true });
+    try {
+      await waitUntil(() => checkServer(), { timeoutMs: 5000, intervalMs: 50, label: 'relay ready' });
+    } catch (e) {
+      actions.push({ step: 'wait_relay', ok: false, error: e.message });
+    }
+  }
+
+  try {
+    relay = await getRelayStatus();
+  } catch {
+    relay = null;
+  }
+
+  if (clearPin) {
+    clearPersistedSession();
+    actions.push({ step: 'clear_pin', ok: true });
+  }
+
+  if (!extensionReady(relay)) {
+    const wake = tryWakeExtensionWorker();
+    actions.push({ step: 'wake_extension', ...wake });
+    if (wake.attempted) {
+      try {
+        await waitUntil(() => checkExtension(), { timeoutMs: 4000, intervalMs: 100, label: 'worker wake' });
+      } catch {
+        /* still dead - fall through */
+      }
+    }
+    try {
+      relay = await getRelayStatus();
+    } catch {
+      relay = null;
+    }
+  }
+
+  // reload-ext only when worker can receive messages
+  if (relay?.extension === true && extensionReady(relay) && Number(relay.targets || 0) === 0) {
+    try {
+      await requestActiveTabAttach();
+      actions.push({ step: 'attach', ok: true });
+    } catch (e) {
+      actions.push({ step: 'attach', ok: false, error: e.message });
+    }
+  }
+
+  try {
+    relay = await getRelayStatus();
+  } catch {
+    relay = null;
+  }
+  const serverOk = relay !== null;
+  const workerOk = extensionReady(relay);
+  const targets = serverOk && relay.extension === true ? await getTargets() : [];
+  const nextAction = doctorNextAction({
+    serverOk,
+    socketOk: serverOk && relay.extension === true,
+    workerOk,
+    targetCount: targets.length,
+    portOk: PORT === 19988 || Boolean(process.env.GLIDER_EXTENSION_ID),
+  });
+  const healthy = serverOk && workerOk && targets.length > 0;
+
+  const observation = {
+    healthy,
+    actions,
+    server: serverOk,
+    extension: !!relay?.extension,
+    extensionWorkerAlive: relay?.extensionWorkerAlive ?? null,
+    reconnecting: relay?.reconnecting === true,
+    targetCount: targets.length,
+    nextAction: healthy ? null : nextAction,
+  };
+
+  if (jsonOutput) {
+    emitJson(healthy, observation, healthy ? null : (nextAction || 'heal incomplete'));
+    return;
+  }
+
+  showBanner();
+  log.box('HEAL');
+  for (const a of actions) {
+    const mark = a.ok === false || a.attempted === false ? YELLOW : GREEN;
+    const detail = a.reason || a.error || a.url || '';
+    console.log(`  ${mark}•${NC} ${a.step}${detail ? ` ${DIM}${detail}${NC}` : ''}`);
+  }
+  console.log(workerOk ? `  ${GREEN}✓${NC} Worker alive` : `  ${RED}✗${NC} Worker not alive`);
+  console.log(targets.length > 0 ? `  ${GREEN}✓${NC} ${targets.length} target(s)` : `  ${YELLOW}⚠${NC} No targets`);
+  if (!healthy && nextAction) console.log(`\n  next: ${CYAN}${nextAction}${NC}`);
+  console.log();
+  if (!healthy) process.exitCode = 1;
+}
+
 async function cmdTabs() {
   const targets = await getTargets();
   if (targets.length === 0) {
@@ -3247,6 +3446,8 @@ ${B5}SETUP${NC}
 
 ${B5}STATUS${NC}
     ${BW}status${NC}              Check server, extension, tabs
+    ${BW}doctor${NC}              Relay + SW + targets + next action ${DIM}(--json)${NC}
+    ${BW}heal${NC} [--clear-pin]   Ensure relay, wake SW best-effort, reattach
     ${BW}browser${NC}             Show browser config ${DIM}(name, path, processName, or use key)${NC}
     ${BW}use${NC} <key>           Set browser by registry key ${DIM}(e.g. arc, brave, chrome)${NC}
     ${BW}test${NC}                Run diagnostics
@@ -4805,7 +5006,7 @@ async function main() {
   
   // Config, diagnostics, and relay-management commands handle availability themselves.
   const noRelayPreflight = new Set([
-    'start', 'stop', 'restart', 'status', 'test', 'connect',
+    'start', 'stop', 'restart', 'status', 'test', 'doctor', 'heal', 'connect',
     'install', 'uninstall', 'browser', 'use',
     'help', '--help', '-h', 'update', 'version', '-v', '--version',
     'domains', 'resolve',
@@ -4867,6 +5068,12 @@ async function main() {
       break;
     case 'test':
       await cmdTest();
+      break;
+    case 'doctor':
+      await cmdDoctor();
+      break;
+    case 'heal':
+      await cmdHeal(args.slice(1));
       break;
     case 'tabs':
       await cmdTabs();
@@ -5101,7 +5308,7 @@ async function main() {
       log.fail(`Unknown command: ${cmd}`);
       // v0.3.15: typo suggest (Levenshtein <=2) before dumping full help.
       const KNOWN_CMDS = ['status','start','stop','restart','reload-ext','attach-all','install','uninstall',
-        'update','version','connect','browser','use','test','domains','resolve','goto','eval','click','type',
+        'update','version','connect','browser','use','test','doctor','heal','domains','resolve','goto','eval','click','type',
         'screenshot','snapshot','text','html','title','url','tabs','targets','use-session','fetch','spawn',
         'extract','explore','favicon','window','reg','run','loop','ralph',
         'read','hover','focus','blur','scroll','wait','key','right-click','double-click','click-at','drag','select',
