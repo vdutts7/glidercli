@@ -716,6 +716,18 @@ function appleScriptString(value) {
   return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
+// AppleScript launch/tab/activate steals focus and mutates the operator's session.
+// Default OFF. Opt in: GLIDER_BROWSER_UI=1 (legacy: GLIDER_HEAL_NO_WAKE=0 alone is not enough).
+function browserUiEnabled() {
+  const raw = process.env.GLIDER_BROWSER_UI;
+  if (raw == null || raw === '') return false;
+  return raw === '1' || /^true$/i.test(raw) || /^yes$/i.test(raw);
+}
+
+function browserUiBlockedReason(action) {
+  return `browser UI blocked (default): refused ${action}; set GLIDER_BROWSER_UI=1 to allow AppleScript launch/tabs/activate`;
+}
+
 function browserIsRunning(browser) {
   try {
     execFileSync('pgrep', ['-x', browser.processName], { stdio: 'ignore' });
@@ -726,11 +738,17 @@ function browserIsRunning(browser) {
 }
 
 function launchBrowser(browser) {
+  if (!browserUiEnabled()) {
+    throw new Error(browserUiBlockedReason('launch browser'));
+  }
   const args = browser.path ? [browser.path] : ['-a', browser.name];
   execFileSync('open', args, { stdio: 'ignore' });
 }
 
 function activeBrowserTabUrl(browser) {
+  if (!browserUiEnabled()) {
+    throw new Error(browserUiBlockedReason('read active tab URL'));
+  }
   const app = appleScriptString(browser.name);
   return execFileSync('osascript', [
     '-e',
@@ -739,12 +757,22 @@ function activeBrowserTabUrl(browser) {
 }
 
 function createBrowserPage(browser, url, newWindow = false) {
+  if (!browserUiEnabled()) {
+    throw new Error(browserUiBlockedReason(newWindow ? 'create window' : 'create tab'));
+  }
   const app = appleScriptString(browser.name);
   const target = appleScriptString(url);
   const command = newWindow
     ? `tell application "${app}" to make new window with properties {URL:"${target}"}`
     : `tell application "${app}" to make new tab at front window with properties {URL:"${target}"}`;
   execFileSync('osascript', ['-e', command], { stdio: 'ignore' });
+}
+
+function activateBrowser(browser) {
+  if (!browserUiEnabled()) {
+    throw new Error(browserUiBlockedReason('activate browser'));
+  }
+  execFileSync('osascript', ['-e', `tell application "${appleScriptString(browser.name)}" to activate`]);
 }
 
 async function requestActiveTabAttach() {
@@ -770,6 +798,10 @@ async function ensureConnected() {
   
   const browser = getBrowserConfig();
   if (!browserIsRunning(browser)) {
+    if (!browserUiEnabled()) {
+      log.fail(`${browser.name} not running; browser UI blocked (set GLIDER_BROWSER_UI=1 to launch)`);
+      return false;
+    }
     log.info(`${browser.name} not running, launching...`);
     launchBrowser(browser);
     await waitUntil(() => browserIsRunning(browser), { timeoutMs: 8000, intervalMs: 100, label: 'browser launch' });
@@ -788,6 +820,20 @@ async function ensureConnected() {
   if (await checkTab()) {
     log.ok('Auto-connected to existing tab');
     return true;
+  }
+
+  // HTTP attach only unless operator opts into AppleScript UI mutation
+  try {
+    const data = await requestActiveTabAttach();
+    if (data.attached > 0 || await checkTab()) {
+      log.ok('Auto-connected!');
+      return true;
+    }
+  } catch {}
+
+  if (!browserUiEnabled()) {
+    log.fail('No attached targets; browser UI blocked (default). Click Glider on an existing tab, or set GLIDER_BROWSER_UI=1 to allow tab creation.');
+    return false;
   }
   
   // Need to create/attach to a tab
@@ -1552,6 +1598,10 @@ async function cmdConnect() {
   // 2. Ensure browser is running (see getBrowserConfig + README.md#Browsers)
   const browser = getBrowserConfig();
   if (!browserIsRunning(browser)) {
+    if (!browserUiEnabled()) {
+      log.fail(`${browser.name} not running; set GLIDER_BROWSER_UI=1 to allow launch, or start the browser yourself`);
+      process.exit(1);
+    }
     log.info(`Starting ${browser.name}...`);
     launchBrowser(browser);
     await waitUntil(() => browserIsRunning(browser), { timeoutMs: 8000, intervalMs: 100, label: 'browser launch' });
@@ -1577,7 +1627,47 @@ async function cmdConnect() {
     return;
   }
   
-  // 5. Ensure we have a real tab (not chrome:// or arc://)
+  // 5. Prefer HTTP attach to existing tabs (no focus steal)
+  log.info('Attaching to tab...');
+  try {
+    const data = await requestActiveTabAttach();
+    if (data.attached > 0 || await checkTab()) {
+      log.ok('Connected!');
+      const targets = await getTargets();
+      targets.slice(0, 3).forEach(t => {
+        console.log(`  ${CYAN}${t.targetInfo?.url || 'unknown'}${NC}`);
+      });
+      return;
+    }
+  } catch (e) {
+    log.warn(`Attach failed: ${e.message}`);
+  }
+
+  if (!browserUiEnabled()) {
+    log.warn(`Click the Glider extension icon in ${browser.name} (browser UI blocked by default; no tab/focus mutation)`);
+    console.log(`  ${B5}(on any real webpage, not a browser-internal page)${NC}`);
+    console.log(`  ${DIM}opt-in AppleScript tabs/activate: GLIDER_BROWSER_UI=1${NC}`);
+    notify('Glider', `Click the extension icon in ${browser.name} to connect`, true);
+    log.info('Waiting for connection...');
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      if (await checkTab()) {
+        log.ok('Connected!');
+        notify('Glider', 'Connected to browser');
+        const targets = await getTargets();
+        targets.slice(0, 3).forEach(t => {
+          console.log(`  ${B5}${t.targetInfo?.url || 'unknown'}${NC}`);
+        });
+        return;
+      }
+    }
+    log.fail('Timed out waiting for connection');
+    notify('Glider', 'Connection timed out - click extension icon', true);
+    log.info('Make sure you clicked the extension icon on a real webpage');
+    process.exit(1);
+  }
+
+  // 6. Opt-in UI path: ensure we have a real tab (not chrome:// or arc://)
   try {
     const tabUrl = activeBrowserTabUrl(browser);
     if (isBrowserInternalUrl(tabUrl)) {
@@ -1592,7 +1682,7 @@ async function cmdConnect() {
     await waitUntil(() => checkTab(), { timeoutMs: 4000, intervalMs: 100, label: 'tab attach' });
   }
   
-  // 6. Trigger attach via HTTP endpoint (no pixel clicking needed!)
+  // 7. Trigger attach via HTTP endpoint
   log.info('Attaching to tab...');
   try {
     const data = await requestActiveTabAttach();
@@ -1609,7 +1699,7 @@ async function cmdConnect() {
     log.warn(`Attach failed: ${e.message}`);
   }
   
-  // 7. Fallback: create fresh tab and retry
+  // 8. Fallback: create fresh tab and retry
   log.info('Creating fresh tab...');
   createBrowserPage(browser, browser.bootstrapUrl);
   const attached = await waitUntil(async () => {
@@ -1629,10 +1719,14 @@ async function cmdConnect() {
     });
     return;
   }
-  // 8. Need manual click - activate browser and show instructions
+  // 9. Need manual click - activate browser and show instructions (opt-in UI only)
   log.warn(`Click the Glider extension icon in ${browser.name}`);
   console.log(`  ${B5}(on any real webpage, not a browser-internal page)${NC}`);
-  execFileSync('osascript', ['-e', `tell application "${appleScriptString(browser.name)}" to activate`]);
+  try {
+    activateBrowser(browser);
+  } catch (e) {
+    log.warn(e.message);
+  }
   
   // Send macOS notification so user sees it even if not looking at terminal
   notify('Glider', `Click the extension icon in ${browser.name} to connect`, true);
@@ -1781,6 +1875,9 @@ function extensionWakeUrl() {
 function tryWakeExtensionWorker() {
   if (process.env.GLIDER_HEAL_NO_WAKE === '1') {
     return { attempted: false, reason: 'GLIDER_HEAL_NO_WAKE=1' };
+  }
+  if (!browserUiEnabled()) {
+    return { attempted: false, reason: 'GLIDER_BROWSER_UI default off (no tab wake)' };
   }
   let browser;
   try {

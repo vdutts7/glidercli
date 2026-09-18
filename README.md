@@ -155,6 +155,8 @@ glider resolve https://news.ycombinator.com --json
 | `GLIDER_RELAY_COMMAND_RECONNECT_WAIT_MS` | `3000` | wait for extension before failing a command |
 | `GLIDER_RELAY_MAX_PENDING` | `256` | max in-flight extension requests |
 | `GLIDER_TIMING` | unset | set `1` to always attach `timing` on `--json` output |
+| `GLIDER_BROWSER_UI` | unset (off) | set `1` to allow AppleScript launch/tabs/activate (steals focus). Default refuses browser UI mutation. |
+| `GLIDER_HEAL_NO_WAKE` | unset | set `1` to force-skip heal tab-wake even if `GLIDER_BROWSER_UI=1` |
 | `AGREGISTRY` | unset | optional registry root → warch at `AGREGISTRY/warch/HOST/` |
 
 Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed the host index.
@@ -166,7 +168,8 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 | problem | fix | stability | why |
 |---------|-----|-----------|-----|
 | extension not connected | install/enable [`Glider` on Chrome Web Store](https://chromewebstore.google.com/detail/glider/njbidokkffhgpofcejgcfcgcinmeoalj) in selected browser profile; click Glider icon, then run `glider connect` | per browser launch | relay waits on extension WS |
-| extension socket up but worker dead | `glider heal` (opens extension URL to wake SW); else click Glider icon / `glider reload-ext`; `glider doctor --json` shows `nextAction` | MV3 worker | status refuses healthy until pong |
+| extension socket up but worker dead | click Glider icon or `glider reload-ext`; `glider heal` does **not** open tabs by default (`GLIDER_BROWSER_UI` off); set `GLIDER_BROWSER_UI=1` only if you want AppleScript wake | MV3 worker | status refuses healthy until pong |
+| CLI steals browser focus / opens tabs | leave `GLIDER_BROWSER_UI` unset (default); never set it unless you explicitly want launch/tabs/activate | session-stable | AppleScript UI gated off by default |
 | custom relay port has no extension | use `19988` with Chrome Web Store build | install-stable | published extension connects to `ws://localhost:19988/extension` |
 | wrong tab targeted | `glider targets` → `glider use-session session-6` | session-stable | multi-tab needs explicit session |
 | explore HAR empty bodies | replay in-tab with auth hook on XHR/fetch | site-specific | some SPAs never expose bearer in storage |

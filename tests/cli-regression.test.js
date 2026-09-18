@@ -94,7 +94,7 @@ test('invalid relay ports preserve JSON errors and do not break independent comm
 
   result = await runCli(['version'], { env: { GLIDER_PORT: 'invalid' } });
   assert.equal(result.code, 0, result.stderr);
-  assert.match(result.stdout, /^0\.4\.7\s*$/);
+  assert.match(result.stdout, new RegExp(`^${require('../package.json').version}\\s*$`));
 
   result = await runCli(['help'], { env: { GLIDER_PORT: 'invalid' } });
   assert.equal(result.code, 0, result.stderr);
@@ -805,6 +805,33 @@ test('doctor reports nextAction when worker is dead', async (t) => {
   assert.equal(body.ok, false);
   assert.equal(body.observation.extensionWorkerAlive, false);
   assert.match(body.observation.nextAction, /glider heal/);
+});
+
+test('heal skips browser wake by default (GLIDER_BROWSER_UI off)', async (t) => {
+  const relay = await createMockRelay({
+    status: {
+      extension: true,
+      extensionWorkerAlive: false,
+      extensionGeneration: 3,
+      targets: 0,
+      clients: 0,
+    },
+    targets: [],
+  });
+  t.after(() => relay.close());
+  const result = await runCli(['--json', 'heal'], {
+    env: {
+      GLIDER_PORT: String(relay.port),
+      GLIDER_EXTENSION_ID: 'njbidokkffhgpofcejgcfcgcinmeoalj',
+    },
+  });
+  assert.equal(result.code, 1);
+  const body = jsonFromStdout(result.stdout);
+  assert.equal(body.ok, false);
+  const wake = body.observation.actions.find((a) => a.step === 'wake_extension');
+  assert.ok(wake);
+  assert.equal(wake.attempted, false);
+  assert.match(wake.reason, /GLIDER_BROWSER_UI|default off/i);
 });
 
 test('heal skips browser wake when GLIDER_HEAL_NO_WAKE=1', async (t) => {
