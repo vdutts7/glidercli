@@ -319,6 +319,28 @@ test('numeric wait cannot bypass another condition mode', async (t) => {
   assert.match(jsonFromStdout(result.stdout).error, /wait timeout/);
 });
 
+test('bare reload aliases to reload-ext', async (t) => {
+  const healthyStatus = { extension: true, extensionGeneration: 1, targets: 1, clients: 0 };
+  const healthy = await createMockRelay({
+    status: healthyStatus,
+    handler: async ({ req, body }) => {
+      if (req.url === '/extension' && body?.method === 'reloadSelf') {
+        healthyStatus.extensionGeneration += 1;
+      }
+      return false;
+    },
+  });
+  t.after(() => healthy.close());
+  const result = await runCli(['--json', 'reload'], {
+    env: {
+      GLIDER_PORT: String(healthy.port),
+      GLIDER_RELOAD_TIMEOUT_MS: '100',
+    },
+  });
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(jsonFromStdout(result.stdout).observation.extension, true);
+});
+
 test('reload-ext requires the extension to reconnect before reporting success', async (t) => {
   const stale = await createMockRelay({
     status: { extension: true, extensionGeneration: 1, targets: 1, clients: 0 },

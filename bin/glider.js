@@ -3545,6 +3545,7 @@ ${B5}STATUS${NC}
     ${BW}status${NC}              Check server, extension, tabs
     ${BW}doctor${NC}              Relay + SW + targets + next action ${DIM}(--json)${NC}
     ${BW}heal${NC} [--clear-pin]   Ensure relay, wake SW best-effort, reattach
+    ${BW}reload${NC}              Reload/pin Glider extension ${DIM}(alias: reload-ext, rex; page: history reload)${NC}
     ${BW}browser${NC}             Show browser config ${DIM}(name, path, processName, or use key)${NC}
     ${BW}use${NC} <key>           Set browser by registry key ${DIM}(e.g. arc, brave, chrome)${NC}
     ${BW}test${NC}                Run diagnostics
@@ -5064,16 +5065,18 @@ async function main() {
   loadPlugins();  // hydrate ~/.glider/plugins/*.plugin.{json,js} - verb-agnostic core
   let cmd = args[0];
 
-  // v0.3.15: reload-ext command aliases -
-  // Accept common natural-language variants + typos for high-frequency commands.
+  // reload-ext command aliases -
+  // Bare `reload` pins the extension (page refresh stays `history reload`).
   // Rewrites args in place so downstream switch stays clean.
   const RELOAD_EXT_ALIASES = new Set(['rex', 'reloadext', 'reloadExt']);
   if (cmd === 'ext' && args[1] === 'reload') {
     cmd = 'reload-ext';
     args.splice(0, 2, 'reload-ext');
-  } else if (cmd === 'reload' && (args[1] === 'ext' || args[1] === 'extension')) {
+  } else if (cmd === 'reload' && (!args[1] || args[1] === 'ext' || args[1] === 'extension')) {
+    // Bare `reload` = pin extension. Page refresh stays `history reload`.
     cmd = 'reload-ext';
-    args.splice(0, 2, 'reload-ext');
+    if (args[1]) args.splice(0, 2, 'reload-ext');
+    else args[0] = 'reload-ext';
   } else if (RELOAD_EXT_ALIASES.has(cmd)) {
     cmd = 'reload-ext';
     args[0] = 'reload-ext';
@@ -5133,6 +5136,7 @@ async function main() {
     case 'restart':
       await cmdRestart();
       break;
+    case 'reload':
     case 'reload-ext':
     case 'reload-extension':
       await cmdReloadExt();
@@ -5404,7 +5408,7 @@ async function main() {
       }
       log.fail(`Unknown command: ${cmd}`);
       // v0.3.15: typo suggest (Levenshtein <=2) before dumping full help.
-      const KNOWN_CMDS = ['status','start','stop','restart','reload-ext','attach-all','install','uninstall',
+      const KNOWN_CMDS = ['status','start','stop','restart','reload','reload-ext','attach-all','install','uninstall',
         'update','version','connect','browser','use','test','doctor','heal','domains','resolve','goto','eval','click','type',
         'screenshot','snapshot','text','html','title','url','tabs','targets','use-session','fetch','spawn',
         'extract','explore','favicon','window','reg','run','loop','ralph',
