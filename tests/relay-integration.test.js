@@ -410,3 +410,54 @@ test('relay removes closed targets from the map and times out pending CDP', asyn
   assert.equal(response.status, 500);
   assert.match(String(response.body.error), /Timeout after 200ms/);
 });
+
+test('relay retries Target.createTarget on Chromium No SW then succeeds', async (t) => {
+  const port = await getFreePort();
+  const relay = spawn(process.execPath, [path.join(REPO_ROOT, 'lib', 'bserve.js')], {
+    cwd: REPO_ROOT,
+    env: {
+      ...process.env,
+      GLIDER_PORT: String(port),
+      RELAY_PORT: '1',
+      GLIDER_RELAY_RECONNECT_GRACE_MS: '0',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(async () => {
+    if (relay.exitCode !== null) return;
+    relay.kill('SIGTERM');
+    await new Promise((resolve) => relay.once('close', resolve));
+  });
+  await waitForHttp(`http://127.0.0.1:${port}/status`);
+
+  let nosw = 0;
+  const extension = new WebSocket(`ws://127.0.0.1:${port}/extension`);
+  t.after(() => extension.close());
+  await new Promise((resolve, reject) => {
+    extension.once('open', resolve);
+    extension.once('error', reject);
+  });
+  extension.on('message', (raw) => {
+    const message = JSON.parse(raw.toString());
+    if (message.method === 'ping') {
+      extension.send(JSON.stringify({ method: 'pong' }));
+      return;
+    }
+    if (message.method !== 'forwardCDPCommand') return;
+    if (message.params?.method !== 'Target.createTarget') return;
+    nosw += 1;
+    if (nosw < 3) {
+      extension.send(JSON.stringify({ id: message.id, error: 'No SW' }));
+      return;
+    }
+    extension.send(JSON.stringify({ id: message.id, result: { targetId: 'target-nosw' } }));
+  });
+
+  const response = await requestJson(`http://127.0.0.1:${port}/cdp`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  }, { method: 'Target.createTarget', params: { url: 'https://example.com' } });
+  assert.equal(response.status, 200);
+  assert.equal(response.body.targetId, 'target-nosw');
+  assert.equal(nosw, 3);
+});
