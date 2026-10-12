@@ -3210,7 +3210,7 @@ async function cmdExplore(url, opts = []) {
     process.exit(1);
   }
   
-  let depth = 2;
+  let depth = Infinity;
   let outputDir = '/tmp/glider-explore';
   let harFile = null;
   let sessionId = null;
@@ -3519,14 +3519,7 @@ async function cmdLoop(taskFileOrPrompt, options = {}) {
       }
       
       // Check for completion marker in task file (if it was modified)
-      if (fs.existsSync(taskFileOrPrompt)) {
-        const currentContent = fs.readFileSync(taskFileOrPrompt, 'utf8');
-        if (currentContent.includes(completionMarker) || currentContent.includes('DONE')) {
-          log.ok('Task file marked as complete');
-          state.status = 'completed';
-          break;
-        }
-      }
+
       
       state.completed.push({ iteration: state.iteration, success: true });
       
