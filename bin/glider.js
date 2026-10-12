@@ -3218,7 +3218,10 @@ async function cmdExplore(url, opts = []) {
   let closeOnDone = false;
   
   for (let i = 0; i < opts.length; i++) {
-    if (opts[i] === '--depth' || opts[i] === '-d') depth = parseInt(opts[++i], 10);
+    if (opts[i] === '--depth' || opts[i] === '-d') {
+        const n = parseInt(opts[++i], 10);
+        depth = n === 0 ? 0 : Infinity;
+      }
     else if (opts[i] === '--output' || opts[i] === '-o') outputDir = opts[++i];
     else if (opts[i] === '--har') harFile = opts[++i];
     else if (opts[i] === '--session-id' || opts[i] === '--session') sessionId = opts[++i];
@@ -3264,7 +3267,8 @@ async function cmdExplore(url, opts = []) {
   const bexplorePath = path.join(LIB_DIR, 'bexplore.js');
   if (fs.existsSync(bexplorePath)) {
     const { spawn } = require('child_process');
-    const spawnArgs = [bexplorePath, url, '--depth', String(depth), '--output', outputDir];
+    const spawnArgs = [bexplorePath, url, '--output', outputDir];
+    if (depth === 0) spawnArgs.push('--depth', '0');
     if (harFile) spawnArgs.push('--har', harFile);
     if (sessionId) spawnArgs.push('--session-id', sessionId);
     
