@@ -7,7 +7,7 @@
   },
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "test:syntax": "node --check bin/glider.js && node --check lib/bserve.js",
+    "test:syntax": "node --check bin/glider.js && node --check lib/bserve.js && node --check lib/bexplore.js",
     "test:regression": "node --test tests/browser-config.test.js tests/core.test.js tests/cli-regression.test.js tests/relay-integration.test.js",
     "test:integration": "node --test tests/relay-integration.test.js tests/daemon-lifecycle.test.js",
     "test:pack": "node --test tests/npm-tarball.test.js",

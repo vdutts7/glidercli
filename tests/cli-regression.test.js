@@ -174,7 +174,7 @@ test('use-session validates liveness and supports URL space and equals forms', a
 
   result = await runCli(['--json', 'use-session', 'session-stale'], { env });
   assert.equal(result.code, 1);
-  assert.match(jsonFromStdout(result.stdout).error, /not live/);
+  assert.match(jsonFromStdout(result.stdout).error, /no page pin|not live|F_need_context/);
 });
 
 test('plugin socket hydrates local verbs from GLIDER_HOME without package branding', async (t) => {

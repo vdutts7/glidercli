@@ -648,8 +648,24 @@ async function pickLiveSessionId() {
     targetId: want.targetId || '',
     sessionId: '',
   });
-  if (resolved.pin) persistPin(resolved.pin);
-  return resolved.pin ? resolved.pin.sessionId : null;
+  if (resolved.pin) {
+    persistPin(resolved.pin);
+    return resolved.pin.sessionId;
+  }
+  const part = pinMachine.partition(targets);
+  if (part.pages.length === 1) {
+    const page = part.pages[0];
+    persistPin({
+      sessionId: page.sessionId,
+      targetId: page.targetId,
+      type: pinMachine.PAGE,
+      url: page.url,
+      host: pinMachine.hostFromUrl(page.url),
+      reason: 'heal_only_page',
+    });
+    return page.sessionId;
+  }
+  return null;
 }
 
 async function httpPost(urlPath, body) {
@@ -3206,7 +3222,7 @@ async function cmdRegistry(patternName, opts = []) {
 // Explore site (clicks around, captures network)
 async function cmdExplore(url, opts = []) {
   if (!url) {
-    log.fail('Usage: glider explore <url> [--depth N] [--output dir] [--har file] [--session-id id]');
+    log.fail('Usage: glider explore <url> [--depth N] [--output dir] [--har file] [--session-id id] [--workers N]');
     process.exit(1);
   }
   
@@ -3216,6 +3232,7 @@ async function cmdExplore(url, opts = []) {
   let sessionId = null;
   let freshTab = false;
   let closeOnDone = false;
+  let workers = 1;
   
   for (let i = 0; i < opts.length; i++) {
     if (opts[i] === '--depth' || opts[i] === '-d') {
@@ -3227,6 +3244,7 @@ async function cmdExplore(url, opts = []) {
     else if (opts[i] === '--session-id' || opts[i] === '--session') sessionId = opts[++i];
     else if (opts[i] === '--fresh-tab') freshTab = true;
     else if (opts[i] === '--close-on-done') closeOnDone = true;
+    else if (opts[i] === '--workers') workers = Math.min(4, Math.max(1, parseInt(opts[++i], 10) || 1));
   }
   if (!sessionId && !freshTab && activeSessionId) sessionId = activeSessionId;
 
@@ -3271,6 +3289,7 @@ async function cmdExplore(url, opts = []) {
     if (depth === 0) spawnArgs.push('--depth', '0');
     if (harFile) spawnArgs.push('--har', harFile);
     if (sessionId) spawnArgs.push('--session-id', sessionId);
+    spawnArgs.push('--workers', String(workers));
     
     const child = spawn('node', spawnArgs, {
       stdio: 'inherit'
