@@ -76,6 +76,7 @@ if (fs.existsSync(REGISTRY_FILE)) {
 // Direct CDP module
 const { DirectCDP, checkChrome } = require(path.join(LIB_DIR, 'cdp-direct.js'));
 const { resolveDomain } = require(path.join(LIB_DIR, 'domain-resolve.js'));
+const pinMachine = require(path.join(LIB_DIR, 'pin-machine.js'));
 
 // Domain extensions - load from ~/.glider/config/domains.json
 const DOMAIN_CONFIG_PATHS = configPath('domains.json');
@@ -473,11 +474,18 @@ function httpGet(urlPath) {
 
 function loadPersistedSession() {
   if (activeSessionId) return;
-  if (!fs.existsSync(SESSION_STORE)) return;
+  const pin = readPinStore();
+  if (pin.sessionId) activeSessionId = pin.sessionId;
+}
+
+function readPinStore() {
+  if (!fs.existsSync(SESSION_STORE)) return {};
   try {
     const data = JSON.parse(fs.readFileSync(SESSION_STORE, 'utf8'));
-    if (data.sessionId) activeSessionId = data.sessionId;
-  } catch { /* ignore */ }
+    return data && typeof data === 'object' ? data : {};
+  } catch {
+    return {};
+  }
 }
 
 function clearPersistedSession() {
@@ -485,10 +493,24 @@ function clearPersistedSession() {
   try { if (fs.existsSync(SESSION_STORE)) fs.unlinkSync(SESSION_STORE); } catch { /* ignore */ }
 }
 
-function persistSession(sessionId) {
+function persistSession(sessionId, extra = {}) {
   activeSessionId = sessionId;
+  const prev = readPinStore();
+  const doc = {
+    sessionId,
+    targetId: extra.targetId || prev.targetId || '',
+    host: extra.host || prev.host || '',
+    url: extra.url || prev.url || '',
+    reason: extra.reason || prev.reason || '',
+    updated: new Date().toISOString(),
+  };
   fs.mkdirSync(path.dirname(SESSION_STORE), { recursive: true });
-  fs.writeFileSync(SESSION_STORE, JSON.stringify({ sessionId, updated: new Date().toISOString() }, null, 2));
+  fs.writeFileSync(SESSION_STORE, JSON.stringify(doc, null, 2));
+}
+
+function persistPin(pin) {
+  if (!pin || !pin.sessionId) return;
+  persistSession(pin.sessionId, pin);
 }
 
 const lastHttpTiming = { relay_ms: 0, cdp_ms: 0 };
@@ -619,7 +641,15 @@ function httpPostRaw(urlPath, payload) {
 
 async function pickLiveSessionId() {
   const targets = await getTargets();
-  return targets[0]?.sessionId || null;
+  const want = readPinStore();
+  const resolved = pinMachine.resolvePin({
+    targets,
+    host: want.host || '',
+    targetId: want.targetId || '',
+    sessionId: '',
+  });
+  if (resolved.pin) persistPin(resolved.pin);
+  return resolved.pin ? resolved.pin.sessionId : null;
 }
 
 async function httpPost(urlPath, body) {
@@ -638,12 +668,11 @@ async function httpPost(urlPath, body) {
       && isSessionNotFoundError(error)
     ) {
       const live = await pickLiveSessionId();
-      clearPersistedSession();
       if (live) {
-        persistSession(live);
         const retry = { ...body, sessionId: live };
         return httpPostRaw(urlPath, retry);
       }
+      clearPersistedSession();
     }
     throw error;
   }
@@ -2068,16 +2097,24 @@ async function cmdHeal(args = []) {
 
 async function cmdTabs() {
   const targets = await getTargets();
-  if (targets.length === 0) {
-    log.warn('No tabs connected');
+  const part = pinMachine.partition(targets);
+  if (jsonOutput) {
+    emitJson(true, { pages: part.pages, iframes: part.iframes, other: part.other, activeSessionId });
     return;
   }
-  console.log(`${GREEN}${targets.length}${NC} tab(s) connected:\n`);
-  targets.forEach((t, i) => {
-    const url = t.targetInfo?.url || 'unknown';
-    const title = t.targetInfo?.title || '';
-    console.log(`  ${CYAN}[${i + 1}]${NC} ${title}`);
-    console.log(`      ${DIM}${url}${NC}`);
+  if (part.pages.length === 0) {
+    log.warn('No page targets');
+    return;
+  }
+  console.log(`${GREEN}${part.pages.length}${NC} page(s) connected:\n`);
+  part.pages.forEach((t, i) => {
+    const mark = t.sessionId === activeSessionId ? `${GREEN}*${NC} ` : '  ';
+    console.log(`${mark}${CYAN}[${i + 1}]${NC} ${t.title || t.url}`);
+    console.log(`      ${DIM}${t.url}${NC}`);
+    const kids = part.iframes.filter((fr) => fr.parent_targetId === t.targetId);
+    for (const fr of kids) {
+      console.log(`      ${DIM}iframe${NC}  ${fr.url}`);
+    }
   });
 }
 
@@ -2327,25 +2364,28 @@ async function cmdSnapshot(opts = []) {
 
 async function cmdTargets() {
   const raw = await httpGet('/targets');
-  const targets = (Array.isArray(raw) ? raw : []).map((t) => ({
+  const part = pinMachine.partition(raw);
+  const targets = part.rows.map((t) => ({
     sessionId: t.sessionId,
     targetId: t.targetId,
-    title: t.title || t.targetInfo?.title || '',
-    url: t.url || t.targetInfo?.url || '',
+    type: t.type,
+    title: t.title,
+    url: t.url,
+    parentFrameId: t.parentFrameId || '',
   }));
   if (jsonOutput) {
-    emitJson(true, { targets, activeSessionId });
-  } else {
-    if (!targets.length) {
-      log.warn('No targets');
-      return;
-    }
-    console.log(`${GREEN}${targets.length}${NC} target(s):\n`);
-    for (const t of targets) {
-      const mark = t.sessionId === activeSessionId ? `${GREEN}*${NC} ` : '  ';
-      console.log(`${mark}${CYAN}${t.sessionId}${NC}  ${t.title}`);
-      console.log(`      ${DIM}${t.url}${NC}`);
-    }
+    emitJson(true, { targets, pages: part.pages, iframes: part.iframes, activeSessionId });
+    return;
+  }
+  if (!targets.length) {
+    log.warn('No targets');
+    return;
+  }
+  console.log(`${GREEN}${part.pages.length}${NC} page(s), ${part.iframes.length} iframe(s):\n`);
+  for (const t of targets) {
+    const mark = t.sessionId === activeSessionId ? `${GREEN}*${NC} ` : '  ';
+    console.log(`${mark}${CYAN}${t.sessionId}${NC}  ${t.type}  ${t.title}`);
+    console.log(`      ${DIM}${t.url}${NC}`);
   }
 }
 
@@ -2358,29 +2398,31 @@ async function cmdUseSession(arg, opts = []) {
     process.exit(1);
   }
   const raw = await httpGet('/targets');
-  const targets = Array.isArray(raw) ? raw : [];
-  const hit = parsed.url
-    ? targets.find((target) => (target.url || target.targetInfo?.url || '').includes(parsed.url))
-    : targets.find((target) => target.sessionId === requestedSession || target.targetId === requestedSession);
-  if (!hit) {
+  const host = parsed.url ? (pinMachine.hostFromUrl(parsed.url.includes('://') ? parsed.url : `https://${parsed.url}`) || parsed.url) : '';
+  const resolved = pinMachine.resolvePin({
+    targets: Array.isArray(raw) ? raw : [],
+    host,
+    sessionId: requestedSession || '',
+  });
+  if (!resolved.pin) {
     const message = parsed.url
-      ? `no live target matching --url ${parsed.url}`
-      : `session is not live: ${requestedSession}`;
-    if (jsonOutput) emitJson(false, null, message);
+      ? `no page pin for --url ${parsed.url} (${resolved.state})`
+      : `no page pin for session ${requestedSession} (${resolved.state})`;
+    if (jsonOutput) emitJson(false, { state: resolved.state }, message);
     log.fail(message);
     process.exit(1);
   }
-  const sessionId = hit.sessionId;
-  persistSession(sessionId);
+  persistPin(resolved.pin);
   if (jsonOutput) {
     emitJson(true, {
-      sessionId,
-      targetId: hit.targetId,
-      url: hit.url || hit.targetInfo?.url || '',
+      sessionId: resolved.pin.sessionId,
+      targetId: resolved.pin.targetId,
+      url: resolved.pin.url,
+      reason: resolved.pin.reason,
       persisted: SESSION_STORE,
     });
   } else {
-    log.ok(`Active session: ${sessionId}`);
+    log.ok(`Active session: ${resolved.pin.sessionId} (${resolved.pin.reason})`);
     console.log(SESSION_STORE);
   }
 }
