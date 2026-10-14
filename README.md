@@ -65,7 +65,7 @@ Extension + relay model uses Chromium + Glider extension from Chrome Web Store i
 |---|--------|--------|
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chrome.webp" width="40" height="40" alt=""> | Google Chrome | default for `glider connect` |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/arc.webp" width="40" height="40" alt=""> | Arc | [`config/browser.json.example`](config/browser.json.example) |
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/microsoft/microsoft-edge.webp" width="40" height="40" alt=""> | Microsoft Edge | registry key `edge` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/microsoft-edge.webp" width="40" height="40" alt=""> | Microsoft Edge | registry key `edge` |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/brave.webp" width="40" height="40" alt=""> | Brave | registry key `brave` |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/vivaldi.webp" width="40" height="40" alt=""> | Vivaldi | registry key `vivaldi` |
 
