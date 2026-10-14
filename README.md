@@ -37,7 +37,7 @@ Two failures show up the first time an agent tries to drive a real browser:
 
 **1. Access.** Headless CDP / Playwright launch a cold profile. SSO, MFA, and corp cookies are not there. The agent spends the session on a login wall.
 
-**2. Tokens.** Even after you are in the page, Playwright MCP still dumps the accessibility tree into the model on every navigate/click/type. That is not a screenshot problem. It is a context problem.
+**2. Tokens.** Even after you are in the page, [Playwright MCP](https://playwright.dev/docs/getting-started-mcp) still dumps the accessibility tree into the model on every navigate/click/type (structured snapshots, not pixels; every tool result includes the tree). That is not a screenshot problem. It is a context problem.
 
 Measured Playwright MCP ([quote](https://dev.to/ji_ai/playwright-mcp-token-usage-9-tool-calls-62-of-my-context-4on2)):
 
@@ -59,11 +59,11 @@ A bigger window delays the crash. It does not stop the tree from being copied in
 
 ## Hidden constraint
 
-Playwright MCP presents as "use the browser." Under the hood it couples **action** to **full page state**:
+[Playwright MCP](https://playwright.dev/docs/getting-started-mcp) presents as "use the browser." Under the hood it couples **action** to **full page state** ([quote](https://playwright.dev/docs/getting-started-mcp)):
 
 | | Path | What the model receives | Cost to context |
 |:---:|------|-------------------------|-----------------|
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chrome.webp?v=1791987543" width="40" height="40" alt=""> | Playwright MCP | YAML a11y tree + `ref=` handles, every tool result | ~13.8K tok/snapshot; 124.3K tok / 9 calls ([quote](https://dev.to/ji_ai/playwright-mcp-token-usage-9-tool-calls-62-of-my-context-4on2)) |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/playwright.webp?v=1791987543" width="40" height="40" alt=""> | Playwright MCP | YAML a11y tree + `ref=` handles, every tool result ([quote](https://playwright.dev/docs/getting-started-mcp)) | ~13.8K tok/snapshot; 124.3K tok / 9 calls ([quote](https://dev.to/ji_ai/playwright-mcp-token-usage-9-tool-calls-62-of-my-context-4on2)) |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/glider.webp?v=1791987543" width="40" height="40" alt=""> | glider | `glider snapshot`: url, title, up to 200 interactive nodes | cap **16,142 chars ≈ 4,036 tok** (chars/4) at 200 nodes |
 
 **Core insight**: the token floor is attached to returning the whole tree, not to driving Chromium.
