@@ -1,15 +1,15 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/glider.webp" alt="glider" width="80" height="80" />
-<img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chrome.webp" alt="chrome" width="80" height="80" />
-<img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/claude.webp" alt="claude" width="80" height="80" />
-<img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/ralph-wiggum.webp" alt="ralph" width="80" height="80" />
+<img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/glider.webp?v=1791987543" alt="glider" width="80" height="80" />
+<img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chrome.webp?v=1791987543" alt="chrome" width="80" height="80" />
+<img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/claude.webp?v=1791987543" alt="claude" width="80" height="80" />
+<img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/ralph-wiggum.webp?v=1791987543" alt="ralph" width="80" height="80" />
 
 <h1 align="center">glider CLI</h1>
 <p align="center"><i><b>Browser automation CLI with autonomous loop execution</b></i></p>
 
-<a href="https://github.com/vdutts7/glidercli"><img src="./assets/badges/github.badge.svg" alt="GitHub" height="40" /></a>
-<a href="https://www.npmjs.com/package/glidercli"><img src="./assets/badges/npm.badge.svg" alt="glidercli on npm" height="40" /></a>
+<a href="https://github.com/vdutts7/glidercli"><img src="./assets/badges/github.badge.svg?v=1791987543" alt="GitHub" height="40" /></a>
+<a href="https://www.npmjs.com/package/glidercli"><img src="./assets/badges/npm.badge.svg?v=1791987543" alt="glidercli on npm" height="40" /></a>
 
 </div>
 
@@ -63,13 +63,13 @@ Extension + relay model uses Chromium + Glider extension from Chrome Web Store i
 
 | | Browser | Config |
 |:---:|--------|--------|
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chrome.webp" width="40" height="40" alt=""> | Google Chrome | default for `glider connect`; registry key `chrome` |
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/microsoft-edge.webp" width="40" height="40" alt=""> | Microsoft Edge | registry key `edge` |
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/brave.webp" width="40" height="40" alt=""> | Brave | registry key `brave` |
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chromium.webp" width="40" height="40" alt=""> | Opera | registry key `opera` |
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/vivaldi.webp" width="40" height="40" alt=""> | Vivaldi | registry key `vivaldi` |
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/helium.webp" width="40" height="40" alt=""> | Helium | registry key `helium` |
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/arc.webp" width="40" height="40" alt=""> | Arc | registry key `arc` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chrome.webp?v=1791987543" width="40" height="40" alt=""> | Google Chrome | default for `glider connect`; registry key `chrome` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/microsoft-edge.webp?v=1791987543" width="40" height="40" alt=""> | Microsoft Edge | registry key `edge` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/brave.webp?v=1791987543" width="40" height="40" alt=""> | Brave | registry key `brave` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/opera-gx.webp?v=1791987543" width="40" height="40" alt=""> | Opera | registry key `opera` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/vivaldi.webp?v=1791987543" width="40" height="40" alt=""> | Vivaldi | registry key `vivaldi` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/helium.webp?v=1791987543" width="40" height="40" alt=""> | Helium | registry key `helium` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/arc.webp?v=1791987543" width="40" height="40" alt=""> | Arc | registry key `arc` |
 
 Not supported today: Firefox/Safari/WebKit/Gecko, DuckDuckGo, browsers without Chrome Web Store extension path.
 
@@ -226,4 +226,4 @@ Incomplete event-stream features fail closed: `wait --network-idle`, console str
 
 ## Contact
 
-<a href="https://vd7.io"><img src="https://res.cloudinary.com/ddyc1es5v/image/upload/v1773910810/readme-badges/readme-badge-vd7.png" alt="vd7.io" height="40" /></a> &nbsp; <a href="https://x.com/vdutts7"><img src="https://res.cloudinary.com/ddyc1es5v/image/upload/v1773910817/readme-badges/readme-badge-x.png" alt="/vdutts7" height="40" /></a>
+<a href="https://vd7.io"><img src="https://res.cloudinary.com/ddyc1es5v/image/upload/v1773910810/readme-badges/readme-badge-vd7.png?v=1791987543" alt="vd7.io" height="40" /></a> &nbsp; <a href="https://x.com/vdutts7"><img src="https://res.cloudinary.com/ddyc1es5v/image/upload/v1773910817/readme-badges/readme-badge-x.png?v=1791987543" alt="/vdutts7" height="40" /></a>

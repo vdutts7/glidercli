@@ -324,6 +324,81 @@ if [ -f "$PID_FILE" ]; then
   }
 fi
 
+# Auto-heal: reclaim :PORT when a stale bserve.js holds it (wrong install path / orphan).
+# Foreign non-bserve listeners still fail hard (no blind kill).
+reclaim_stale_bserve_if_needed() {
+  local pid cmd our
+  our="$(cd "$(dirname "$BSERVE")" && /bin/pwd)/$(basename "$BSERVE")"
+  if ! relay_is_running; then
+    # port may be held without /status (half-dead); still inspect listeners
+    :
+  fi
+  for pid in $(/usr/sbin/lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null); do
+    cmd="$(/bin/ps -p "$pid" -o command= 2>/dev/null || true)"
+    case "$cmd" in
+      *bserve.js*)
+        case "$cmd" in
+          *"$our"*|*"$BSERVE"*)
+            if relay_owned_by_pid "$pid"; then
+              echo "glider-daemon: canonical relay already up as PID $pid on port $PORT" >&2
+              exit 0
+            fi
+            ;;
+        esac
+        # wrong install path, or canonical path but /status broken → reclaim
+        echo "glider-daemon: reclaiming stale bserve PID $pid on port $PORT" >&2
+        echo "glider-daemon: was: $cmd" >&2
+        /bin/kill "$pid" 2>/dev/null || true
+        i=0
+        while [ "$i" -lt 50 ]; do
+          /bin/kill -0 "$pid" 2>/dev/null || break
+          sleep 0.1
+          i=$((i + 1))
+        done
+        /bin/kill -9 "$pid" 2>/dev/null || true
+        ;;
+      "")
+        ;;
+      *)
+        echo "glider-daemon: relay port $PORT owned by foreign process PID $pid: $cmd" >&2
+        exit 1
+        ;;
+    esac
+  done
+}
+
+relay_owned_by_pid() {
+  "$NODE_BIN" -e '
+    const http = require("http");
+    const [portValue, expectedPid] = process.argv.slice(1);
+    const request = http.get(
+      { host: "127.0.0.1", port: Number(portValue), path: "/status", timeout: 500 },
+      (response) => {
+        let raw = "";
+        response.on("data", (chunk) => { raw += chunk; });
+        response.on("end", () => {
+          try {
+            const status = JSON.parse(raw);
+            process.exit(
+              response.statusCode >= 200
+              && response.statusCode < 300
+              && status.pid === Number(expectedPid)
+                ? 0
+                : 1,
+            );
+          } catch {
+            process.exit(1);
+          }
+        });
+      },
+    );
+    request.on("error", () => process.exit(1));
+    request.on("timeout", () => request.destroy());
+  ' "$PORT" "$1"
+}
+
+reclaim_stale_bserve_if_needed
+
 if relay_is_running; then
   echo "glider-daemon: relay port $PORT is already owned by another process" >&2
   exit 1
