@@ -101,7 +101,7 @@ test('invalid relay ports preserve JSON errors and do not break independent comm
   assert.doesNotMatch(result.stdout, /runs at login/);
 });
 
-test('browser command reads the selected browser from GLIDER', async () => {
+test('config browser reads the selected browser from GLIDER', async () => {
   const home = makeTempGliderHome();
   try {
     fs.writeFileSync(path.join(home, 'config', 'browser.json'), JSON.stringify({
@@ -109,7 +109,7 @@ test('browser command reads the selected browser from GLIDER', async () => {
       path: '/Applications/Configured Browser.app',
       processName: 'Configured Browser',
     }));
-    const result = await runCli(['--json', 'browser'], { env: { GLIDER: home } });
+    const result = await runCli(['--json', 'config', 'browser'], { env: { GLIDER: home } });
     assert.equal(result.code, 0, result.stderr);
     const body = jsonFromStdout(result.stdout);
     assert.equal(body.observation.name, 'Configured Browser');

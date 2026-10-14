@@ -1799,31 +1799,16 @@ async function cmdConnect() {
   process.exit(1);
 }
 
-function cmdBrowser() {
-  const b = getBrowserConfig();
-  if (jsonOutput) {
-    emitJson(true, {
-      name: b.name,
-      path: b.path,
-      processName: b.processName,
-      bootstrapUrl: b.bootstrapUrl,
-      use: b.use,
-      source: b.source,
-      registrySource: b.registrySource,
-    });
-    return;
-  }
-  console.log('Browser config (used by glider connect):');
-  console.log(`  name:         ${b.name}`);
-  console.log(`  path:         ${b.path || '(default launch via name)'}`);
-  console.log(`  processName:  ${b.processName}`);
-  console.log(`  bootstrapUrl: ${b.bootstrapUrl}`);
-  if (b.use) {
-    console.log(`  use:          ${b.use}`);
-  }
-  console.log('');
-  console.log(`Source: ${b.source || path.join(GLIDER, 'config', 'browser.json')}`);
-  printConfigBrowserCommands(b);
+function emitBrowserJson(b) {
+  emitJson(true, {
+    name: b.name,
+    path: b.path,
+    processName: b.processName,
+    bootstrapUrl: b.bootstrapUrl,
+    use: b.use,
+    source: b.source,
+    registrySource: b.registrySource,
+  });
 }
 
 function configHelpFlag(s) {
@@ -1879,6 +1864,7 @@ async function cmdConfig(argv) {
   const a = (argv || []).filter((x) => x !== undefined);
   const browser = getBrowserConfig();
   if (!a.length || configHelpFlag(a[0])) {
+    if (jsonOutput) return emitBrowserJson(browser);
     printConfigBrowserCommands(browser);
     return;
   }
@@ -1888,10 +1874,12 @@ async function cmdConfig(argv) {
   }
   const rest = a.slice(1);
   if (rest.length && configHelpFlag(rest[0])) {
+    if (jsonOutput) return emitBrowserJson(browser);
     printConfigBrowserCommands(browser);
     return;
   }
   if (!rest.length) {
+    if (jsonOutput) return emitBrowserJson(browser);
     if (process.stdin.isTTY && !process.env.CI) {
       writeBrowserUse(await pickBrowser(browser), browser);
       return;
@@ -1900,10 +1888,6 @@ async function cmdConfig(argv) {
     return;
   }
   writeBrowserUse(rest[0], browser);
-}
-
-function cmdUse(key) {
-  return cmdConfig(['browser', ...(key != null && key !== '' ? [key] : [])]);
 }
 
 async function cmdTest() {
@@ -3666,7 +3650,6 @@ ${B5}STATUS${NC}
     ${BW}heal${NC} [--clear-pin]   Ensure relay, wake SW best-effort, reattach
     ${BW}reload${NC}              Reload/pin Glider extension ${DIM}(alias: reload-ext, rex; page: history reload)${NC}
     ${BW}config browser chrome${NC}  ${DIM}also: edge, brave, opera, vivaldi, helium, arc${NC}
-    ${BW}browser${NC}             Show current browser
     ${BW}test${NC}                Run diagnostics
     ${BW}domains${NC}             List ~/.glider domain shortcuts + warch paths
     ${BW}resolve${NC} <url>        Domain intel under ~/.glider/warch ${DIM}(--json)${NC}
@@ -5211,7 +5194,7 @@ async function main() {
 
   const relayIndependent = new Set([
     'help', '--help', '-h', 'update', 'version', '-v', '--version',
-    'browser', 'use', 'config', 'domains', 'resolve',
+    'config', 'domains', 'resolve',
   ]);
   if (relayConfigError && !relayIndependent.has(cmd)) {
     throw relayConfigError;
@@ -5227,7 +5210,7 @@ async function main() {
   // Config, diagnostics, and relay-management commands handle availability themselves.
   const noRelayPreflight = new Set([
     'start', 'stop', 'restart', 'status', 'test', 'doctor', 'heal', 'connect',
-    'install', 'uninstall', 'browser', 'use',
+    'install', 'uninstall', 'config',
     'help', '--help', '-h', 'update', 'version', '-v', '--version',
     'domains', 'resolve',
   ]);
@@ -5281,14 +5264,8 @@ async function main() {
     case 'connect':
       await cmdConnect();
       break;
-    case 'browser':
-      cmdBrowser();
-      break;
     case 'config':
       await cmdConfig(args.slice(1));
-      break;
-    case 'use':
-      await cmdUse(args[1]);
       break;
     case 'test':
       await cmdTest();

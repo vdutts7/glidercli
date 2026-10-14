@@ -168,7 +168,7 @@ async function main() {
     assert.equal(status.extension, true, 'extension WebSocket is not connected');
     // Extension-only is enough: Target.createTarget works with zero prior attached tabs.
 
-    const browserResult = await runCli(['--json', 'browser'], { env: cliEnv() });
+    const browserResult = await runCli(['--json', 'config', 'browser'], { env: cliEnv() });
     assert.equal(browserResult.code, 0, browserResult.stderr);
     report.browser = jsonFromStdout(browserResult.stdout).observation;
 

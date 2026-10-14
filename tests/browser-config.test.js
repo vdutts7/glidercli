@@ -114,6 +114,14 @@ test('glider config browser prints and writes commands, not registry-key jargon'
     assert.match(result.stderr + result.stdout, /glider config browser chrome/);
     assert.doesNotMatch(result.stderr + result.stdout, /G L I D E R/);
 
+    result = await runCli(['use', 'chrome'], { env });
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /^Unknown command: use\s*$/m);
+
+    result = await runCli(['browser'], { env });
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /^Unknown command: browser\s*$/m);
+
     result = await runCli(['not-a-command'], { env });
     assert.equal(result.code, 1);
     assert.match(result.stderr, /^Unknown command: not-a-command\s*$/m);

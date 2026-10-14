@@ -75,30 +75,15 @@ Not supported today: Firefox/Safari/WebKit/Gecko, DuckDuckGo, browsers without C
 
 ### Browser config
 
-Writes `$GLIDER/config/browser.json`. Chrome is the default.
+CLI or the file. One shape.
 
 ```bash
 glider config browser chrome
-glider browser
 ```
 
-Explicit name/path:
+writes `{ "use": "chrome" }` to `$GLIDER/config/browser.json`. Chrome is the default. `glider config browser` lists the same commands.
 
-```json
-{
-  "name": "Google Chrome",
-  "path": "/Applications/Google Chrome.app",
-  "processName": "Google Chrome"
-}
-```
-
-| Command | Effect |
-|---------|--------|
-| `glider config browser chrome` | set Chrome |
-| `glider config browser` | list `glider config browser <name>` lines |
-| `glider browser` | show current browser |
-
-macOS: `open -a` / AppleScript. Linux/Windows: partial, on roadmap.
+macOS launch. Linux/Windows: planned.
 
 ---
 
@@ -127,7 +112,6 @@ glider loop `hn-scrape.yaml` -n 50 -m hn_scrape_done
 ```
 
 ```bash
-# per-host capture hints (optional)
 glider resolve https://news.ycombinator.com --json
 ```
 
@@ -140,17 +124,7 @@ glider resolve https://news.ycombinator.com --json
 
 | Env | Default | Role |
 |-----|---------|------|
-| `GLIDER` | `~/.glider` | config, cache, warch tree |
-| `GLIDER_PORT` | `19988` | relay port for CLI + helpers; non-default values require matching extension configuration |
-| `GLIDER_NODE_BIN` | auto-detected | Node.js 18+ executable for background relay supervisor |
-| `GLIDER_RELOAD_TIMEOUT_MS` | `15000` | extension reload/reconnect deadline |
-| `GLIDER_CDP_TIMEOUT_MS` | `30000` | per-request CDP/extension timeout |
-| `GLIDER_RELAY_RECONNECT_GRACE_MS` | `10000` | keep cached targets while extension WS flaps |
-| `GLIDER_RELAY_COMMAND_RECONNECT_WAIT_MS` | `3000` | wait for extension before failing a command |
-| `GLIDER_RELAY_MAX_PENDING` | `256` | max in-flight extension requests |
-| `GLIDER_TIMING` | unset | set `1` to always attach `timing` on `--json` output |
-| `GLIDER_BROWSER_UI` | unset (off) | set `1` to allow AppleScript launch/tabs/activate (steals focus). Default refuses browser UI mutation. |
-| `GLIDER_HEAL_NO_WAKE` | unset | set `1` to force-skip heal tab-wake even if `GLIDER_BROWSER_UI=1` |
+| `GLIDER` | `~/.glider` | home: config, cache, warch |
 
 Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed the host index.
 
@@ -161,12 +135,11 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 | problem | fix | stability | why |
 |---------|-----|-----------|-----|
 | extension not connected | install/enable [`Glider` on Chrome Web Store](https://chromewebstore.google.com/detail/glider/njbidokkffhgpofcejgcfcgcinmeoalj) in selected browser profile; click Glider icon, then run `glider connect` | per browser launch | relay waits on extension WS |
-| extension socket up but worker dead | click Glider icon or `glider reload-ext`; `glider heal` does **not** open tabs by default (`GLIDER_BROWSER_UI` off); set `GLIDER_BROWSER_UI=1` only if you want AppleScript wake | MV3 worker | status refuses healthy until pong |
-| CLI steals browser focus / opens tabs | leave `GLIDER_BROWSER_UI` unset (default); never set it unless you explicitly want launch/tabs/activate | session-stable | AppleScript UI gated off by default |
-| custom relay port has no extension | use `19988` with Chrome Web Store build | install-stable | published extension connects to `ws://localhost:19988/extension` |
+| extension socket up but worker dead | click Glider icon or `glider reload` | MV3 worker | status refuses healthy until pong |
+| custom relay port has no extension | stay on `19988` with Chrome Web Store build | install-stable | published extension connects to `ws://localhost:19988/extension` |
 | wrong tab targeted | `glider targets` → `glider use-session session-6` | session-stable | multi-tab needs explicit session |
 | explore HAR empty bodies | replay in-tab with auth hook on XHR/fetch | site-specific | some SPAs never expose bearer in storage |
-| `resolve` misses host | add `~/.glider/warch/HOST/glider.json` | file-stable | optional per-host capture hints |
+| `resolve` misses host | add `~/.glider/warch/HOST/glider.json` | file-stable | per-host capture hints |
 
 ---
 
@@ -174,18 +147,16 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 
 | Command | Description |
 |---------|-------------|
-| `glider install` / `uninstall` | background relay supervisor |
+| `glider install` | background relay supervisor |
+| `glider uninstall` | remove supervisor |
+| `glider config browser chrome` | set browser |
 | `glider connect` | attach relay to browser |
-| `glider status` | server + extension + tabs; nonzero unless full stack is healthy |
-| `glider doctor` | relay + SW + targets + one next action (`--json`) |
-| `glider heal` | ensure relay, best-effort SW wake, optional `--clear-pin` |
-| `glider test` | relay + extension + target + live CDP `1+1` diagnostic |
-| `glider goto` / `eval` / `click` / `type` | page ops |
-| `glider frozen` / `thaw` | detect / un-throttle a hidden (macrotask-frozen) tab in place |
+| `glider status` | server + extension + tabs |
+| `glider goto` | navigate |
+| `glider eval` | run JS |
 | `glider screenshot` | PNG capture |
-| `glider explore` | crawl + HAR |
-| `glider resolve` | host → local warch intel (`--json`) |
-| `glider run` / `loop` | YAML task / Ralph loop |
+| `glider run` | YAML task |
+| `glider loop` | Ralph loop |
 
 Full surface: `glider --help`
 
