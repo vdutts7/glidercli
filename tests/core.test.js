@@ -26,17 +26,21 @@ test('domain guards parse, wildcard-match, and fail closed for malformed URLs', 
   assert.equal(urlAllowed('not a url', ['example.com']), false);
 });
 
-test('GLIDER_HOME controls runtime and standalone registry paths', () => {
-  const previous = process.env.GLIDER_HOME;
+test('GLIDER controls runtime and standalone registry paths', () => {
+  const previous = process.env.GLIDER;
+  const previousHome = process.env.GLIDER_HOME;
   const home = makeTempGliderHome();
   try {
-    process.env.GLIDER_HOME = home;
+    delete process.env.GLIDER_HOME;
+    process.env.GLIDER = home;
     assert.equal(gliderHome(), home);
     assert.equal(registryMode(), 'standalone');
     assert.equal(warchDirForHost('example.com', {}), path.join(home, 'warch', 'example.com'));
   } finally {
-    if (previous === undefined) delete process.env.GLIDER_HOME;
-    else process.env.GLIDER_HOME = previous;
+    if (previous === undefined) delete process.env.GLIDER;
+    else process.env.GLIDER = previous;
+    if (previousHome === undefined) delete process.env.GLIDER_HOME;
+    else process.env.GLIDER_HOME = previousHome;
     removeTree(home);
   }
 });

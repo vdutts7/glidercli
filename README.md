@@ -63,30 +63,22 @@ Extension + relay model uses Chromium + Glider extension from Chrome Web Store i
 
 | | Browser | Config |
 |:---:|--------|--------|
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chrome.webp?v=1791987543" width="40" height="40" alt=""> | Google Chrome | default for `glider connect`; registry key `chrome` |
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/microsoft-edge.webp?v=1791987543" width="40" height="40" alt=""> | Microsoft Edge | registry key `edge` |
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/brave.webp?v=1791987543" width="40" height="40" alt=""> | Brave | registry key `brave` |
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/opera-gx.webp?v=1791987543" width="40" height="40" alt=""> | Opera | registry key `opera` |
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/vivaldi.webp?v=1791987543" width="40" height="40" alt=""> | Vivaldi | registry key `vivaldi` |
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/helium.webp?v=1791987543" width="40" height="40" alt=""> | Helium | registry key `helium` |
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/arc.webp?v=1791987543" width="40" height="40" alt=""> | Arc | registry key `arc` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chrome.webp?v=1791987543" width="40" height="40" alt=""> | Google Chrome | `glider config browser chrome` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/microsoft-edge.webp?v=1791987543" width="40" height="40" alt=""> | Microsoft Edge | `glider config browser edge` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/brave.webp?v=1791987543" width="40" height="40" alt=""> | Brave | `glider config browser brave` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/opera-gx.webp?v=1791987543" width="40" height="40" alt=""> | Opera | `glider config browser opera` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/vivaldi.webp?v=1791987543" width="40" height="40" alt=""> | Vivaldi | `glider config browser vivaldi` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/helium.webp?v=1791987543" width="40" height="40" alt=""> | Helium | `glider config browser helium` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/arc.webp?v=1791987543" width="40" height="40" alt=""> | Arc | `glider config browser arc` |
 
 Not supported today: Firefox/Safari/WebKit/Gecko, DuckDuckGo, browsers without Chrome Web Store extension path.
 
 ### Browser config
 
-Priority: `$GLIDER_HOME/config/browser.json` → `$GLIDER_HOME/browser.json` → default Google Chrome.
-
-Registry key (recommended):
-
-```json
-{ "use": "chrome" }
-```
-
-Registry file: `$GLIDER_HOME/config/browsers-registry.json` (copy [`config/browsers-registry.json.example`](config/browsers-registry.json.example))
+Writes `$GLIDER/config/browser.json`. Chrome is the default.
 
 ```bash
-glider use chrome
+glider config browser chrome
 glider browser
 ```
 
@@ -102,9 +94,9 @@ Explicit name/path:
 
 | Command | Effect |
 |---------|--------|
-| `glider use chrome` | write `{ "use": "chrome" }` to `browser.json` |
-| `glider use` | list registry keys |
-| `glider browser` | show resolved name, path, process |
+| `glider config browser chrome` | set Chrome |
+| `glider config browser` | list `glider config browser <name>` lines |
+| `glider browser` | show current browser |
 
 macOS: `open -a` / AppleScript. Linux/Windows: partial, on roadmap.
 
@@ -148,7 +140,7 @@ glider resolve https://news.ycombinator.com --json
 
 | Env | Default | Role |
 |-----|---------|------|
-| `GLIDER_HOME` | `~/.glider` | config, cache, warch tree |
+| `GLIDER` | `~/.glider` | config, cache, warch tree |
 | `GLIDER_PORT` | `19988` | relay port for CLI + helpers; non-default values require matching extension configuration |
 | `GLIDER_NODE_BIN` | auto-detected | Node.js 18+ executable for background relay supervisor |
 | `GLIDER_RELOAD_TIMEOUT_MS` | `15000` | extension reload/reconnect deadline |

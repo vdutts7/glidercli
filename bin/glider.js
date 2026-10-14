@@ -26,6 +26,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const http = require('http');
+const readline = require('readline');
 const WebSocket = require('ws');
 const YAML = require('yaml');
 
@@ -43,9 +44,9 @@ let jsonOutput = false;
 let allowedDomainList = null;
 const { configPath, gliderHome } = require(path.join(LIB_DIR, 'paths.js'));
 const { isBrowserInternalUrl, loadBrowserConfig } = require(path.join(LIB_DIR, 'browser-config.js'));
-const GLIDER_HOME = gliderHome();
-const LOG_FILE = path.join(GLIDER_HOME, 'relay.log');
-const SESSION_STORE = path.join(GLIDER_HOME, 'config', 'active-session.json');
+const GLIDER = gliderHome();
+const LOG_FILE = path.join(GLIDER, 'relay.log');
+const SESSION_STORE = path.join(GLIDER, 'config', 'active-session.json');
 const { resolveAllowedDomains, assertUrlAllowed, urlAllowed } = require(path.join(LIB_DIR, 'guard.js'));
 const { buildSnapshotExpression, formatSnapshotText } = require(path.join(LIB_DIR, 'bsnapshot.js'));
 let PORT = null;
@@ -58,12 +59,12 @@ try {
   relayConfigError = error;
 }
 const RELAY_ENTRY = path.join(LIB_DIR, 'bserve.js');
-const RELAY_PID_FILE = PORT === null ? null : path.join(GLIDER_HOME, `relay-${PORT}.pid`);
-const RELAY_START_LOCK = PORT === null ? null : path.join(GLIDER_HOME, `relay-${PORT}.lifecycle.lock`);
+const RELAY_PID_FILE = PORT === null ? null : path.join(GLIDER, `relay-${PORT}.pid`);
+const RELAY_START_LOCK = PORT === null ? null : path.join(GLIDER, `relay-${PORT}.lifecycle.lock`);
 const DAEMON_ENTRY = path.join(LIB_DIR, 'glider-daemon.sh');
-const DAEMON_PID_FILE = PORT === null ? null : path.join(GLIDER_HOME, `daemon-${PORT}.pid`);
-const DAEMON_CLAIM_DIR = PORT === null ? null : path.join(GLIDER_HOME, `daemon-${PORT}.claim`);
-const DAEMON_MANAGEMENT_LOCK = PORT === null ? null : path.join(GLIDER_HOME, `daemon-${PORT}.management.lock`);
+const DAEMON_PID_FILE = PORT === null ? null : path.join(GLIDER, `daemon-${PORT}.pid`);
+const DAEMON_CLAIM_DIR = PORT === null ? null : path.join(GLIDER, `daemon-${PORT}.claim`);
+const DAEMON_MANAGEMENT_LOCK = PORT === null ? null : path.join(GLIDER, `daemon-${PORT}.management.lock`);
 
 // Load pattern registry
 let REGISTRY = {};
@@ -91,7 +92,7 @@ for (const cfgPath of DOMAIN_CONFIG_PATHS) {
 }
 
 function getBrowserConfig() {
-  return loadBrowserConfig({ home: GLIDER_HOME });
+  return loadBrowserConfig({ home: GLIDER });
 }
 
 // Colors - matching the deep blue gradient logo
@@ -827,7 +828,7 @@ async function requestActiveTabAttach() {
   return data;
 }
 
-// Auto-connect helper - honors the browser selected by $GLIDER_HOME/config/browser.json.
+// Auto-connect helper - honors the browser selected by $GLIDER/config/browser.json.
 async function ensureConnected() {
   // Check if already connected
   if (await checkTab()) {
@@ -999,7 +1000,7 @@ async function cmdStart({ render = true } = {}) {
     throw new Error(`bserve not found at ${RELAY_ENTRY}`);
   }
   
-  fs.mkdirSync(GLIDER_HOME, { recursive: true });
+  fs.mkdirSync(GLIDER, { recursive: true });
   if (render) log.info('Starting glider server...');
   const locks = await acquireStandaloneRelayLocks();
 
@@ -1084,7 +1085,7 @@ async function cmdStart({ render = true } = {}) {
 }
 
 async function cmdStop({ render = true } = {}) {
-  fs.mkdirSync(GLIDER_HOME, { recursive: true });
+  fs.mkdirSync(GLIDER, { recursive: true });
   const locks = await acquireStandaloneRelayLocks();
   try {
   assertStandaloneRelayAllowed();
@@ -1481,7 +1482,7 @@ async function httpGetJson(pathStr) {
 async function cmdInstallDaemon() {
   const home = os.homedir();
   const daemonScript = DAEMON_ENTRY;
-  const logDir = GLIDER_HOME;
+  const logDir = GLIDER;
   const pidFile = DAEMON_PID_FILE;
   const legacyPidFile = path.join(logDir, 'daemon.pid');
   
@@ -1535,6 +1536,7 @@ async function cmdInstallDaemon() {
     cwd: home,
     env: {
       ...process.env,
+      GLIDER,
       GLIDER_PORT: String(PORT),
       GLIDER_DAEMON_MANAGEMENT_OWNER_PID: String(managementLock.pid),
       GLIDER_DAEMON_MANAGEMENT_OWNER_STARTED: managementLock.started,
@@ -1582,9 +1584,9 @@ async function cmdInstallDaemon() {
 }
 
 async function cmdUninstallDaemon() {
-  fs.mkdirSync(GLIDER_HOME, { recursive: true });
+  fs.mkdirSync(GLIDER, { recursive: true });
   const pidFile = DAEMON_PID_FILE;
-  const legacyPidFile = path.join(GLIDER_HOME, 'daemon.pid');
+  const legacyPidFile = path.join(GLIDER, 'daemon.pid');
   const daemonScript = DAEMON_ENTRY;
   const claimDir = DAEMON_CLAIM_DIR;
   const managementLock = await acquireDaemonManagementLock();
@@ -1817,32 +1819,91 @@ function cmdBrowser() {
   console.log(`  processName:  ${b.processName}`);
   console.log(`  bootstrapUrl: ${b.bootstrapUrl}`);
   if (b.use) {
-    console.log(`  use:          ${b.use} ${DIM}(from registry)${NC}`);
+    console.log(`  use:          ${b.use}`);
   }
   console.log('');
-  console.log(`Source: ${b.source || path.join(GLIDER_HOME, 'config', 'browser.json')} { "use": "<key>" } or { name, path } -> default "Google Chrome"`);
-  console.log(`Registry: ${b.registrySource || path.join(GLIDER_HOME, 'config', 'browsers-registry.json')}. Keys: ` + (Object.keys(b.registry).join(', ') || '(none loaded)'));
-  console.log('See README.md#browsers for compatibility and examples.');
+  console.log(`Source: ${b.source || path.join(GLIDER, 'config', 'browser.json')}`);
+  printConfigBrowserCommands(b);
 }
 
-function cmdUse(key) {
-  const browser = getBrowserConfig();
-  if (!key) {
-    console.log('Usage: glider use <key>');
-    console.log('Keys in registry: ' + (Object.keys(browser.registry).length ? Object.keys(browser.registry).join(', ') : '(no registry loaded)'));
-    if (browser.use) console.log('Current: ' + browser.use);
-    return;
-  }
+function configHelpFlag(s) {
+  return s === '-h' || s === '--help';
+}
+
+function defaultBrowserNames() {
+  return ['chrome', 'edge', 'brave', 'opera', 'vivaldi', 'helium', 'arc'];
+}
+
+function printConfigBrowserCommands(browser) {
+  const keys = Object.keys((browser && browser.registry) || {});
+  const list = keys.length ? keys : defaultBrowserNames();
+  for (const k of list) console.log(`glider config browser ${k}`);
+  if (browser && browser.use) console.log(`current: ${browser.use}`);
+}
+
+function writeBrowserUse(key, browser) {
   if (!browser.registry[key]) {
-    console.error('Unknown key: ' + key + '. Available: ' + Object.keys(browser.registry).join(', '));
+    console.error(`Unknown command: config browser ${key}`);
+    printConfigBrowserCommands(browser);
     process.exit(1);
   }
-  const configDir = path.join(GLIDER_HOME, 'config');
+  const configDir = path.join(GLIDER, 'config');
   const browserPath = path.join(configDir, 'browser.json');
   if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
   fs.writeFileSync(browserPath, JSON.stringify({ use: key }, null, 2) + '\n');
-  console.log('Set browser to: ' + key + ' -> ' + browser.registry[key].name);
+  console.log(`glider config browser ${key}`);
+  console.log(browser.registry[key].name);
   console.log('Run: glider connect');
+}
+
+async function pickBrowser(browser) {
+  const keys = Object.keys(browser.registry || {});
+  const list = keys.length ? keys : defaultBrowserNames();
+  list.forEach((k, i) => console.log(`${i + 1}. glider config browser ${k}`));
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await new Promise((resolve) => rl.question('> ', resolve));
+  rl.close();
+  const t = String(answer || '').trim();
+  if (/^\d+$/.test(t)) {
+    const picked = list[Number(t) - 1];
+    if (picked) return picked;
+  }
+  if (list.includes(t)) return t;
+  const m = t.match(/(?:config\s+browser\s+)?(\S+)$/);
+  if (m && list.includes(m[1])) return m[1];
+  console.error(`Unknown command: config browser ${t}`);
+  process.exit(1);
+}
+
+async function cmdConfig(argv) {
+  const a = (argv || []).filter((x) => x !== undefined);
+  const browser = getBrowserConfig();
+  if (!a.length || configHelpFlag(a[0])) {
+    printConfigBrowserCommands(browser);
+    return;
+  }
+  if (a[0] !== 'browser') {
+    console.error(`Unknown command: config ${a[0]}`);
+    process.exit(1);
+  }
+  const rest = a.slice(1);
+  if (rest.length && configHelpFlag(rest[0])) {
+    printConfigBrowserCommands(browser);
+    return;
+  }
+  if (!rest.length) {
+    if (process.stdin.isTTY && !process.env.CI) {
+      writeBrowserUse(await pickBrowser(browser), browser);
+      return;
+    }
+    printConfigBrowserCommands(browser);
+    return;
+  }
+  writeBrowserUse(rest[0], browser);
+}
+
+function cmdUse(key) {
+  return cmdConfig(['browser', ...(key != null && key !== '' ? [key] : [])]);
 }
 
 async function cmdTest() {
@@ -3597,15 +3658,15 @@ ${B5}SETUP${NC}
     ${BW}install${NC}             Install detached relay supervisor ${DIM}(current session, auto-restarts)${NC}
     ${BW}uninstall${NC}           Remove daemon
     ${BW}update${NC}              Update to latest version
-    ${BW}connect${NC}             Connect to browser ${DIM}(uses $GLIDER_HOME/config/browser.json)${NC}
+    ${BW}connect${NC}             Connect to browser ${DIM}(uses $GLIDER/config/browser.json)${NC}
 
 ${B5}STATUS${NC}
     ${BW}status${NC}              Check server, extension, tabs
     ${BW}doctor${NC}              Relay + SW + targets + next action ${DIM}(--json)${NC}
     ${BW}heal${NC} [--clear-pin]   Ensure relay, wake SW best-effort, reattach
     ${BW}reload${NC}              Reload/pin Glider extension ${DIM}(alias: reload-ext, rex; page: history reload)${NC}
-    ${BW}browser${NC}             Show browser config ${DIM}(name, path, processName, or use key)${NC}
-    ${BW}use${NC} <key>           Set browser by registry key ${DIM}(e.g. chrome, edge, brave)${NC}
+    ${BW}config browser chrome${NC}  ${DIM}also: edge, brave, opera, vivaldi, helium, arc${NC}
+    ${BW}browser${NC}             Show current browser
     ${BW}test${NC}                Run diagnostics
     ${BW}domains${NC}             List ~/.glider domain shortcuts + warch paths
     ${BW}resolve${NC} <url>        Domain intel under ~/.glider/warch ${DIM}(--json)${NC}
@@ -3665,6 +3726,7 @@ ${B5}LOOP OPTIONS${NC}
 
 ${B5}EXAMPLES${NC}
     ${DIM}$${NC} glider install              ${DIM}# one-time setup${NC}
+    ${DIM}$${NC} glider config browser chrome
     ${DIM}$${NC} glider connect              ${DIM}# connect to the configured Chromium browser${NC}
     ${DIM}$${NC} glider goto "https://x.com" ${DIM}# navigate${NC}
     ${DIM}$${NC} glider eval "document.title"${DIM}# run JS${NC}
@@ -3704,7 +3766,7 @@ ${YELLOW}REQUIREMENTS:${NC}
     - Glider extension from Chrome Web Store connected in a Chromium browser
 
 ${YELLOW}DOMAIN EXTENSIONS:${NC}
-    Add custom domain commands via $GLIDER_HOME/config/domains.json:
+    Add custom domain commands via $GLIDER/config/domains.json:
     {
       "mysite": { "url": "https://mysite.com/dashboard" },
       "mytool": { "script": "~/scripts/mytool.sh" }
@@ -3740,7 +3802,7 @@ ${YELLOW}DOMAIN EXTENSIONS:${NC}
     pluginVerbs.push({ verb, def });
   }
   if (pluginVerbs.length > 0) {
-    console.log(`${YELLOW}PLUGINS:${NC} (from $GLIDER_HOME/plugins/)`);
+    console.log(`${YELLOW}PLUGINS:${NC} (from $GLIDER/plugins/)`);
     for (const { verb, def } of pluginVerbs) {
       const desc = (Array.isArray(def.help) ? def.help.find(l => !/^Usage:/i.test(l)) : def.help) || '(no description)';
       const shortDesc = String(desc).replace(/^\s+/, '').slice(0, 60);
@@ -3880,7 +3942,7 @@ const GLIDER_PLUGIN_REGISTRY = new Map(); // verb → plugin def
 function pluginDirs() {
   const dirs = [];
   if (process.env.GLIDER_PLUGIN_DIR) dirs.push(process.env.GLIDER_PLUGIN_DIR);
-  dirs.push(path.join(GLIDER_HOME, 'plugins'));
+  dirs.push(path.join(GLIDER, 'plugins'));
   return dirs.filter(d => { try { return fs.statSync(d).isDirectory(); } catch { return false; } });
 }
 
@@ -4888,9 +4950,9 @@ async function cmdUpload(argv) {
 // not implemented"). Now delegates to the same code path `explore --har` uses.
 async function cmdHar(argv) {
   const sub = argv[0];
-  const STATE_PATH = path.join(GLIDER_HOME, 'har-state.json');
-  const BUF_HAR = path.join(GLIDER_HOME, 'har-buffer.har');
-  const BUF_OUT = path.join(GLIDER_HOME, 'har-buffer-out');
+  const STATE_PATH = path.join(GLIDER, 'har-state.json');
+  const BUF_HAR = path.join(GLIDER, 'har-buffer.har');
+  const BUF_OUT = path.join(GLIDER, 'har-buffer-out');
   const readState = () => { try { return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8')); } catch { return null; } };
   const writeState = (st) => { try { fs.mkdirSync(path.dirname(STATE_PATH), { recursive: true }); } catch {} fs.writeFileSync(STATE_PATH, JSON.stringify(st, null, 2)); };
   const pidAlive = (pid) => { if (!pid) return false; try { process.kill(pid, 0); return true; } catch { return false; } };
@@ -5149,7 +5211,7 @@ async function main() {
 
   const relayIndependent = new Set([
     'help', '--help', '-h', 'update', 'version', '-v', '--version',
-    'browser', 'use', 'domains', 'resolve',
+    'browser', 'use', 'config', 'domains', 'resolve',
   ]);
   if (relayConfigError && !relayIndependent.has(cmd)) {
     throw relayConfigError;
@@ -5222,8 +5284,11 @@ async function main() {
     case 'browser':
       cmdBrowser();
       break;
+    case 'config':
+      await cmdConfig(args.slice(1));
+      break;
     case 'use':
-      cmdUse(args[1]);
+      await cmdUse(args[1]);
       break;
     case 'test':
       await cmdTest();
@@ -5464,29 +5529,7 @@ async function main() {
         }
         break;
       }
-      log.fail(`Unknown command: ${cmd}`);
-      // v0.3.15: typo suggest (Levenshtein <=2) before dumping full help.
-      const KNOWN_CMDS = ['status','start','stop','restart','reload','reload-ext','attach-all','install','uninstall',
-        'update','version','connect','browser','use','test','doctor','heal','domains','resolve','goto','eval','click','type',
-        'screenshot','snapshot','text','html','title','url','tabs','targets','use-session','fetch','spawn',
-        'extract','explore','favicon','window','reg','run','loop','ralph',
-        'read','hover','focus','blur','scroll','wait','key','right-click','double-click','click-at','drag','select',
-        'frames','frame-eval','upload','har','emulate','storage','history','dialog','console','pdf','mock','a11y','cookies'];
-      function lev(a, b) {
-        if (Math.abs(a.length - b.length) > 2) return 3;
-        const m = Array.from({length: a.length+1}, () => new Array(b.length+1).fill(0));
-        for (let i = 0; i <= a.length; i++) m[i][0] = i;
-        for (let j = 0; j <= b.length; j++) m[0][j] = j;
-        for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
-          m[i][j] = a[i-1] === b[j-1] ? m[i-1][j-1] : 1 + Math.min(m[i-1][j-1], m[i-1][j], m[i][j-1]);
-        }
-        return m[a.length][b.length];
-      }
-      const near = KNOWN_CMDS.map(k => [k, lev(cmd, k)]).filter(x => x[1] <= 2).sort((a,b) => a[1]-b[1]).slice(0, 3);
-      if (near.length > 0) {
-        log.info(`  Did you mean: ${near.map(x => x[0]).join(', ')} ?`);
-      }
-      showHelp();
+      console.error(`Unknown command: ${cmd}`);
       process.exit(1);
   }
 }

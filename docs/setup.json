@@ -35,14 +35,14 @@
     }
   },
   "config_paths": {
-    "glider_home": "$GLIDER_HOME (default: $HOME/.glider)",
-    "domains": "$GLIDER_HOME/config/domains.json",
+    "glider_home": "$GLIDER (default: $HOME/.glider)",
+    "domains": "$GLIDER/config/domains.json",
     "domains_template": "config/domains.template.json (shipped in package)",
-    "warch_root": "$GLIDER_HOME/warch/<host>/ (glider.json, gotchas.json, bexplore/)",
-    "registry_base": "$GLIDER_HOME",
+    "warch_root": "$GLIDER/warch/<host>/ (glider.json, gotchas.json, bexplore/)",
+    "registry_base": "$GLIDER",
     "resolve": "glider resolve <url> --json",
-    "browser": "$GLIDER_HOME/config/browser.json",
-    "daemon_log": "$GLIDER_HOME/daemon.log"
+    "browser": "$GLIDER/config/browser.json",
+    "daemon_log": "$GLIDER/daemon.log"
   },
   "discovery": "glider --help"
 }

@@ -101,7 +101,7 @@ test('invalid relay ports preserve JSON errors and do not break independent comm
   assert.doesNotMatch(result.stdout, /runs at login/);
 });
 
-test('browser command reads the selected browser from GLIDER_HOME', async () => {
+test('browser command reads the selected browser from GLIDER', async () => {
   const home = makeTempGliderHome();
   try {
     fs.writeFileSync(path.join(home, 'config', 'browser.json'), JSON.stringify({
@@ -109,7 +109,7 @@ test('browser command reads the selected browser from GLIDER_HOME', async () => 
       path: '/Applications/Configured Browser.app',
       processName: 'Configured Browser',
     }));
-    const result = await runCli(['--json', 'browser'], { env: { GLIDER_HOME: home } });
+    const result = await runCli(['--json', 'browser'], { env: { GLIDER: home } });
     assert.equal(result.code, 0, result.stderr);
     const body = jsonFromStdout(result.stdout);
     assert.equal(body.observation.name, 'Configured Browser');
@@ -163,7 +163,7 @@ test('use-session validates liveness and supports URL space and equals forms', a
   t.after(() => relay.close());
   const home = makeTempGliderHome();
   t.after(() => removeTree(home));
-  const env = { GLIDER_PORT: String(relay.port), GLIDER_HOME: home };
+  const env = { GLIDER_PORT: String(relay.port), GLIDER: home };
 
   let result = await runCli(['--json', 'use-session', '--url=fixture.test'], { env });
   assert.equal(result.code, 0, result.stderr);
@@ -177,7 +177,7 @@ test('use-session validates liveness and supports URL space and equals forms', a
   assert.match(jsonFromStdout(result.stdout).error, /no page pin|not live|F_need_context/);
 });
 
-test('plugin socket hydrates local verbs from GLIDER_HOME without package branding', async (t) => {
+test('plugin socket hydrates local verbs from GLIDER without package branding', async (t) => {
   const relay = await createMockRelay({ evaluateValue: 42 });
   t.after(() => relay.close());
   const home = makeTempGliderHome();
@@ -191,7 +191,7 @@ test('plugin socket hydrates local verbs from GLIDER_HOME without package brandi
     recipe: '40 + 2',
     output: { format: 'json' },
   }));
-  const env = { GLIDER_PORT: String(relay.port), GLIDER_HOME: home };
+  const env = { GLIDER_PORT: String(relay.port), GLIDER: home };
   let result = await runCli(['--json', 'fixture-plugin'], { env });
   assert.equal(result.code, 0, result.stderr);
   assert.equal(jsonFromStdout(result.stdout).observation, 42);
@@ -255,7 +255,7 @@ test('cfetch emits strict JSON when the extension request fails', async (t) => {
 test('cold-relay auto-start does not emit a second JSON document', async (t) => {
   const home = makeTempGliderHome();
   const port = await getFreePort();
-  const env = { GLIDER_HOME: home, GLIDER_PORT: String(port) };
+  const env = { GLIDER: home, GLIDER_PORT: String(port) };
   t.after(async () => {
     await runCli(['--json', 'stop'], { env }).catch(() => {});
     removeTree(home);
@@ -415,7 +415,7 @@ test('unverified relay PID records are preserved and cannot terminate unrelated 
   }));
 
   const result = await runCli(['--json', 'stop'], {
-    env: { GLIDER_HOME: home, GLIDER_PORT: String(port) },
+    env: { GLIDER: home, GLIDER_PORT: String(port) },
   });
   assert.equal(result.code, 1);
   assert.match(jsonFromStdout(result.stdout).error, /Refusing to signal unverified relay PID/);
@@ -434,7 +434,7 @@ test('start and stop use a verified owned relay PID record', async (t) => {
     } catch {}
     removeTree(home);
   });
-  const env = { GLIDER_HOME: home, GLIDER_PORT: String(port) };
+  const env = { GLIDER: home, GLIDER_PORT: String(port) };
 
   let result = await runCli(['--json', 'start'], { env });
   assert.equal(result.code, 0, result.stderr);
@@ -460,14 +460,14 @@ test('relay and daemon ownership survive locale and timezone changes', async (t)
   const pidFile = path.join(home, `daemon-${port}.pid`);
   const claimDir = path.join(home, `daemon-${port}.claim`);
   const westernEnv = {
-    GLIDER_HOME: home,
+    GLIDER: home,
     GLIDER_PORT: String(port),
     LC_ALL: 'en_US.UTF-8',
     LANG: 'en_US.UTF-8',
     TZ: 'America/Los_Angeles',
   };
   const utcEnv = {
-    GLIDER_HOME: home,
+    GLIDER: home,
     GLIDER_PORT: String(port),
     LC_ALL: 'C',
     LANG: 'C',
@@ -501,7 +501,7 @@ test('relay and daemon ownership survive locale and timezone changes', async (t)
 test('concurrent cold starts preserve the winning relay ownership record', async (t) => {
   const home = makeTempGliderHome();
   const port = await getFreePort();
-  const env = { GLIDER_HOME: home, GLIDER_PORT: String(port) };
+  const env = { GLIDER: home, GLIDER_PORT: String(port) };
   const pidFile = path.join(home, `relay-${port}.pid`);
   t.after(async () => {
     await runCli(['--json', 'stop'], { env }).catch(() => {});
@@ -525,7 +525,7 @@ test('concurrent cold starts preserve the winning relay ownership record', async
 test('aged stale lifecycle locks fail closed instead of racing a takeover', async (t) => {
   const home = makeTempGliderHome();
   const port = await getFreePort();
-  const env = { GLIDER_HOME: home, GLIDER_PORT: String(port) };
+  const env = { GLIDER: home, GLIDER_PORT: String(port) };
   const lockFile = path.join(home, `relay-${port}.lifecycle.lock`);
   fs.writeFileSync(lockFile, JSON.stringify({
     schema: 1,
@@ -554,7 +554,7 @@ test('daemon install fails when its relay child cannot start', async () => {
   try {
     const result = await runCli(['--json', 'install'], {
       env: {
-        GLIDER_HOME: home,
+        GLIDER: home,
         GLIDER_PORT: String(port),
         GLIDER_NODE_BIN: path.join(home, 'missing-node'),
       },
@@ -571,8 +571,8 @@ test('daemon install and uninstall are scoped to the configured port', async (t)
   const home = makeTempGliderHome();
   const firstPort = await getFreePort();
   const secondPort = await getFreePort();
-  const firstEnv = { GLIDER_HOME: home, GLIDER_PORT: String(firstPort) };
-  const secondEnv = { GLIDER_HOME: home, GLIDER_PORT: String(secondPort) };
+  const firstEnv = { GLIDER: home, GLIDER_PORT: String(firstPort) };
+  const secondEnv = { GLIDER: home, GLIDER_PORT: String(secondPort) };
   const firstPidFile = path.join(home, `daemon-${firstPort}.pid`);
   const sleeper = spawn('/bin/sleep', ['30'], { stdio: 'ignore' });
   fs.writeFileSync(path.join(home, 'daemon.pid'), `${sleeper.pid}\n`);
@@ -605,7 +605,7 @@ test('daemon install and uninstall are scoped to the configured port', async (t)
 test('concurrent daemon installs converge on one supervisor and relay child', async (t) => {
   const home = makeTempGliderHome();
   const port = await getFreePort();
-  const env = { GLIDER_HOME: home, GLIDER_PORT: String(port) };
+  const env = { GLIDER: home, GLIDER_PORT: String(port) };
   const pidFile = path.join(home, `daemon-${port}.pid`);
   t.after(async () => {
     await runCli(['--json', 'uninstall'], { env }).catch(() => {});
@@ -631,7 +631,7 @@ test('concurrent daemon installs converge on one supervisor and relay child', as
 test('standalone lifecycle refuses daemon-owned relay restart gaps', async (t) => {
   const home = makeTempGliderHome();
   const port = await getFreePort();
-  const env = { GLIDER_HOME: home, GLIDER_PORT: String(port) };
+  const env = { GLIDER: home, GLIDER_PORT: String(port) };
   const pidFile = path.join(home, `daemon-${port}.pid`);
   const relayPidFile = path.join(home, `relay-${port}.pid`);
   t.after(async () => {
@@ -679,7 +679,7 @@ test('standalone lifecycle refuses daemon-owned relay restart gaps', async (t) =
 test('concurrent daemon install and uninstall preserve a coherent generation', async (t) => {
   const home = makeTempGliderHome();
   const port = await getFreePort();
-  const env = { GLIDER_HOME: home, GLIDER_PORT: String(port) };
+  const env = { GLIDER: home, GLIDER_PORT: String(port) };
   const pidFile = path.join(home, `daemon-${port}.pid`);
   const claimDir = path.join(home, `daemon-${port}.claim`);
   t.after(async () => {
@@ -721,7 +721,7 @@ test('daemon claim without an ownership record fails closed', async () => {
   fs.writeFileSync(path.join(claimDir, 'owner'), 'stale-claim\n');
   try {
     const result = await runCli(['--json', 'uninstall'], {
-      env: { GLIDER_HOME: home, GLIDER_PORT: String(port) },
+      env: { GLIDER: home, GLIDER_PORT: String(port) },
     });
     assert.equal(result.code, 1);
     assert.match(jsonFromStdout(result.stdout).error, /claim exists without a verified ownership record/);
@@ -748,7 +748,7 @@ test('daemon install cannot claim a standalone relay owned by another process', 
 
   const result = await runCli(['--json', 'install'], {
     timeoutMs: 10000,
-    env: { GLIDER_HOME: home, GLIDER_PORT: String(port) },
+    env: { GLIDER: home, GLIDER_PORT: String(port) },
   });
   assert.equal(result.code, 1);
   assert.match(jsonFromStdout(result.stdout).error, /Daemon failed to start/);
@@ -763,7 +763,7 @@ test('live legacy daemon records fail safely instead of signaling an unverified 
   const daemon = spawn('/bin/bash', [daemonPath], {
     env: {
       ...process.env,
-      GLIDER_HOME: ownerHome,
+      GLIDER: ownerHome,
       GLIDER_NODE_BIN: process.execPath,
       GLIDER_PORT: String(ownerPort),
     },
@@ -781,7 +781,7 @@ test('live legacy daemon records fail safely instead of signaling an unverified 
   fs.writeFileSync(path.join(targetHome, 'daemon.pid'), `${daemon.pid}\n`);
 
   const result = await runCli(['--json', 'uninstall'], {
-    env: { GLIDER_HOME: targetHome, GLIDER_PORT: String(targetPort) },
+    env: { GLIDER: targetHome, GLIDER_PORT: String(targetPort) },
   });
   assert.equal(result.code, 1);
   assert.match(jsonFromStdout(result.stdout).error, /lacks safe ownership metadata/);
@@ -895,7 +895,7 @@ test('heal --clear-pin removes stale session pin', async (t) => {
   t.after(() => relay.close());
   const result = await runCli(['--json', 'heal', '--clear-pin'], {
     env: {
-      GLIDER_HOME: home,
+      GLIDER: home,
       GLIDER_PORT: String(relay.port),
       GLIDER_HEAL_NO_WAKE: '1',
     },
@@ -941,7 +941,7 @@ test('stale session pin heals to a live target on Session not found', async (t) 
   });
   t.after(() => relay.close());
   const result = await runCli(['--json', 'eval', '1+1'], {
-    env: { GLIDER_HOME: home, GLIDER_PORT: String(relay.port) },
+    env: { GLIDER: home, GLIDER_PORT: String(relay.port) },
   });
   assert.equal(result.code, 0, result.stderr);
   const body = jsonFromStdout(result.stdout);

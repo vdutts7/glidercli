@@ -5,7 +5,7 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DAEMON_PATH="$SCRIPT_DIR/glider-daemon.sh"
 BSERVE="$SCRIPT_DIR/bserve.js"
-LOG_DIR="${GLIDER_HOME:-$HOME/.glider}"
+LOG_DIR="${GLIDER:-${GLIDER_HOME:-$HOME/.glider}}"
 PORT="${GLIDER_PORT:-${RELAY_PORT:-19988}}"
 
 case "$PORT" in

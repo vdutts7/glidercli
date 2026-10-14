@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const test = require('node:test');
 const { isBrowserInternalUrl, loadBrowserConfig } = require('../lib/browser-config.js');
-const { makeTempGliderHome, removeTree } = require('./helpers.js');
+const { makeTempGliderHome, removeTree, runCli } = require('./helpers.js');
 
 test('browser config resolves an explicit Chromium application', () => {
   const home = makeTempGliderHome();
@@ -82,4 +82,44 @@ test('browser internal URL detection covers Chromium variants', () => {
     assert.equal(isBrowserInternalUrl(url), true, url);
   }
   assert.equal(isBrowserInternalUrl('https://example.com/'), false);
+});
+
+test('glider config browser prints and writes commands, not registry-key jargon', async () => {
+  const home = makeTempGliderHome();
+  try {
+    fs.copyFileSync(
+      path.join(__dirname, '..', 'config', 'browsers-registry.json.example'),
+      path.join(home, 'config', 'browsers-registry.json'),
+    );
+    const env = { GLIDER: home, CI: '1' };
+
+    let result = await runCli(['config', 'browser'], { env });
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stdout, /glider config browser chrome/);
+    assert.doesNotMatch(result.stdout + result.stderr, /registry key/i);
+
+    result = await runCli(['config', 'browser', '-h'], { env });
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stdout, /glider config browser edge/);
+
+    result = await runCli(['config', 'browser', 'chrome'], { env });
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stdout, /glider config browser chrome/);
+    const written = JSON.parse(fs.readFileSync(path.join(home, 'config', 'browser.json'), 'utf8'));
+    assert.equal(written.use, 'chrome');
+
+    result = await runCli(['config', 'browser', 'nope'], { env });
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /Unknown command: config browser nope/);
+    assert.match(result.stderr + result.stdout, /glider config browser chrome/);
+    assert.doesNotMatch(result.stderr + result.stdout, /G L I D E R/);
+
+    result = await runCli(['not-a-command'], { env });
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /^Unknown command: not-a-command\s*$/m);
+    assert.doesNotMatch(result.stdout + result.stderr, /G L I D E R/);
+    assert.doesNotMatch(result.stdout + result.stderr, /USAGE/);
+  } finally {
+    removeTree(home);
+  }
 });

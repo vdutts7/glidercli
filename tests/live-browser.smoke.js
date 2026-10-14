@@ -135,7 +135,7 @@ async function main() {
     report.results[id] = { status, durationMs: 0, detail };
   };
   const cliEnv = () => ({
-    GLIDER_HOME: gliderHome,
+    GLIDER: gliderHome,
     GLIDER_PORT: String(RELAY_PORT),
   });
   const runJson = async (args, allowedCodes = [0], timeoutMs = 15000) => {
@@ -157,7 +157,7 @@ async function main() {
   };
 
   try {
-    const operatorGliderHome = process.env.GLIDER_HOME || path.join(os.homedir(), '.glider');
+    const operatorGliderHome = process.env.GLIDER || path.join(os.homedir(), '.glider');
     for (const name of ['browser.json', 'browsers-registry.json']) {
       const source = path.join(operatorGliderHome, 'config', name);
       const destination = path.join(gliderHome, 'config', name);

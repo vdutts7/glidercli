@@ -71,7 +71,7 @@ test('daemon owns and terminates its relay child', async (t) => {
     cwd: REPO_ROOT,
     env: {
       ...process.env,
-      GLIDER_HOME: home,
+      GLIDER: home,
       GLIDER_NODE_BIN: process.execPath,
       GLIDER_PORT: String(port),
       PATH: '/usr/bin:/bin',
@@ -104,7 +104,7 @@ test('daemon owns and terminates its relay child', async (t) => {
     cwd: REPO_ROOT,
     env: {
       ...process.env,
-      GLIDER_HOME: home,
+      GLIDER: home,
       GLIDER_NODE_BIN: process.execPath,
       GLIDER_PORT: String(port),
       PATH: '/usr/bin:/bin',
@@ -131,7 +131,7 @@ test('daemon rejects an invalid GLIDER_NODE_BIN before starting', () => {
       cwd: REPO_ROOT,
       env: {
         ...process.env,
-        GLIDER_HOME: home,
+        GLIDER: home,
         GLIDER_NODE_BIN: path.join(home, 'missing-node'),
         PATH: '/usr/bin:/bin',
       },
@@ -148,7 +148,7 @@ test('daemon rejects an invalid GLIDER_NODE_BIN before starting', () => {
 test('direct daemon launch refuses a standalone relay on the same port', async (t) => {
   const home = makeTempGliderHome();
   const port = await getFreePort();
-  const env = { GLIDER_HOME: home, GLIDER_PORT: String(port) };
+  const env = { GLIDER: home, GLIDER_PORT: String(port) };
   t.after(async () => {
     await runCli(['--json', 'stop'], { env }).catch(() => {});
     removeTree(home);
@@ -197,7 +197,7 @@ test('slow direct daemon handoff keeps a live normalized management lock', async
     cwd: REPO_ROOT,
     env: {
       ...process.env,
-      GLIDER_HOME: home,
+      GLIDER: home,
       GLIDER_NODE_BIN: wrapper,
       GLIDER_PORT: String(port),
       REAL_NODE: process.execPath,
@@ -221,7 +221,7 @@ test('slow direct daemon handoff keeps a live normalized management lock', async
   assert.doesNotThrow(() => process.kill(lock.pid, 0));
 
   const result = await runCli(['--json', 'start'], {
-    env: { GLIDER_HOME: home, GLIDER_PORT: String(port) },
+    env: { GLIDER: home, GLIDER_PORT: String(port) },
     timeoutMs: 10000,
   });
   assert.equal(result.code, 0, `${result.stderr}\n${stderr}`);
