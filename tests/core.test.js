@@ -31,7 +31,6 @@ test('GLIDER_HOME controls runtime and standalone registry paths', () => {
   const home = makeTempGliderHome();
   try {
     process.env.GLIDER_HOME = home;
-    delete process.env.AGREGISTRY;
     assert.equal(gliderHome(), home);
     assert.equal(registryMode(), 'standalone');
     assert.equal(warchDirForHost('example.com', {}), path.join(home, 'warch', 'example.com'));

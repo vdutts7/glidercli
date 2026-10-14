@@ -62,7 +62,7 @@ Node 18+. Chromium-based browser with the extension enabled (see Browsers).
 Extension + relay model uses Chromium + Glider extension from Chrome Web Store in the same profile as `glider connect`.
 
 | | Browser | Config |
-|---|--------|--------|
+|:---:|--------|--------|
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chrome.webp" width="40" height="40" alt=""> | Google Chrome | default for `glider connect` |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/arc.webp" width="40" height="40" alt=""> | Arc | [`config/browser.json.example`](config/browser.json.example) |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/microsoft-edge.webp" width="40" height="40" alt=""> | Microsoft Edge | registry key `edge` |
@@ -157,7 +157,6 @@ glider resolve https://news.ycombinator.com --json
 | `GLIDER_TIMING` | unset | set `1` to always attach `timing` on `--json` output |
 | `GLIDER_BROWSER_UI` | unset (off) | set `1` to allow AppleScript launch/tabs/activate (steals focus). Default refuses browser UI mutation. |
 | `GLIDER_HEAL_NO_WAKE` | unset | set `1` to force-skip heal tab-wake even if `GLIDER_BROWSER_UI=1` |
-| `AGREGISTRY` | unset | optional registry root → warch at `AGREGISTRY/warch/HOST/` |
 
 Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed the host index.
 
@@ -173,7 +172,7 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 | custom relay port has no extension | use `19988` with Chrome Web Store build | install-stable | published extension connects to `ws://localhost:19988/extension` |
 | wrong tab targeted | `glider targets` → `glider use-session session-6` | session-stable | multi-tab needs explicit session |
 | explore HAR empty bodies | replay in-tab with auth hook on XHR/fetch | site-specific | some SPAs never expose bearer in storage |
-| `resolve` misses host | add `~/.glider/warch/HOST/glider.json` or set `AGREGISTRY` | file-stable | optional per-host capture hints |
+| `resolve` misses host | add `~/.glider/warch/HOST/glider.json` | file-stable | optional per-host capture hints |
 
 ---
 

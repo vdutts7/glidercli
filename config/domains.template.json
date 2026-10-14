@@ -2,7 +2,7 @@
   "meta": {
     "schema_version": "2.0",
     "description": "Domain index: host → warch dir under registry base",
-    "registry_base": "AGREGISTRY env if set, else GLIDER_HOME (~/.glider)",
+    "registry_base": "$GLIDER_HOME (~/.glider)",
     "warch_layout": "<registry_base>/warch/<host>/"
   },
   "example_com": {

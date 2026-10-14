@@ -38,8 +38,8 @@
     "glider_home": "$GLIDER_HOME (default: $HOME/.glider)",
     "domains": "$GLIDER_HOME/config/domains.json",
     "domains_template": "config/domains.template.json (shipped in package)",
-    "warch_root": "<registry-base>/warch/<host>/ (glider.json, gotchas.json, bexplore/)",
-    "registry_base": "AGREGISTRY if set, else GLIDER_HOME",
+    "warch_root": "$GLIDER_HOME/warch/<host>/ (glider.json, gotchas.json, bexplore/)",
+    "registry_base": "$GLIDER_HOME",
     "resolve": "glider resolve <url> --json",
     "browser": "$GLIDER_HOME/config/browser.json",
     "daemon_log": "$GLIDER_HOME/daemon.log"
