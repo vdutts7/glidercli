@@ -1712,7 +1712,7 @@ async function cmdConnect() {
     process.exit(1);
   }
 
-  // 6. Opt-in UI path: ensure we have a real tab (not chrome:// or arc://)
+  // 6. Opt-in UI path: ensure we have a real tab (not chrome:// or other internal pages)
   try {
     const tabUrl = activeBrowserTabUrl(browser);
     if (isBrowserInternalUrl(tabUrl)) {
@@ -3605,7 +3605,7 @@ ${B5}STATUS${NC}
     ${BW}heal${NC} [--clear-pin]   Ensure relay, wake SW best-effort, reattach
     ${BW}reload${NC}              Reload/pin Glider extension ${DIM}(alias: reload-ext, rex; page: history reload)${NC}
     ${BW}browser${NC}             Show browser config ${DIM}(name, path, processName, or use key)${NC}
-    ${BW}use${NC} <key>           Set browser by registry key ${DIM}(e.g. arc, brave, chrome)${NC}
+    ${BW}use${NC} <key>           Set browser by registry key ${DIM}(e.g. chrome, edge, brave)${NC}
     ${BW}test${NC}                Run diagnostics
     ${BW}domains${NC}             List ~/.glider domain shortcuts + warch paths
     ${BW}resolve${NC} <url>        Domain intel under ~/.glider/warch ${DIM}(--json)${NC}

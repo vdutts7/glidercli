@@ -75,6 +75,7 @@ test('browser internal URL detection covers Chromium variants', () => {
     'chrome://extensions/',
     'chrome-extension://abc/page.html',
     'edge://extensions/',
+    'helium://settings/',
     'opera://settings/',
     'vivaldi://settings/',
   ]) {

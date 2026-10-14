@@ -63,11 +63,13 @@ Extension + relay model uses Chromium + Glider extension from Chrome Web Store i
 
 | | Browser | Config |
 |:---:|--------|--------|
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chrome.webp" width="40" height="40" alt=""> | Google Chrome | default for `glider connect` |
-| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/arc.webp" width="40" height="40" alt=""> | Arc | [`config/browser.json.example`](config/browser.json.example) |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chrome.webp" width="40" height="40" alt=""> | Google Chrome | default for `glider connect`; registry key `chrome` |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/microsoft-edge.webp" width="40" height="40" alt=""> | Microsoft Edge | registry key `edge` |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/brave.webp" width="40" height="40" alt=""> | Brave | registry key `brave` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chromium.webp" width="40" height="40" alt=""> | Opera | registry key `opera` |
 | <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/vivaldi.webp" width="40" height="40" alt=""> | Vivaldi | registry key `vivaldi` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/helium.webp" width="40" height="40" alt=""> | Helium | registry key `helium` |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/arc.webp" width="40" height="40" alt=""> | Arc | registry key `arc` |
 
 Not supported today: Firefox/Safari/WebKit/Gecko, DuckDuckGo, browsers without Chrome Web Store extension path.
 
@@ -78,13 +80,13 @@ Priority: `$GLIDER_HOME/config/browser.json` → `$GLIDER_HOME/browser.json` →
 Registry key (recommended):
 
 ```json
-{ "use": "arc" }
+{ "use": "chrome" }
 ```
 
-Registry file: `$GLIDER_HOME/config/browsers-registry.json`
+Registry file: `$GLIDER_HOME/config/browsers-registry.json` (copy [`config/browsers-registry.json.example`](config/browsers-registry.json.example))
 
 ```bash
-glider use arc
+glider use chrome
 glider browser
 ```
 
@@ -92,15 +94,15 @@ Explicit name/path:
 
 ```json
 {
-  "name": "Arc",
-  "path": "/Applications/Arc.app",
-  "processName": "Arc"
+  "name": "Google Chrome",
+  "path": "/Applications/Google Chrome.app",
+  "processName": "Google Chrome"
 }
 ```
 
 | Command | Effect |
 |---------|--------|
-| `glider use arc` | write `{ "use": "arc" }` to `browser.json` |
+| `glider use chrome` | write `{ "use": "chrome" }` to `browser.json` |
 | `glider use` | list registry keys |
 | `glider browser` | show resolved name, path, process |
 
