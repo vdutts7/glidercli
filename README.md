@@ -6,7 +6,7 @@
 <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/ralph-wiggum.webp?v=1791987543" alt="ralph" width="80" height="80" />
 
 <h1 align="center">glider CLI</h1>
-<p align="center"><i><b>Browser automation CLI with autonomous loop execution</b></i></p>
+<p align="center"><i>Attach to the logged-in Chromium tab. Keep the page out of the agent context window.</i></p>
 
 <a href="https://github.com/vdutts7/glidercli"><img src="./assets/badges/github.badge.svg?v=1791987543" alt="GitHub" height="40" /></a>
 <a href="https://www.npmjs.com/package/glidercli"><img src="./assets/badges/npm.badge.svg?v=1791987543" alt="glidercli on npm" height="40" /></a>
@@ -15,26 +15,74 @@
 
 <br/>
 
----
+## Table of Contents
 
-| | headless CDP | extension relay (glider) |
-|---|--------------|---------------------------|
-| logged-in tab / SSO | ❌ cold profile | ✅ attach to open tab |
-| corp / MFA sessions | ❌ re-auth wall | ✅ reuse browser cookies |
-| loop until done | manual glue | ✅ `glider loop` + markers |
+<ol>
+    <a href="#problem">Problem</a><br/>
+    <a href="#hidden-constraint">Hidden constraint</a><br/>
+    <a href="#approach">Approach</a><br/>
+    <a href="#setup">Setup</a><br/>
+    <a href="#browsers">Browsers</a><br/>
+    <a href="#commands">Commands</a><br/>
+    <a href="#contact">Contact</a>
+</ol>
+
+<br/>
 
 `glidercli` → relay at `ws://127.0.0.1:19988` → [`Glider extension`](https://chromewebstore.google.com/detail/glider/njbidokkffhgpofcejgcfcgcinmeoalj) → CDP on your tab.
 
----
+## Problem
 
-## Issue
+Two failures show up the first time an agent tries to drive a real browser:
 
-| failure mode | symptom |
-|--------------|---------|
-| ❌ cold profile launch | SSO/MFA breaks on internal sites; no logged-in tab to drive |
-| ❌ raw CDP without bridge | extension must relay debugger traffic from real Chromium profile |
-| ❌ cookie-only terminal fetch | cross-origin API hosts often 401 without in-tab bearer |
-| ❌ one-shot scripts only | no first-class loop with iteration cap, timeout, completion marker |
+**1. Access.** Headless CDP / Playwright launch a cold profile. SSO, MFA, and corp cookies are not there. The agent spends the session on a login wall.
+
+**2. Tokens.** Even after you are in the page, Playwright MCP still dumps the accessibility tree into the model on every navigate/click/type. That is not a screenshot problem. It is a context problem.
+
+Measured Playwright MCP ([quote](https://dev.to/ji_ai/playwright-mcp-token-usage-9-tool-calls-62-of-my-context-4on2)):
+
+- one app-screen `browser_snapshot`: **~13,800 tokens**
+- nine tool calls in one signup flow: **124,300 tokens**
+- that is **62% of a 200K window** before the agent finishes the form
+- two of the nine snapshots were byte-identical
+
+On large pages the same MCP has returned **50KB to 540KB** snapshots; two or three visits overflow the prompt ([quote](https://github.com/microsoft/playwright-mcp/issues/1233)).
+
+Agent windows in use:
+
+| Window | Who | 9 Playwright MCP calls (124,300 tok) |
+|--------|-----|--------------------------------------|
+| 200K | common agent default ([quote](https://platform.claude.com/docs/en/build-with-claude/context-windows)) | **62% gone** |
+| 1M | current Sonnet/Opus class ([quote](https://claude.com/blog/1m-context-ga)) | **12% gone** on one form, still compounding every later click |
+
+A bigger window delays the crash. It does not stop the tree from being copied into the chat on every action.
+
+## Hidden constraint
+
+Playwright MCP presents as "use the browser." Under the hood it couples **action** to **full page state**:
+
+| | Path | What the model receives | Cost to context |
+|:---:|------|-------------------------|-----------------|
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chrome.webp?v=1791987543" width="40" height="40" alt=""> | Playwright MCP | YAML a11y tree + `ref=` handles, every tool result | ~13.8K tok/snapshot; 124.3K tok / 9 calls ([quote](https://dev.to/ji_ai/playwright-mcp-token-usage-9-tool-calls-62-of-my-context-4on2)) |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/glider.webp?v=1791987543" width="40" height="40" alt=""> | glider | `glider snapshot`: url, title, up to 200 interactive nodes | cap **16,142 chars ≈ 4,036 tok** (chars/4) at 200 nodes |
+
+**Core insight**: the token floor is attached to returning the whole tree, not to driving Chromium.
+
+Glider snapshot is capped at 200 visible interactive nodes in [`lib/bsnapshot.js`](lib/bsnapshot.js). At the cap: 16,142 chars. Nine such snapshots ≤ **~36K tok** vs 124K tok for the same-length Playwright MCP loop.
+
+| Loop (9 page reads) | 200K window | 1M window |
+|---------------------|-------------|-----------|
+| Playwright MCP 124,300 tok | 62% | 12% |
+| glider snapshot at cap ~36,324 tok | 18% | 4% |
+
+## Approach
+
+| | Step | What | Fixes |
+|:---:|------|------|-------|
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/chrome.webp?v=1791987543" width="40" height="40" alt=""> | 1 | [`Glider` extension](https://chromewebstore.google.com/detail/glider/njbidokkffhgpofcejgcfcgcinmeoalj) in the profile you already use | SSO/MFA/cookies stay. No cold profile. |
+| <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/glider.webp?v=1791987543" width="40" height="40" alt=""> | 2 | CLI talks to the relay (`ws://127.0.0.1:19988`), not to an MCP a11y dump | Agent sees `glider eval`, `glider snapshot`, YAML `glider loop`. Not 13.8K tok/click. |
+
+Same Chromium. Logged-in tab. Compact page index when you ask for it.
 
 ---
 
