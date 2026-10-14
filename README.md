@@ -103,16 +103,11 @@ steps:
 ## Usage
 
 ```bash
+glider config browser chrome
+glider install
 glider connect
-glider status
 glider goto "https://news.ycombinator.com"
-glider eval "document.title"
-glider run `hn-scrape.yaml`
-glider loop `hn-scrape.yaml` -n 50 -m hn_scrape_done
-```
-
-```bash
-glider resolve https://news.ycombinator.com --json
+glider loop hn-scrape.yaml
 ```
 
 | Output | Path |
@@ -152,13 +147,20 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 | `glider config browser chrome` | set browser |
 | `glider connect` | attach relay to browser |
 | `glider status` | server + extension + tabs |
+| `glider doctor` | relay + SW + targets |
+| `glider heal` | wake SW, reattach |
+| `glider reload` | pin extension |
 | `glider goto` | navigate |
 | `glider eval` | run JS |
-| `glider screenshot` | PNG capture |
+| `glider click` | click |
+| `glider type` | type |
+| `glider screenshot` | PNG |
+| `glider frozen` | detect frozen tab |
+| `glider thaw` | unfreeze tab |
+| `glider explore` | crawl + HAR |
+| `glider resolve` | host warch |
 | `glider run` | YAML task |
-| `glider loop` | Ralph loop |
-
-Full surface: `glider --help`
+| `glider loop` | loop until marker |
 
 ---
 

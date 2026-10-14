@@ -584,7 +584,7 @@ async function main() {
     });
     {
       const before = await requestJson('GET', '/status');
-      const raw = await runCli(['--json', 'reload-ext'], { env: cliEnv(), timeoutMs: 25000 });
+      const raw = await runCli(['--json', 'reload'], { env: cliEnv(), timeoutMs: 25000 });
       let body = null;
       try { body = jsonFromStdout(raw.stdout); } catch { body = null; }
       const after = await requestJson('GET', '/status');
@@ -615,7 +615,7 @@ async function main() {
         report.results.extension_reload_self = {
           status: 'FAIL',
           durationMs: 0,
-          error: err || `reload-ext exited ${raw.code}`,
+          error: err || `reload exited ${raw.code}`,
         };
       }
     }

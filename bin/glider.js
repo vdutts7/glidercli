@@ -2190,8 +2190,7 @@ async function cmdWindow(args) {
     const subcmd = args[0] || 'list';
     
     switch (subcmd) {
-      case 'new':
-      case 'create': {
+      case 'new': {
         const url = args[1] || 'about:blank';
         log.info(`Creating new window: ${url}`);
         const result = await wm.createWindow(url);
@@ -3417,16 +3416,13 @@ async function cmdRun(taskFile) {
     try {
       switch (cmd) {
         case 'goto':
-        case 'navigate':
           await cmdGoto(arg);
           break;
         case 'wait':
-        case 'sleep':
           await new Promise(r => setTimeout(r, arg * 1000));
           log.ok(`Waited ${arg}s`);
           break;
         case 'eval':
-        case 'js':
           await cmdEval(arg);
           break;
         case 'click':
@@ -3444,7 +3440,6 @@ async function cmdRun(taskFile) {
           await cmdText();
           break;
         case 'log':
-        case 'echo':
           console.log(`${BLUE}[LOG]${NC} ${arg}`);
           break;
         case 'assert':
@@ -3646,13 +3641,13 @@ ${B5}SETUP${NC}
 
 ${B5}STATUS${NC}
     ${BW}status${NC}              Check server, extension, tabs
-    ${BW}doctor${NC}              Relay + SW + targets + next action ${DIM}(--json)${NC}
-    ${BW}heal${NC} [--clear-pin]   Ensure relay, wake SW best-effort, reattach
-    ${BW}reload${NC}              Reload/pin Glider extension ${DIM}(alias: reload-ext, rex; page: history reload)${NC}
+    ${BW}doctor${NC}              Relay + SW + targets
+    ${BW}heal${NC}                Ensure relay, wake SW, reattach
+    ${BW}reload${NC}              Pin Glider extension
     ${BW}config browser chrome${NC}  ${DIM}also: edge, brave, opera, vivaldi, helium, arc${NC}
     ${BW}test${NC}                Run diagnostics
     ${BW}domains${NC}             List ~/.glider domain shortcuts + warch paths
-    ${BW}resolve${NC} <url>        Domain intel under ~/.glider/warch ${DIM}(--json)${NC}
+    ${BW}resolve${NC} <url>        Domain intel under ~/.glider/warch
 
 ${B5}NAVIGATION${NC}
     ${BW}goto${NC} <url>          Navigate to URL
@@ -3699,13 +3694,7 @@ ${B5}EXTRACTION PATTERNS${NC} ${DIM}(bulletproof, domain-agnostic)${NC}
 
 ${B5}AUTOMATION${NC}
     ${BW}run${NC} <task.yaml>     Execute YAML task file
-    ${BW}loop${NC} <task> [opts]  Autonomous loop ${DIM}(run until complete)${NC}
-    ${BW}ralph${NC} <task>        ${DIM}Alias for loop${NC}
-
-${B5}LOOP OPTIONS${NC}
-    -n, --max-iterations N   Max iterations ${DIM}(default: 10)${NC}
-    -t, --timeout N          Timeout in seconds ${DIM}(default: 3600)${NC}
-    -m, --marker STRING      Completion marker ${DIM}(default: LOOP_COMPLETE)${NC}
+    ${BW}loop${NC} <task.yaml>     Loop until marker
 
 ${B5}EXAMPLES${NC}
     ${DIM}$${NC} glider install              ${DIM}# one-time setup${NC}
@@ -5168,25 +5157,6 @@ async function main() {
   loadPlugins();  // hydrate ~/.glider/plugins/*.plugin.{json,js} - verb-agnostic core
   let cmd = args[0];
 
-  // reload-ext command aliases -
-  // Bare `reload` pins the extension (page refresh stays `history reload`).
-  // Rewrites args in place so downstream switch stays clean.
-  const RELOAD_EXT_ALIASES = new Set(['rex', 'reloadext', 'reloadExt']);
-  if (cmd === 'ext' && args[1] === 'reload') {
-    cmd = 'reload-ext';
-    args.splice(0, 2, 'reload-ext');
-  } else if (cmd === 'reload' && (!args[1] || args[1] === 'ext' || args[1] === 'extension')) {
-    // Bare `reload` = pin extension. Page refresh stays `history reload`.
-    cmd = 'reload-ext';
-    if (args[1]) args.splice(0, 2, 'reload-ext');
-    else args[0] = 'reload-ext';
-  } else if (RELOAD_EXT_ALIASES.has(cmd)) {
-    cmd = 'reload-ext';
-    args[0] = 'reload-ext';
-  }
-  // Typo suggest: if cmd looks like a common command with 1-2 char edit distance, hint it.
-  // (Only checked in unknown-command branch below - this block just normalizes.)
-  
   if (!cmd || cmd === '--help' || cmd === '-h') {
     showHelp();
     process.exit(0);
@@ -5240,8 +5210,6 @@ async function main() {
       await cmdRestart();
       break;
     case 'reload':
-    case 'reload-ext':
-    case 'reload-extension':
       await cmdReloadExt();
       break;
     case 'attach-all':
@@ -5289,7 +5257,6 @@ async function main() {
       await cmdSnapshot(args.slice(1));
       break;
     case 'window':
-    case 'win':
       await cmdWindow(args.slice(1));
       break;
     case 'domains':
@@ -5299,14 +5266,9 @@ async function main() {
       await cmdResolve(args[1], args.slice(2));
       break;
     case 'goto':
-    case 'navigate':
       await cmdGoto(args[1]);
       break;
-    case 'open':
-      await cmdOpen(args[1]);
-      break;
     case 'eval':
-    case 'js':
       await cmdEvalV2(args.slice(1));
       break;
     case 'click':
@@ -5332,11 +5294,7 @@ async function main() {
       await cmdBlurVerb(args.slice(1));
       break;
     case 'scroll':
-    case 'scroll-to':
-    case 'scroll-by':
-    case 'scroll-until':
-      if (cmd === 'scroll') await cmdScroll(args.slice(1));
-      else await cmdScroll([cmd.replace('scroll-',''), ...args.slice(1)]);
+      await cmdScroll(args.slice(1));
       break;
     case 'wait':
       await cmdWait(args.slice(1));
@@ -5424,8 +5382,6 @@ async function main() {
       await cmdFrozen(args.slice(1));
       break;
     case 'thaw':
-    case 'unfreeze':
-    case 'wake':
       await cmdThaw(args.slice(1));
       break;
     case 'freeze':
@@ -5451,13 +5407,10 @@ async function main() {
       // Use registry pattern - bulletproof method
       await cmdRegistry('favicon', args.slice(1));
       break;
-    case 'registry':
     case 'reg':
-      // Run a registry pattern
       await cmdRegistry(args[1], args.slice(2));
       break;
     case 'loop':
-    case 'ralph':  // alias for loop - Ralph Wiggum pattern
       // Parse loop options
       const loopOpts = {
         maxIterations: 10,
