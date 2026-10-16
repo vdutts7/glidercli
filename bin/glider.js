@@ -39,6 +39,7 @@ const REGISTRY_FILE = path.join(LIB_DIR, 'registry.json');
 
 // Active CDP session (multi-tab). Env or --session / --session-id on CLI.
 let activeSessionId = process.env.GLIDER_SESSION_ID || null;
+let wantTabId = null;
 let jsonOutput = false;
 let allowedDomainList = null;
 const { configPath, gliderHome, stateDir, capturesDir, scratchDir } = require(path.join(LIB_DIR, 'paths.js'));
@@ -81,6 +82,7 @@ const pinMachine = require(path.join(LIB_DIR, 'pin-machine.js'));
 const relayHeal = require(path.join(LIB_DIR, 'relay-heal.js'));
 const { npmIsNewer } = require(path.join(LIB_DIR, 'pkg-update.js'));
 const { formatCatalogTui } = require(path.join(LIB_DIR, 'tab-tui.js'));
+const tabMap = require(path.join(LIB_DIR, 'tab-map.js'));
 
 // Domain extensions - load from ~/.glider/config/domains.json
 const DOMAIN_CONFIG_PATHS = configPath('domains.json');
@@ -620,11 +622,13 @@ function parseGlobalFlags(argv) {
   const cliDomains = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    const equals = a.match(/^(--(?:session|session-id|allowed-domains))=(.*)$/);
+    const equals = a.match(/^(--(?:session|session-id|tab|allowed-domains))=(.*)$/);
     if (equals) {
       if (equals[2] === '') throw new Error(`${equals[1]} requires a value`);
       if (equals[1] === '--allowed-domains') {
         cliDomains.push(...equals[2].split(',').map((s) => s.trim()).filter(Boolean));
+      } else if (equals[1] === '--tab') {
+        wantTabId = equals[2];
       } else {
         activeSessionId = equals[2];
       }
@@ -632,6 +636,10 @@ function parseGlobalFlags(argv) {
       const value = argv[i + 1];
       if (!value || value.startsWith('-')) throw new Error(`${a} requires a value`);
       activeSessionId = argv[++i];
+    } else if (a === '--tab') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('-')) throw new Error(`${a} requires a value`);
+      wantTabId = argv[++i];
     } else if (a === '--json') {
       jsonOutput = true;
     } else if (a === '--allowed-domains') {
@@ -643,6 +651,10 @@ function parseGlobalFlags(argv) {
     }
   }
   allowedDomainList = resolveAllowedDomains(cliDomains);
+  if (wantTabId && !activeSessionId) {
+    const hit = tabMap.resolveRef({ tabId: wantTabId });
+    if (hit.row && hit.row.sessionId) activeSessionId = hit.row.sessionId;
+  }
   return rest;
 }
 
@@ -2372,8 +2384,9 @@ async function cmdTabs() {
     process.exitCode = 1;
     return;
   }
+  const map = tabMap.writeMap(catalog);
   if (jsonOutput) {
-    emitJson(true, { ...catalog, activeSessionId });
+    emitJson(true, { ...catalog, activeSessionId, map });
     return;
   }
   console.log(formatCatalogTui(catalog, activeSessionId));
@@ -2651,10 +2664,48 @@ async function cmdTargets() {
 
 async function cmdUseSession(arg, opts = []) {
   const argv = [arg, ...opts].filter((value) => value !== undefined);
-  const parsed = parseFlags(argv, { url: { type: 'string' } });
-  const requestedSession = parsed._[0] || null;
+  const parsed = parseFlags(argv, {
+    url: { type: 'string' },
+    tab: { type: 'string' },
+    session: { type: 'string' },
+  });
+  const token = parsed._[0] || null;
+  let requestedSession = parsed.session || '';
+  if (parsed.tab) {
+    const hit = tabMap.resolveRef({ tabId: parsed.tab });
+    if (!hit.row) {
+      const message = `no tab map row for --tab ${parsed.tab} (run glider tabs)`;
+      if (jsonOutput) emitJson(false, null, message);
+      log.fail(message);
+      process.exit(1);
+    }
+    if (!hit.row.sessionId) {
+      const message = `tabId ${parsed.tab} is not attached`;
+      if (jsonOutput) emitJson(false, hit.row, message);
+      log.fail(message);
+      process.exit(1);
+    }
+    requestedSession = hit.row.sessionId;
+  }
+  if (!requestedSession && token && tabMap.lookslikeHandle(token)) {
+    const hit = tabMap.resolveRef({ handle: token });
+    if (hit.row) {
+      if (!hit.row.sessionId) {
+        const message = `handle ${token} is not attached`;
+        if (jsonOutput) emitJson(false, hit.row, message);
+        log.fail(message);
+        process.exit(1);
+      }
+      requestedSession = hit.row.sessionId;
+    }
+  }
+  if (!requestedSession && token) requestedSession = token;
+  if (!requestedSession && wantTabId) {
+    const hit = tabMap.resolveRef({ tabId: wantTabId });
+    if (hit.row && hit.row.sessionId) requestedSession = hit.row.sessionId;
+  }
   if (!requestedSession && !parsed.url) {
-    log.fail('Usage: glider use-session <sessionId> | glider use-session --url <host-fragment>');
+    log.fail('Usage: glider use <n|sessionId> | glider use --tab <tabId> | glider use-session --url <host-fragment>');
     process.exit(1);
   }
   const raw = await httpGet('/targets');
@@ -3830,7 +3881,7 @@ function showHelp() {
   showBanner();
   console.log(`
 ${B5}USAGE${NC}
-    glider [--session <id>] [--json] [--allowed-domains 'host,*'] <command> [args]
+    glider [--session <id>] [--tab <tabId>] [--json] [--allowed-domains 'host,*'] <command> [args]
     ${DIM}GLIDER_SESSION_ID=session-N${NC}  ${DIM}pin tab for all /cdp commands${NC}
 
 ${B5}SETUP${NC}
@@ -3874,7 +3925,7 @@ ${B5}MULTI-WINDOW${NC}
 
 ${B5}MULTI-TAB${NC}
     ${BW}targets${NC}             List targets ${DIM}(sessionId, title, url)${NC}
-    ${BW}use-session${NC} <id>    Pin session ${DIM}(or --url host-fragment)${NC}
+    ${BW}use${NC} / ${BW}use-session${NC}  Pin by TUI handle, --tab, sessionId, or --url
     ${BW}fetch${NC} <url>         Fetch URL with browser session ${DIM}(auth)${NC}
     ${BW}spawn${NC} <urls...>     Open multiple tabs
     ${BW}extract${NC} [opts]      Extract from all tabs
@@ -5452,6 +5503,7 @@ async function main() {
     case 'targets':
       await cmdTargets();
       break;
+    case 'use':
     case 'use-session':
       await cmdUseSessionV2(args[1], args.slice(2));
       break;
