@@ -151,11 +151,13 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 3. attached: CDP session not in `chrome.tabs`
 4. stale: `tabId` gone from `chrome.tabs`; dropped from the relay map
 
+Incognito is Chromium `windows.Window.incognito` and `tabs.Tab.incognito` only. TUI: `window N (current, incognito)`. Enable Allow in Incognito on the extension. CDP `browserContextId` is not that flag.
+
 `glider targets` stays the raw CDP session list.
 
 Old relay without GET `/catalog` is recycled by `glider start`, `glider heal`, and the daemon (SIGTERM the child; supervisor respawns current `bserve.js`). `listTabs` fail reloads the extension and attach-all.
 
-CLI 0.4.17 expects an extension that implements `listTabs` (github [`vdutts7/glider`](https://github.com/vdutts7/glider) unpacked). Chrome Web Store 1.0.9 may still omit that RPC; then windows stay empty and live CDP rows sit under attached until you load source.
+CLI 0.4.18 expects an extension with `listTabs` plus `incognito` on tabs/windows (github [`vdutts7/glider`](https://github.com/vdutts7/glider) 1.0.10, or Chrome Web Store after that upload). Store 1.0.9 lacks `listTabs`; windows stay empty and live CDP rows sit under attached.
 
 ---
 
@@ -167,7 +169,8 @@ CLI 0.4.17 expects an extension that implements `listTabs` (github [`vdutts7/gli
 | extension socket up but worker dead | click Glider icon or `glider reload` | MV3 worker | status refuses healthy until pong |
 | daemon / `glider start` refuses after a killed supervisor | run `glider start` or `glider install` again (0.4.15+ reaps dead claim tombstones when nothing listens) | session-stable | crash/SIGKILL left `daemon-*.claim` without a live owner |
 | `glider tabs` dumps old CDP pages | `glider start` or `glider heal` (0.4.17 recycles a relay that does not advertise `/catalog`) | session | node does not hot-load `bserve.js` |
-| `glider tabs` has empty windows | load Glider from [`vdutts7/glider`](https://github.com/vdutts7/glider) (needs `listTabs`) | until CWS | Chrome Web Store 1.0.9 may lack that RPC |
+| `glider tabs` has empty windows | load Glider 1.0.10 from [`vdutts7/glider`](https://github.com/vdutts7/glider) or CWS after upload (needs `listTabs`) | until CWS 1.0.10 | Chrome Web Store 1.0.9 lacks that RPC |
+| incognito window has no `(incognito)` tag | Allow in Incognito on the extension, then reload; CLI 0.4.18 | per profile | Chromium hides those windows until that toggle |
 | custom relay port has no extension | stay on `19988` with Chrome Web Store build | install-stable | published extension connects to `ws://localhost:19988/extension` |
 | wrong tab targeted | `glider targets` → `glider use-session session-6` | session-stable | multi-tab needs explicit session |
 | explore HAR empty bodies | replay in-tab with auth hook on XHR/fetch | site-specific | some SPAs never expose bearer in storage |
@@ -185,7 +188,7 @@ CLI 0.4.17 expects an extension that implements `listTabs` (github [`vdutts7/gli
 | `glider connect` | attach relay to browser |
 | `glider status` | server + extension + tabs |
 | `glider doctor` | relay + SW + targets |
-| `glider tabs` | chrome.tabs by window, then attached, then stale |
+| `glider tabs` | chrome.tabs by window (incognito tag), then attached, then stale |
 | `glider heal` | recycle stale relay, wake SW, reattach |
 | `glider reload` | pin extension |
 | `glider goto` | navigate |

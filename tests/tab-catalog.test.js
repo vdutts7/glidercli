@@ -6,6 +6,88 @@ const { buildCatalog, reapFromMap } = require('../lib/tab-catalog.js');
 
 const gemini = 'https://gemini.google.com/app/f295ed7d0e3ee6e5';
 
+test('debugger-only CDP row is not labeled incognito from browserContextId', () => {
+  const cat = buildCatalog({
+    focusedWindowId: 2,
+    listTabsOk: true,
+    chromeWindows: [{ windowId: 2, incognito: true }],
+    chromeTabs: [
+      { id: 20, windowId: 2, index: 0, title: 'Excalidraw', url: 'https://excalidraw.com/', incognito: true },
+    ],
+    cdpPages: [
+      {
+        sessionId: 's-ex',
+        targetId: 't-ex',
+        tabId: 20,
+        browserContextId: 'ctx-incog',
+        targetInfo: { type: 'page', title: 'Excalidraw', url: 'https://excalidraw.com/', browserContextId: 'ctx-incog' },
+      },
+      {
+        sessionId: 's-ghost',
+        targetId: 't-ghost',
+        tabId: 0,
+        browserContextId: 'ctx-incog',
+        targetInfo: { type: 'page', title: 'ghost', url: 'https://example.test/', browserContextId: 'ctx-incog' },
+      },
+    ],
+  });
+  assert.equal(cat.windows[0].incognito, true);
+  assert.equal(cat.attached.length, 1);
+  assert.equal(cat.attached[0].incognito, undefined);
+});
+
+test('cookie store join does not mint incognito', () => {
+  const cat = buildCatalog({
+    focusedWindowId: 1,
+    listTabsOk: true,
+    cookieStores: [
+      { id: 'store-norm', tabIds: [1] },
+      { id: 'store-incog', tabIds: [2, 3] },
+    ],
+    chromeTabs: [
+      { id: 1, windowId: 1, index: 0, title: 'a', url: 'https://vd7.io/', incognito: false },
+      { id: 2, windowId: 3, index: 0, title: 'b', url: 'https://excalidraw.com/', incognito: true },
+      { id: 3, windowId: 2, index: 0, title: 'c', url: 'https://example.test/', incognito: false },
+    ],
+    cdpPages: [],
+  });
+  const w2 = cat.windows.find((w) => w.windowId === 2);
+  assert.equal(w2.incognito, false);
+  assert.equal(w2.tabs[0].incognito, false);
+});
+
+test('window.incognito comes from chrome.windows; tab.incognito stays on the row', () => {
+  const cat = buildCatalog({
+    focusedWindowId: 2,
+    listTabsOk: true,
+    chromeWindows: [
+      { windowId: 1, incognito: false },
+      { windowId: 2, incognito: true },
+    ],
+    chromeTabs: [
+      { id: 10, windowId: 1, index: 0, title: 'vd7', url: 'https://vd7.io/', incognito: false },
+      { id: 20, windowId: 2, index: 0, title: 'Excalidraw Whiteboard', url: 'https://excalidraw.com/', incognito: true },
+    ],
+    cdpPages: [],
+  });
+  assert.equal(cat.windows[0].windowId, 2);
+  assert.equal(cat.windows[0].incognito, true);
+  assert.equal(cat.windows[0].tabs[0].incognito, true);
+  assert.equal(cat.windows[1].incognito, false);
+});
+
+test('incognito falls back to tab.incognito when windows meta is missing', () => {
+  const cat = buildCatalog({
+    focusedWindowId: 9,
+    listTabsOk: true,
+    chromeTabs: [
+      { id: 1, windowId: 9, index: 0, title: 'secret', url: 'https://example.test/', incognito: true },
+    ],
+    cdpPages: [],
+  });
+  assert.equal(cat.windows[0].incognito, true);
+});
+
 test('current window first; chrome titles win; New Tab included', () => {
   const cat = buildCatalog({
     focusedWindowId: 2,

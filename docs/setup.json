@@ -27,7 +27,7 @@
     "http": {
       "/status": "GET - extension/targets/clients status; catalog true when GET /catalog exists",
       "/targets": "GET - connected CDP sessions",
-      "/catalog": "GET - chrome.tabs by window, attached debugger-only, stale reaped sessions",
+      "/catalog": "GET - chrome.tabs by window (incognito from chrome.windows/tabs), attached debugger-only, stale reaped sessions",
       "/cdp": "POST - forward CDP command"
     },
     "websocket": {

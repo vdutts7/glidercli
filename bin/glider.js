@@ -79,6 +79,7 @@ const { DirectCDP, checkChrome } = require(path.join(LIB_DIR, 'cdp-direct.js'));
 const { resolveDomain } = require(path.join(LIB_DIR, 'domain-resolve.js'));
 const pinMachine = require(path.join(LIB_DIR, 'pin-machine.js'));
 const relayHeal = require(path.join(LIB_DIR, 'relay-heal.js'));
+const { npmIsNewer } = require(path.join(LIB_DIR, 'pkg-update.js'));
 
 // Domain extensions - load from ~/.glider/config/domains.json
 const DOMAIN_CONFIG_PATHS = configPath('domains.json');
@@ -2378,7 +2379,7 @@ async function cmdTabs() {
   console.log(`${GREEN}${winCount}${NC} tab(s) in ${catalog.windows.length} window(s)\n`);
   let n = 0;
   for (const w of catalog.windows) {
-    const tag = w.current ? 'current' : 'other';
+    const tag = [w.current ? 'current' : 'other', w.incognito ? 'incognito' : null].filter(Boolean).join(', ');
     console.log(`${CYAN}window ${w.windowId}${NC} ${DIM}(${tag})${NC}`);
     for (const t of w.tabs || []) {
       n += 1;
@@ -3890,7 +3891,7 @@ ${B5}PAGE INFO${NC}
     ${BW}html${NC} [selector]     Get HTML
     ${BW}title${NC}               Get page title
     ${BW}url${NC}                 Get current URL
-    ${BW}tabs${NC}                chrome.tabs by window, then attached, then stale
+    ${BW}tabs${NC}                chrome.tabs by window (incognito tag), then attached, then stale
 
 ${B5}MULTI-WINDOW${NC}
     ${BW}window new${NC} [url]    Create new browser window ${DIM}(closeable)${NC}
@@ -4061,7 +4062,7 @@ async function checkForUpdates() {
     });
     
     const latest = data.version;
-    if (latest && latest !== current) {
+    if (latest && npmIsNewer(current, latest)) {
       console.error(`${YELLOW}⬆${NC}  Update available: ${DIM}${current}${NC} → ${GREEN}${latest}${NC}  ${DIM}(run: glider update)${NC}`);
     }
   } catch {} // Silent fail - don't block CLI
@@ -4085,13 +4086,15 @@ async function cmdUpdate() {
     });
     
     const latest = data.version;
-    if (latest === current) {
-      log.ok(`Already on latest version (${current})`);
+    if (!latest) throw new Error('npm latest version missing');
+    if (!npmIsNewer(current, latest)) {
+      if (latest === current) log.ok(`Already on latest version (${current})`);
+      else log.ok(`Local ${current} is ahead of npm ${latest}; not downgrading`);
       return;
     }
-    
+
     log.info(`Updating ${current} → ${latest}...`);
-    execSync('npm update -g glidercli', { stdio: 'inherit' });
+    execSync(`npm install -g glidercli@${latest}`, { stdio: 'inherit' });
     log.ok(`Updated to ${latest}`);
   } catch (e) {
     log.fail(`Update failed: ${e.message}`);

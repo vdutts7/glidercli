@@ -533,9 +533,10 @@ test('GET /catalog joins chrome.tabs, keeps debugger-only attached, reaps stale 
         result: {
           focusedWindowId: 2,
           tabs: [
-            { id: 20, windowId: 2, index: 0, title: 'live', url: 'https://vd7.io/', active: true },
-            { id: 21, windowId: 2, index: 1, title: 'New Tab', url: 'chrome://newtab/' },
+            { id: 20, windowId: 2, index: 0, title: 'live', url: 'https://vd7.io/', active: true, incognito: false },
+            { id: 21, windowId: 2, index: 1, title: 'New Tab', url: 'chrome://newtab/', incognito: false },
           ],
+          windows: [{ windowId: 2, incognito: false, focused: true, type: 'normal' }],
         },
       }));
       return;
@@ -570,6 +571,7 @@ test('GET /catalog joins chrome.tabs, keeps debugger-only attached, reaps stale 
   assert.equal(catalog.status, 200);
   assert.equal(catalog.body.listTabsOk, true);
   assert.equal(catalog.body.windows[0].current, true);
+  assert.equal(catalog.body.windows[0].incognito, false);
   assert.equal(catalog.body.windows[0].tabs[0].title, 'live');
   assert.equal(catalog.body.windows[0].tabs[1].url, 'chrome://newtab/');
   assert.equal(catalog.body.stale[0].sessionId, 's-ghost');
