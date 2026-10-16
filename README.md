@@ -123,6 +123,7 @@ glider config browser chrome
 glider install
 glider connect
 glider goto "https://news.ycombinator.com"
+glider tabs
 glider loop hn-scrape.yaml
 ```
 
@@ -141,6 +142,23 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 
 ---
 
+## Tabs
+
+`glider tabs` is the visible Helium rail, not the debugger map.
+
+1. current window `chrome.tabs` (live title/url, including `chrome://newtab`)
+2. other windows
+3. attached: CDP session not in `chrome.tabs`
+4. stale: `tabId` gone from `chrome.tabs`; dropped from the relay map
+
+`glider targets` stays the raw CDP session list.
+
+Old relay without GET `/catalog` is recycled by `glider start`, `glider heal`, and the daemon (SIGTERM the child; supervisor respawns current `bserve.js`). `listTabs` fail reloads the extension and attach-all.
+
+CLI 0.4.17 expects an extension that implements `listTabs` (github [`vdutts7/glider`](https://github.com/vdutts7/glider) unpacked). Chrome Web Store 1.0.9 may still omit that RPC; then windows stay empty and live CDP rows sit under attached until you load source.
+
+---
+
 ## Gotchas
 
 | problem | fix | stability | why |
@@ -148,6 +166,8 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 | extension not connected | install/enable [`Glider` on Chrome Web Store](https://chromewebstore.google.com/detail/glider/njbidokkffhgpofcejgcfcgcinmeoalj) in selected browser profile; click Glider icon, then run `glider connect` | per browser launch | relay waits on extension WS |
 | extension socket up but worker dead | click Glider icon or `glider reload` | MV3 worker | status refuses healthy until pong |
 | daemon / `glider start` refuses after a killed supervisor | run `glider start` or `glider install` again (0.4.15+ reaps dead claim tombstones when nothing listens) | session-stable | crash/SIGKILL left `daemon-*.claim` without a live owner |
+| `glider tabs` dumps old CDP pages | `glider start` or `glider heal` (0.4.17 recycles a relay that does not advertise `/catalog`) | session | node does not hot-load `bserve.js` |
+| `glider tabs` has empty windows | load Glider from [`vdutts7/glider`](https://github.com/vdutts7/glider) (needs `listTabs`) | until CWS | Chrome Web Store 1.0.9 may lack that RPC |
 | custom relay port has no extension | stay on `19988` with Chrome Web Store build | install-stable | published extension connects to `ws://localhost:19988/extension` |
 | wrong tab targeted | `glider targets` → `glider use-session session-6` | session-stable | multi-tab needs explicit session |
 | explore HAR empty bodies | replay in-tab with auth hook on XHR/fetch | site-specific | some SPAs never expose bearer in storage |
@@ -165,7 +185,8 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 | `glider connect` | attach relay to browser |
 | `glider status` | server + extension + tabs |
 | `glider doctor` | relay + SW + targets |
-| `glider heal` | wake SW, reattach |
+| `glider tabs` | chrome.tabs by window, then attached, then stale |
+| `glider heal` | recycle stale relay, wake SW, reattach |
 | `glider reload` | pin extension |
 | `glider goto` | navigate |
 | `glider eval` | run JS |
@@ -199,7 +220,7 @@ Incomplete event-stream features fail closed: `wait --network-idle`, console str
 
 | status | item |
 |--------|------|
-| done | CDP relay, YAML tasks, loop, daemon, multi-tab, `resolve` |
+| done | CDP relay, YAML tasks, loop, daemon, multi-tab, `resolve`, `glider tabs` catalog |
 | planned | Linux and Windows browser launch |
 | | headless cloud mode |
 | | task chaining |

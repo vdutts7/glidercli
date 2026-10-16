@@ -78,6 +78,7 @@ if (fs.existsSync(REGISTRY_FILE)) {
 const { DirectCDP, checkChrome } = require(path.join(LIB_DIR, 'cdp-direct.js'));
 const { resolveDomain } = require(path.join(LIB_DIR, 'domain-resolve.js'));
 const pinMachine = require(path.join(LIB_DIR, 'pin-machine.js'));
+const relayHeal = require(path.join(LIB_DIR, 'relay-heal.js'));
 
 // Domain extensions - load from ~/.glider/config/domains.json
 const DOMAIN_CONFIG_PATHS = configPath('domains.json');
@@ -500,7 +501,8 @@ function httpGet(urlPath) {
   const started = Date.now();
   return new Promise((resolve, reject) => {
     const url = new URL(urlPath, SERVER_URL);
-    const req = http.get(url, { timeout: 2000 }, (res) => {
+    const timeoutMs = urlPath === '/catalog' ? 8000 : 2000;
+    const req = http.get(url, { timeout: timeoutMs }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
@@ -807,6 +809,98 @@ async function getTargets() {
   }
 }
 
+async function fetchCatalogQuiet() {
+  try {
+    const catalog = await httpGet('/catalog');
+    return relayHeal.catalogLooksLive(catalog) ? catalog : null;
+  } catch {
+    return null;
+  }
+}
+
+function relayProcessIsOurs(status) {
+  if (!Number.isInteger(status?.pid) || status.pid <= 0) return false;
+  const identity = getProcessIdentity(status.pid);
+  return Boolean(identity && commandIncludesPath(identity.command, RELAY_ENTRY));
+}
+
+async function recycleLiveRelay() {
+  const ownership = inspectDaemonOwnership();
+  if (ownership.state === 'owned' && daemonChildMatches(ownership.record)) {
+    const childPid = ownership.record.childPid;
+    try { process.kill(childPid, 'SIGTERM'); } catch (error) {
+      if (error.code !== 'ESRCH') throw error;
+    }
+    await waitForProcessExit(childPid, 8000);
+    await waitUntil(async () => Boolean(await fetchCatalogQuiet()), {
+      timeoutMs: 20000,
+      intervalMs: 200,
+      label: 'catalog after daemon child recycle',
+    });
+    return { recycled: true, via: 'daemon_child' };
+  }
+  if (ownership.state === 'owned' || ownership.state === 'unverified') {
+    throw new Error(`cannot recycle unverified daemon-owned relay on port ${PORT}`);
+  }
+  await cmdStop({ render: false });
+  await new Promise((r) => setTimeout(r, 300));
+  await cmdStart({ render: false });
+  await waitUntil(async () => Boolean(await fetchCatalogQuiet()), {
+    timeoutMs: 15000,
+    intervalMs: 200,
+    label: 'catalog after standalone restart',
+  });
+  return { recycled: true, via: 'standalone_restart' };
+}
+
+async function autoHealRelay() {
+  const actions = [];
+  let status = null;
+  try { status = await getRelayStatus(); } catch { status = null; }
+  if (!status) return { actions, catalog: null, status: null };
+
+  const identity = Number.isInteger(status.pid) ? getProcessIdentity(status.pid) : null;
+  const decision = relayHeal.shouldRecycleRelay({
+    catalogOk: Boolean(await fetchCatalogQuiet()),
+    catalogAdvertised: status.catalog === true,
+    entryMtimeMs: relayHeal.entryMtimeMs(RELAY_ENTRY),
+    processStartMs: relayHeal.lstartToMs(identity?.started),
+  });
+  if (decision.recycle && relayProcessIsOurs(status)) {
+    try {
+      const recycled = await recycleLiveRelay();
+      actions.push({ step: 'recycle_relay', ok: true, reason: decision.reason, ...recycled });
+    } catch (error) {
+      actions.push({ step: 'recycle_relay', ok: false, reason: decision.reason, error: error.message });
+    }
+    try { status = await getRelayStatus(); } catch { status = null; }
+  }
+
+  let catalog = await fetchCatalogQuiet();
+  const ext = relayHeal.shouldHealExtension({
+    extensionConnected: status?.extension === true,
+    workerAlive: extensionReady(status),
+    listTabsOk: catalog ? catalog.listTabsOk === true : null,
+  });
+  if (ext.heal && ext.step === 'reload' && extensionReady(status)) {
+    try {
+      await postExtension({ method: 'reloadSelf', params: {} });
+      actions.push({ step: 'reload_extension', ok: true });
+      const beforeGen = status.extensionGeneration;
+      await waitUntil(async () => {
+        const now = await getRelayStatus();
+        return now?.extension === true && now.extensionGeneration !== beforeGen;
+      }, { timeoutMs: 15000, intervalMs: 200, label: 'extension reconnect' });
+      await postExtension({ method: 'attachAllTabs', params: {} });
+      actions.push({ step: 'attach_all', ok: true });
+    } catch (error) {
+      actions.push({ step: 'reload_extension', ok: false, error: error.message });
+    }
+    catalog = await fetchCatalogQuiet();
+  }
+  return { actions, catalog, status };
+}
+
 function appleScriptString(value) {
   return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
@@ -1072,18 +1166,61 @@ async function cmdStart({ render = true } = {}) {
         throw new Error(`Daemon PID ${ownership.record.pid} does not own the active relay on port ${PORT}`);
       }
       if (ownership.state === 'unverified') assertStandaloneRelayAllowed(ownership);
-      const result = {
-        running: true,
-        port: PORT,
-        pid: status.pid,
-        alreadyRunning: true,
-        managedBy: ownership.state === 'owned' ? 'daemon' : 'standalone',
-      };
-      if (render) {
-        if (jsonOutput) emitJson(true, result);
-        else log.ok('Server already running');
+      const identity = getProcessIdentity(status.pid);
+      const decision = relayHeal.shouldRecycleRelay({
+        catalogOk: Boolean(await fetchCatalogQuiet()),
+        catalogAdvertised: status.catalog === true,
+        entryMtimeMs: relayHeal.entryMtimeMs(RELAY_ENTRY),
+        processStartMs: relayHeal.lstartToMs(identity?.started),
+      });
+      const ours = relayProcessIsOurs(status);
+      if (ours && decision.recycle && ownership.state === 'owned') {
+        const childPid = ownership.record.childPid;
+        try { process.kill(childPid, 'SIGTERM'); } catch (error) {
+          if (error.code !== 'ESRCH') throw error;
+        }
+        await waitForProcessExit(childPid, 8000);
+        await waitUntil(async () => Boolean(await fetchCatalogQuiet()), {
+          timeoutMs: 20000,
+          intervalMs: 200,
+          label: 'catalog after daemon child recycle',
+        });
+        const live = await getRelayStatus();
+        const result = {
+          running: true,
+          port: PORT,
+          pid: live?.pid,
+          alreadyRunning: false,
+          recycled: true,
+          managedBy: 'daemon',
+        };
+        if (render) {
+          if (jsonOutput) emitJson(true, result);
+          else log.ok('Server recycled onto current relay');
+        }
+        return result;
       }
-      return result;
+      if (ours && decision.recycle) {
+        try { process.kill(status.pid, 'SIGTERM'); } catch (error) {
+          if (error.code !== 'ESRCH') throw error;
+        }
+        await waitForProcessExit(status.pid, 8000);
+        try { removeRelayPidRecordIfOwned(status.pid, identity?.started); } catch {}
+        status = null;
+      } else {
+        const result = {
+          running: true,
+          port: PORT,
+          pid: status.pid,
+          alreadyRunning: true,
+          managedBy: ownership.state === 'owned' ? 'daemon' : 'standalone',
+        };
+        if (render) {
+          if (jsonOutput) emitJson(true, result);
+          else log.ok('Server already running');
+        }
+        return result;
+      }
     }
 
     assertStandaloneRelayAllowed(ownership);
@@ -2132,6 +2269,12 @@ async function cmdHeal(args = []) {
     relay = null;
   }
 
+  if (relay) {
+    const healed = await autoHealRelay();
+    actions.push(...healed.actions);
+    try { relay = await getRelayStatus(); } catch { relay = null; }
+  }
+
   if (clearPin) {
     clearPersistedSession();
     actions.push({ step: 'clear_pin', ok: true });
@@ -2212,29 +2355,19 @@ async function cmdHeal(args = []) {
 }
 
 async function cmdTabs() {
-  let catalog = null;
-  try {
-    catalog = await httpGet('/catalog');
-  } catch {
-    catalog = null;
+  let catalog = await fetchCatalogQuiet();
+  if (!catalog || (catalog.listTabsOk === false)) {
+    await autoHealRelay();
+    catalog = await fetchCatalogQuiet();
   }
   if (!catalog || catalog.error || !Array.isArray(catalog.windows)) {
-    const targets = await getTargets();
-    const part = pinMachine.partition(targets);
     if (jsonOutput) {
-      emitJson(true, { pages: part.pages, iframes: part.iframes, other: part.other, activeSessionId, fallback: 'targets' });
+      emitJson(false, null, 'catalog unavailable');
+      process.exitCode = 1;
       return;
     }
-    if (part.pages.length === 0) {
-      log.warn('No page targets');
-      return;
-    }
-    console.log(`${GREEN}${part.pages.length}${NC} page(s) connected (catalog unavailable):\n`);
-    part.pages.forEach((t, i) => {
-      const mark = t.sessionId === activeSessionId ? `${GREEN}*${NC} ` : '  ';
-      console.log(`${mark}${CYAN}[${i + 1}]${NC} ${t.title || t.url}`);
-      console.log(`      ${DIM}${t.url}${NC}`);
-    });
+    log.fail('catalog unavailable');
+    process.exitCode = 1;
     return;
   }
   if (jsonOutput) {
@@ -3737,7 +3870,7 @@ ${B5}SETUP${NC}
 ${B5}STATUS${NC}
     ${BW}status${NC}              Check server, extension, tabs
     ${BW}doctor${NC}              Relay + SW + targets
-    ${BW}heal${NC}                Ensure relay, wake SW, reattach
+    ${BW}heal${NC}                Recycle stale relay, wake SW, reattach
     ${BW}reload${NC}              Pin Glider extension
     ${BW}config browser chrome${NC}  ${DIM}also: edge, brave, opera, vivaldi, helium, arc${NC}
     ${BW}test${NC}                Run diagnostics
@@ -3757,7 +3890,7 @@ ${B5}PAGE INFO${NC}
     ${BW}html${NC} [selector]     Get HTML
     ${BW}title${NC}               Get page title
     ${BW}url${NC}                 Get current URL
-    ${BW}tabs${NC}                List connected tabs
+    ${BW}tabs${NC}                chrome.tabs by window, then attached, then stale
 
 ${B5}MULTI-WINDOW${NC}
     ${BW}window new${NC} [url]    Create new browser window ${DIM}(closeable)${NC}

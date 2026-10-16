@@ -497,3 +497,85 @@ test('relay retries Target.createTarget on Chromium No SW then succeeds', async 
   assert.equal(response.body.targetId, 'target-nosw');
   assert.equal(nosw, 3);
 });
+
+test('GET /catalog joins chrome.tabs, keeps debugger-only attached, reaps stale tabIds', async (t) => {
+  const port = await getFreePort();
+  const relay = spawn(process.execPath, [path.join(REPO_ROOT, 'lib', 'bserve.js')], {
+    cwd: REPO_ROOT,
+    env: { ...process.env, GLIDER_PORT: String(port), GLIDER_RELAY_RECONNECT_GRACE_MS: '0' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(async () => {
+    if (relay.exitCode !== null) return;
+    relay.kill('SIGTERM');
+    await new Promise((resolve) => relay.once('close', resolve));
+  });
+  await waitForHttp(`http://127.0.0.1:${port}/status`);
+  const status = await requestJson(`http://127.0.0.1:${port}/status`);
+  assert.equal(status.body.catalog, true);
+
+  const extension = new WebSocket(`ws://127.0.0.1:${port}/extension`);
+  t.after(() => extension.close());
+  await new Promise((resolve, reject) => {
+    extension.once('open', resolve);
+    extension.once('error', reject);
+  });
+  extension.on('message', (raw) => {
+    const message = JSON.parse(raw.toString());
+    if (message.method === 'ping') {
+      extension.send(JSON.stringify({ method: 'pong' }));
+      return;
+    }
+    if (message.id === undefined) return;
+    if (message.method === 'listTabs') {
+      extension.send(JSON.stringify({
+        id: message.id,
+        result: {
+          focusedWindowId: 2,
+          tabs: [
+            { id: 20, windowId: 2, index: 0, title: 'live', url: 'https://vd7.io/', active: true },
+            { id: 21, windowId: 2, index: 1, title: 'New Tab', url: 'chrome://newtab/' },
+          ],
+        },
+      }));
+      return;
+    }
+    extension.send(JSON.stringify({ id: message.id, result: {} }));
+  });
+  extension.send(JSON.stringify({
+    method: 'forwardCDPEvent',
+    params: {
+      method: 'Target.attachedToTarget',
+      params: {
+        sessionId: 's-live',
+        tabId: 20,
+        targetInfo: { targetId: 't-live', type: 'page', title: 'stale-title', url: 'https://vd7.io/', tabId: 20 },
+      },
+    },
+  }));
+  extension.send(JSON.stringify({
+    method: 'forwardCDPEvent',
+    params: {
+      method: 'Target.attachedToTarget',
+      params: {
+        sessionId: 's-ghost',
+        tabId: 99,
+        targetInfo: { targetId: 't-ghost', type: 'page', title: 'dead', url: 'https://github.com/', tabId: 99 },
+      },
+    },
+  }));
+  await waitForJson(`http://127.0.0.1:${port}/status`, (body) => body.targets === 2);
+
+  const catalog = await requestJson(`http://127.0.0.1:${port}/catalog`);
+  assert.equal(catalog.status, 200);
+  assert.equal(catalog.body.listTabsOk, true);
+  assert.equal(catalog.body.windows[0].current, true);
+  assert.equal(catalog.body.windows[0].tabs[0].title, 'live');
+  assert.equal(catalog.body.windows[0].tabs[1].url, 'chrome://newtab/');
+  assert.equal(catalog.body.stale[0].sessionId, 's-ghost');
+  assert.equal(catalog.body.attached.length, 0);
+
+  const after = await requestJson(`http://127.0.0.1:${port}/targets`);
+  assert.equal(after.body.some((row) => row.sessionId === 's-ghost'), false);
+  assert.equal(after.body.some((row) => row.sessionId === 's-live'), true);
+});

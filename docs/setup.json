@@ -1,7 +1,7 @@
 {
   "meta": {
     "project": "glidercli",
-    "updated": "2026-09-17"
+    "updated": "2026-10-16"
   },
   "architecture": {
     "flow": "glidercli -> bserve (localhost relay) -> Chromium extension -> chrome.debugger -> tab",
@@ -25,8 +25,9 @@
   },
   "endpoints": {
     "http": {
-      "/status": "GET - extension/targets/clients status",
-      "/targets": "GET - connected tabs",
+      "/status": "GET - extension/targets/clients status; catalog true when GET /catalog exists",
+      "/targets": "GET - connected CDP sessions",
+      "/catalog": "GET - chrome.tabs by window, attached debugger-only, stale reaped sessions",
       "/cdp": "POST - forward CDP command"
     },
     "websocket": {

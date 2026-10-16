@@ -494,8 +494,30 @@ while true; do
     exit 1
   fi
 
+  poll_child_recycle() {
+    while kill -0 "$child_pid" 2>/dev/null; do
+      if "$NODE_BIN" -e '
+        const heal = require(process.argv[1]);
+        const port = process.argv[2];
+        const entry = process.argv[3];
+        const childPid = Number(process.argv[4]);
+        heal.childNeedsRecycle({ port, entryPath: entry, childPid }).then((d) => {
+          process.exit(d.recycle ? 0 : 1);
+        }).catch(() => process.exit(1));
+      ' "$SCRIPT_DIR/relay-heal.js" "$PORT" "$BSERVE" "$child_pid"; then
+        echo "glider-daemon: recycling stale relay child PID $child_pid" >&2
+        kill "$child_pid" 2>/dev/null || true
+        return 0
+      fi
+      sleep "${GLIDER_RELAY_HEAL_POLL_SEC:-2}"
+    done
+  }
+  poll_child_recycle &
+  watcher_pid=$!
   wait "$child_pid"
   EXIT_CODE=$?
+  kill "$watcher_pid" 2>/dev/null || true
+  wait "$watcher_pid" 2>/dev/null || true
   child_pid=""
   child_started=""
   relay_ready=0

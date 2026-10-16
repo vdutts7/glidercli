@@ -91,6 +91,29 @@ async function createMockRelay(options = {}) {
       url: 'http://fixture.test/page',
     },
   }];
+  const defaultTab = targets[0];
+  const catalog = Object.prototype.hasOwnProperty.call(options, 'catalog')
+    ? options.catalog
+    : {
+      focusedWindowId: 1,
+      listTabsOk: true,
+      windows: defaultTab ? [{
+        windowId: 1,
+        current: true,
+        tabs: [{
+          tabId: 1,
+          windowId: 1,
+          index: 0,
+          title: defaultTab.targetInfo?.title || defaultTab.title || '',
+          url: defaultTab.targetInfo?.url || defaultTab.url || '',
+          attached: true,
+          sessionId: defaultTab.sessionId,
+          targetId: defaultTab.targetId,
+        }],
+      }] : [],
+      attached: [],
+      stale: [],
+    };
   const server = http.createServer(async (req, res) => {
     try {
       const body = req.method === 'POST' ? await readBody(req) : null;
@@ -99,8 +122,14 @@ async function createMockRelay(options = {}) {
         const handled = await options.handler({ req, res, body, requests, status, targets });
         if (handled) return;
       }
-      if (req.url === '/status' && req.method === 'GET') return sendJson(res, 200, status);
+      if (req.url === '/status' && req.method === 'GET') {
+        return sendJson(res, 200, { catalog: catalog != null, ...status });
+      }
       if (req.url === '/targets' && req.method === 'GET') return sendJson(res, 200, targets);
+      if (req.url === '/catalog' && req.method === 'GET') {
+        if (catalog == null) return sendJson(res, 404, { error: 'not found' });
+        return sendJson(res, 200, catalog);
+      }
       if (req.url === '/cdp' && req.method === 'POST') {
         if (body?.method === 'Runtime.evaluate') {
           const expression = body.params?.expression || '';

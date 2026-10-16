@@ -69,6 +69,20 @@ test('CDP tabId not in chrome.tabs is stale and reaped; missing tabId stays atta
   assert.equal(cat.attached[0].sessionId, 'old');
 });
 
+test('listTabs fail does not call chrome-missing CDP stale', () => {
+  const cat = buildCatalog({
+    focusedWindowId: 1,
+    listTabsOk: false,
+    chromeTabs: [],
+    cdpPages: [
+      { sessionId: 'ghost', targetId: 'tg', tabId: 99, targetInfo: { type: 'page', title: 'dead', url: 'https://github.com/' } },
+    ],
+  });
+  assert.equal(cat.stale.length, 0);
+  assert.equal(cat.attached.length, 1);
+  assert.equal(cat.attached[0].sessionId, 'ghost');
+});
+
 test('reapFromMap drops only named sessions', () => {
   const m = new Map([
     ['a', { sessionId: 'a' }],
