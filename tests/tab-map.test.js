@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const test = require('node:test');
+const os = require('node:os');
 const path = require('node:path');
 const { buildMap, resolveRef, lookslikeHandle } = require('../lib/tab-map.js');
 const { createMockRelay, makeTempGliderHome, removeTree, runCli, jsonFromStdout } = require('./helpers.js');
@@ -77,4 +78,15 @@ test('glider use --tab 20 pins by chrome tabId', async (t) => {
   const used = await runCli(['--json', 'use', '--tab', '20'], { env });
   assert.equal(used.code, 0, used.stderr);
   assert.equal(jsonFromStdout(used.stdout).observation.sessionId, 's1');
+});
+
+test('godelify glider-cli-tab-map gate exits 0 on this tree', () => {
+  const gate = path.join(os.homedir(), '.cursor', 'tools', 'test', 'glider-cli-tab-map.gate.sh');
+  assert.equal(fs.existsSync(gate), true);
+  const { spawnSync } = require('node:child_process');
+  const r = spawnSync(gate, {
+    encoding: 'utf8',
+    env: { ...process.env, GLIDERCLI: path.join(__dirname, '..') },
+  });
+  assert.equal(r.status, 0, r.stderr);
 });
