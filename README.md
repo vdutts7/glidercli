@@ -144,14 +144,14 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 
 ## Tabs
 
-`glider tabs` is the visible Helium rail, not the debugger map. TUI (0.4.21): `[n]` title, URL, then `status: attached` (lime) or `status: not attached` (light grey). Debugger-only rows `status: attached`; dropped map rows `status: stale`. Machines: `glider --json tabs` (`attached` boolean on each window tab).
+`glider tabs` is the visible Helium rail, not the debugger map. TUI (0.4.22): `[n]` title, URL, then `status: attached` (lime) or `status: not attached` (light grey). Window tag: `[current]` (bright cyan) / `[other]` / `[incognito]`. Debugger-only rows `status: attached`; dropped map rows `status: stale`. Machines: `glider --json tabs` (`attached` boolean on each window tab).
 
 1. current window `chrome.tabs` (live title/url, including `chrome://newtab`)
 2. other windows
 3. attached: CDP session not in `chrome.tabs`
 4. stale: `tabId` gone from `chrome.tabs`; dropped from the relay map
 
-Incognito is Chromium `windows.Window.incognito` and `tabs.Tab.incognito` only. TUI: `window N (current, incognito)`. Enable Allow in Incognito on the extension. CDP `browserContextId` is not that flag.
+Incognito is Chromium `windows.Window.incognito` and `tabs.Tab.incognito` only. TUI: `window N [current] [incognito]`. Enable Allow in Incognito on the extension. CDP `browserContextId` is not that flag.
 
 `glider targets` stays the raw CDP session list.
 

@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { formatCatalogTui, LIME, GREY, DIM, YELLOW, GREEN, NC } = require('../lib/tab-tui.js');
+const { formatCatalogTui, LIME, GREY, DIM, YELLOW, GREEN, CURRENT, MAGENTA, NC } = require('../lib/tab-tui.js');
 const { createMockRelay, jsonFromStdout, runCli } = require('./helpers.js');
 
 function stripAnsi(s) {
@@ -44,6 +44,9 @@ test('TUI: title, url, status under url; attached lime, not-attached light grey'
   assert.equal(out.includes(`${DIM}not attached${NC}`), false);
   assert.ok(out.includes(`${DIM}https://chat.deepseek.com/${NC}`));
   assert.ok(out.includes(`${DIM}status:${NC}`));
+  assert.match(plain, /window 1 \[current\]/);
+  assert.doesNotMatch(plain, /window 1 \(current\)/);
+  assert.ok(out.includes(`${CURRENT}[current]${NC}`));
 });
 
 test('TUI: pin asterisk on active session; discarded token; url fallback title', () => {
@@ -78,7 +81,9 @@ test('TUI: other+incognito window, debugger-only attached, stale', () => {
     stale: [{ title: 'dead', url: 'https://github.com/', sessionId: 'ghost' }],
   }, null);
   const plain = stripAnsi(out);
-  assert.match(plain, /window 2 \(other, incognito\)/);
+  assert.match(plain, /window 2 \[other\] \[incognito\]/);
+  assert.ok(out.includes(`${GREY}[other]${NC}`));
+  assert.ok(out.includes(`${MAGENTA}[incognito]${NC}`));
   assert.match(plain, /\[1\] secret\n      https:\/\/x\.test\/\n      status: not attached/);
   assert.match(plain, /\[A1\] iframe\n      https:\/\/example\.test\/hidden\n      status: attached/);
   assert.match(plain, /\[S1\] dead\n      https:\/\/github\.com\/\n      status: stale/);
