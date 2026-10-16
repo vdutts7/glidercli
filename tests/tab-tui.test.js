@@ -24,11 +24,15 @@ const catalog = {
           url: 'https://claude.ai/chat/a',
           attached: true,
           sessionId: 's1',
+          tabId: 20,
+          active: true,
         },
         {
           title: 'DeepSeek',
           url: 'https://chat.deepseek.com/',
           attached: false,
+          tabId: 21,
+          active: false,
         },
       ],
     },
@@ -40,8 +44,8 @@ const catalog = {
 test('TUI: title, url, status under url; attached lime, not-attached light grey', () => {
   const out = formatCatalogTui(catalog, null);
   const plain = stripAnsi(out);
-  assert.match(plain, /\[1\] AR lane\n      https:\/\/claude\.ai\/chat\/a\n      status: attached/);
-  assert.match(plain, /\[2\] DeepSeek\n      https:\/\/chat\.deepseek\.com\/\n      status: not attached/);
+  assert.match(plain, /\[1\] AR lane\n      https:\/\/claude\.ai\/chat\/a\n      status: attached\n      tabId: 20  sessionId: s1  active: true/);
+  assert.match(plain, /\[2\] DeepSeek\n      https:\/\/chat\.deepseek\.com\/\n      status: not attached\n      tabId: 21  sessionId: -  active: false/);
   assert.doesNotMatch(plain, /\[1\] AR lane attached/);
   assert.ok(out.includes(`${LIME}attached${NC}`));
   assert.ok(out.includes(`${GREY}not attached${NC}`));
@@ -110,6 +114,8 @@ test('glider tabs TUI prints status lines (not title suffix)', async (t) => {
   const plain = stripAnsi(result.stdout);
   assert.match(plain, /status: attached/);
   assert.match(plain, /status: not attached/);
+  assert.match(plain, /tabId: 20  sessionId: s1  active: true/);
+  assert.match(plain, /tabId: 21  sessionId: -  active: false/);
   assert.doesNotMatch(plain, /\[1\] AR lane attached/);
 });
 
