@@ -2,7 +2,11 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { formatCatalogTui, LIME, GREY, DIM, YELLOW, GREEN, CURRENT, MAGENTA, NC } = require('../lib/tab-tui.js');
+const { spawnSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { formatCatalogTui, LIME, GREY, OTHER, DIM, YELLOW, GREEN, CURRENT, CYAN, MAGENTA, NC } = require('../lib/tab-tui.js');
 const { createMockRelay, jsonFromStdout, runCli } = require('./helpers.js');
 
 function stripAnsi(s) {
@@ -47,6 +51,13 @@ test('TUI: title, url, status under url; attached lime, not-attached light grey'
   assert.match(plain, /window 1 \[current\]/);
   assert.doesNotMatch(plain, /window 1 \(current\)/);
   assert.ok(out.includes(`${CURRENT}[current]${NC}`));
+  assert.equal(CURRENT, '\x1b[93m');
+  assert.notEqual(CURRENT, CYAN);
+  assert.notEqual(CURRENT, '\x1b[96m');
+  assert.equal(LIME, '\x1b[92m');
+  assert.equal(GREY, '\x1b[97m');
+  assert.match(fs.readFileSync(require.resolve('../lib/tab-tui.js'), 'utf8'), /16-color SGR only/);
+  assert.equal(/\x1b\[38;[52]/.test(out), false);
 });
 
 test('TUI: pin asterisk on active session; discarded token; url fallback title', () => {
@@ -82,7 +93,7 @@ test('TUI: other+incognito window, debugger-only attached, stale', () => {
   }, null);
   const plain = stripAnsi(out);
   assert.match(plain, /window 2 \[other\] \[incognito\]/);
-  assert.ok(out.includes(`${GREY}[other]${NC}`));
+  assert.ok(out.includes(`${OTHER}[other]${NC}`));
   assert.ok(out.includes(`${MAGENTA}[incognito]${NC}`));
   assert.match(plain, /\[1\] secret\n      https:\/\/x\.test\/\n      status: not attached/);
   assert.match(plain, /\[A1\] iframe\n      https:\/\/example\.test\/hidden\n      status: attached/);
@@ -100,6 +111,24 @@ test('glider tabs TUI prints status lines (not title suffix)', async (t) => {
   assert.match(plain, /status: attached/);
   assert.match(plain, /status: not attached/);
   assert.doesNotMatch(plain, /\[1\] AR lane attached/);
+});
+
+test('TUI output passes /tui color-contrast (adjacent SGR, 16-color)', () => {
+  const py = path.join(os.homedir(), '.cursor', 'tools', 'tui', 'color-contrast.py');
+  assert.equal(fs.existsSync(py), true, 'color-contrast.py missing from tui stack');
+  const sample = formatCatalogTui({
+    windows: [
+      { windowId: 1, current: true, tabs: catalog.windows[0].tabs },
+      { windowId: 2, current: false, incognito: true, tabs: [{ title: 'x', url: 'https://x.test/', attached: false }] },
+    ],
+    attached: [],
+    stale: [],
+  }, null);
+  const r = spawnSync('python3', [py, 'audit-text'], {
+    input: sample,
+    encoding: 'utf8',
+  });
+  assert.equal(r.status, 0, r.stderr || r.stdout);
 });
 
 test('glider --json tabs still exposes attached boolean for scripts', async (t) => {
