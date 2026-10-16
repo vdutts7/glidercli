@@ -144,7 +144,7 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 
 ## Tabs
 
-`glider tabs` is the visible Helium rail, not the debugger map. TUI (0.4.22): `[n]` title, URL, then `status: attached` (lime) or `status: not attached` (light grey). Window tag: `[current]` (bright cyan) / `[other]` / `[incognito]`. Debugger-only rows `status: attached`; dropped map rows `status: stale`. Machines: `glider --json tabs` (`attached` boolean on each window tab).
+`glider tabs` is the visible Helium rail, not the debugger map. TUI (0.4.23): `[n]` title, URL, then `status: attached` (bright green) or `status: not attached` (bright white). Window tag: `[current]` (yellow) / `[other]` / `[incognito]`. Colors are 16-color SGR; contrast gated by `$CURTOOLS/tui/color-contrast.py`. Debugger-only rows `status: attached`; dropped map rows `status: stale`. Machines: `glider --json tabs` (`attached` boolean on each window tab).
 
 1. current window `chrome.tabs` (live title/url, including `chrome://newtab`)
 2. other windows
