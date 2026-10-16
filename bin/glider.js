@@ -35,14 +35,14 @@ const { relayPort } = require('../lib/relay-config.js');
 const DEBUG_PORT = process.env.GLIDER_DEBUG_PORT || 9222;
 const DEBUG_URL = `http://127.0.0.1:${DEBUG_PORT}`;
 const LIB_DIR = path.join(__dirname, '..', 'lib');
-const STATE_FILE = '/tmp/glider-state.json';
 const REGISTRY_FILE = path.join(LIB_DIR, 'registry.json');
 
 // Active CDP session (multi-tab). Env or --session / --session-id on CLI.
 let activeSessionId = process.env.GLIDER_SESSION_ID || null;
 let jsonOutput = false;
 let allowedDomainList = null;
-const { configPath, gliderHome } = require(path.join(LIB_DIR, 'paths.js'));
+const { configPath, gliderHome, stateDir, capturesDir, scratchDir } = require(path.join(LIB_DIR, 'paths.js'));
+const STATE_FILE = path.join(stateDir(), 'glider-state.json');
 const { isBrowserInternalUrl, loadBrowserConfig } = require(path.join(LIB_DIR, 'browser-config.js'));
 const GLIDER = gliderHome();
 const LOG_FILE = path.join(GLIDER, 'relay.log');
@@ -1512,7 +1512,7 @@ async function cmdType(selector, text) {
 }
 
 async function cmdScreenshot(outputPath) {
-  const filePath = outputPath || `/tmp/glider-screenshot-${Date.now()}.png`;
+  const filePath = outputPath || path.join(capturesDir(), `glider-screenshot-${Date.now()}.png`);
   
   // Auto-connect if not connected
   if (!await ensureConnected()) {
@@ -3419,11 +3419,11 @@ async function cmdRegistry(patternName, opts = []) {
           params: { expression: 'window.location.hostname', returnByValue: true }
         });
         const hostname = currentUrl?.result?.value?.replace(/^www\./, '').split('.')[0] || 'favicon';
-        outputFile = `/tmp/${hostname}-favicon.webp`;
+        outputFile = path.join(capturesDir(), `${hostname}-favicon.webp`);
       }
 
       // Save and convert
-      const tempFile = `/tmp/favicon-temp-${Date.now()}`;
+      const tempFile = path.join(scratchDir(), `favicon-temp-${Date.now()}`);
       const buffer = Buffer.from(base64, 'base64');
       
       // Detect if ICO
@@ -3500,7 +3500,7 @@ async function cmdExplore(url, opts = []) {
   }
   
   let depth = Infinity;
-  let outputDir = '/tmp/glider-explore';
+  let outputDir = capturesDir('explore');
   let harFile = null;
   let sessionId = null;
   let freshTab = false;
@@ -3942,7 +3942,7 @@ ${YELLOW}TASK FILE FORMAT:${NC}
       - eval: "document.title"
       - click: "button.submit"
       - type: ["#input", "hello"]
-      - screenshot: "/tmp/shot.png"
+      - screenshot: "~/.glider/captures/shot.png"
       - assert: "document.title.includes('Example')"
       - log: "Step done"
 
@@ -5080,7 +5080,7 @@ async function cmdScreenshotV2(argv) {
     pad: { type: 'int', default: 0 },
   });
   assertExclusiveFlags(opts, ['selector', 'clip', 'full-page']);
-  const outPath = opts._[0] || `/tmp/glider-screenshot-${Date.now()}.${opts.format}`;
+  const outPath = opts._[0] || path.join(capturesDir(), `glider-screenshot-${Date.now()}.${opts.format}`);
   if (!await ensureConnected()) process.exit(1);
   const params = { format: opts.format };
   if (opts.selector) {
@@ -5193,7 +5193,7 @@ async function cmdHar(argv) {
     if (jsonOutput) emitJson(true, { stopped: true, pid: st.pid });
     else log.ok(`HAR capture stopped (pid=${st.pid})`);
   } else if (sub === 'dump') {
-    const p = argv[1] || `/tmp/glider-${Date.now()}.har`;
+    const p = argv[1] || path.join(capturesDir(), `glider-${Date.now()}.har`);
     const st = readState();
     if (!st) { log.fail('No HAR capture in progress. Run: glider har start <url>'); process.exit(1); }
     const timeoutMs = 60000;
@@ -5315,7 +5315,7 @@ async function cmdConsole(argv) {
 }
 async function cmdPdf(argv) {
   const opts = parseFlags(argv, { landscape: { type: 'boolean' }, margin: { type: 'float' }, scale: { type: 'float', default: 1.0 } });
-  const outPath = opts._[0] || `/tmp/glider-${Date.now()}.pdf`;
+  const outPath = opts._[0] || path.join(capturesDir(), `glider-${Date.now()}.pdf`);
   await _guardAndConnect('pdf');
   try {
     const params = { landscape: !!opts.landscape, scale: opts.scale, printBackground: true };
