@@ -144,7 +144,7 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 
 ## Tabs
 
-`glider tabs` is the visible Helium rail, not the debugger map.
+`glider tabs` is the visible Helium rail, not the debugger map. TUI (0.4.20): `[n]` title, URL, then `status: attached` (lime) or `status: not attached` (dim). Debugger-only rows `status: attached`; dropped map rows `status: stale`. Machines: `glider --json tabs` (`attached` boolean on each window tab).
 
 1. current window `chrome.tabs` (live title/url, including `chrome://newtab`)
 2. other windows

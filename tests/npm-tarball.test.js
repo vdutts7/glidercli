@@ -51,6 +51,7 @@ test('package whitelist contains the complete consumer plane and excludes mainta
     'lib/relay-config.js',
     'lib/guard.js',
     'lib/paths.js',
+    'lib/tab-tui.js',
     'config/browser.json.example',
   ]) {
     assert.equal(files.has(required), true, `missing ${required}`);

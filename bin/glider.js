@@ -80,6 +80,7 @@ const { resolveDomain } = require(path.join(LIB_DIR, 'domain-resolve.js'));
 const pinMachine = require(path.join(LIB_DIR, 'pin-machine.js'));
 const relayHeal = require(path.join(LIB_DIR, 'relay-heal.js'));
 const { npmIsNewer } = require(path.join(LIB_DIR, 'pkg-update.js'));
+const { formatCatalogTui } = require(path.join(LIB_DIR, 'tab-tui.js'));
 
 // Domain extensions - load from ~/.glider/config/domains.json
 const DOMAIN_CONFIG_PATHS = configPath('domains.json');
@@ -2375,37 +2376,7 @@ async function cmdTabs() {
     emitJson(true, { ...catalog, activeSessionId });
     return;
   }
-  const winCount = catalog.windows.reduce((n, w) => n + (w.tabs || []).length, 0);
-  console.log(`${GREEN}${winCount}${NC} tab(s) in ${catalog.windows.length} window(s)\n`);
-  let n = 0;
-  for (const w of catalog.windows) {
-    const tag = [w.current ? 'current' : 'other', w.incognito ? 'incognito' : null].filter(Boolean).join(', ');
-    console.log(`${CYAN}window ${w.windowId}${NC} ${DIM}(${tag})${NC}`);
-    for (const t of w.tabs || []) {
-      n += 1;
-      const mark = t.sessionId && t.sessionId === activeSessionId ? `${GREEN}*${NC} ` : '  ';
-      const att = t.attached ? `${DIM} attached${NC}` : '';
-      const disc = t.discarded ? `${DIM} discarded${NC}` : '';
-      console.log(`${mark}${CYAN}[${n}]${NC} ${t.title || t.url}${att}${disc}`);
-      console.log(`      ${DIM}${t.url}${NC}`);
-    }
-    console.log();
-  }
-  if ((catalog.attached || []).length) {
-    console.log(`${CYAN}attached${NC} ${DIM}(debugger, not in chrome.tabs)${NC}`);
-    catalog.attached.forEach((t, i) => {
-      console.log(`  ${CYAN}[A${i + 1}]${NC} ${t.title || t.url}`);
-      console.log(`      ${DIM}${t.url}${NC}`);
-    });
-    console.log();
-  }
-  if ((catalog.stale || []).length) {
-    console.log(`${YELLOW}stale${NC} ${DIM}(dropped from map)${NC}`);
-    catalog.stale.forEach((t, i) => {
-      console.log(`  ${CYAN}[S${i + 1}]${NC} ${t.title || t.url}`);
-      console.log(`      ${DIM}${t.url}${NC}`);
-    });
-  }
+  console.log(formatCatalogTui(catalog, activeSessionId));
 }
 
 async function cmdWindow(args) {
@@ -3891,7 +3862,7 @@ ${B5}PAGE INFO${NC}
     ${BW}html${NC} [selector]     Get HTML
     ${BW}title${NC}               Get page title
     ${BW}url${NC}                 Get current URL
-    ${BW}tabs${NC}                chrome.tabs by window (incognito tag), then attached, then stale
+    ${BW}tabs${NC}                chrome.tabs by window; status under URL ${DIM}(--json for agents)${NC}
 
 ${B5}MULTI-WINDOW${NC}
     ${BW}window new${NC} [url]    Create new browser window ${DIM}(closeable)${NC}
