@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { formatCatalogTui, LIME, DIM, YELLOW, GREEN, NC } = require('../lib/tab-tui.js');
+const { formatCatalogTui, LIME, GREY, DIM, YELLOW, GREEN, NC } = require('../lib/tab-tui.js');
 const { createMockRelay, jsonFromStdout, runCli } = require('./helpers.js');
 
 function stripAnsi(s) {
@@ -33,14 +33,17 @@ const catalog = {
   stale: [],
 };
 
-test('TUI: title, url, status under url; attached lime, not-attached dim', () => {
+test('TUI: title, url, status under url; attached lime, not-attached light grey', () => {
   const out = formatCatalogTui(catalog, null);
   const plain = stripAnsi(out);
   assert.match(plain, /\[1\] AR lane\n      https:\/\/claude\.ai\/chat\/a\n      status: attached/);
   assert.match(plain, /\[2\] DeepSeek\n      https:\/\/chat\.deepseek\.com\/\n      status: not attached/);
   assert.doesNotMatch(plain, /\[1\] AR lane attached/);
   assert.ok(out.includes(`${LIME}attached${NC}`));
-  assert.ok(out.includes(`${DIM}not attached${NC}`));
+  assert.ok(out.includes(`${GREY}not attached${NC}`));
+  assert.equal(out.includes(`${DIM}not attached${NC}`), false);
+  assert.ok(out.includes(`${DIM}https://chat.deepseek.com/${NC}`));
+  assert.ok(out.includes(`${DIM}status:${NC}`));
 });
 
 test('TUI: pin asterisk on active session; discarded token; url fallback title', () => {
