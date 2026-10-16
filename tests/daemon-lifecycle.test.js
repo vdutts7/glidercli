@@ -145,7 +145,7 @@ test('daemon rejects an invalid GLIDER_NODE_BIN before starting', () => {
   }
 });
 
-test('direct daemon launch refuses a standalone relay on the same port', async (t) => {
+test('direct daemon launch adopts a live canonical standalone relay on the same port', async (t) => {
   const home = makeTempGliderHome();
   const port = await getFreePort();
   const env = { GLIDER: home, GLIDER_PORT: String(port) };
@@ -157,6 +157,8 @@ test('direct daemon launch refuses a standalone relay on the same port', async (
   let result = await runCli(['--json', 'start'], { env });
   assert.equal(result.code, 0, result.stderr);
 
+  // Same-path bserve already answering /status: reclaim_stale_bserve_if_needed
+  // exits 0 as "canonical relay already up" instead of refusing ownership.
   const daemon = spawnSync('/bin/bash', [DAEMON_PATH], {
     cwd: REPO_ROOT,
     env: {
@@ -167,8 +169,8 @@ test('direct daemon launch refuses a standalone relay on the same port', async (
     encoding: 'utf8',
     timeout: 10000,
   });
-  assert.equal(daemon.status, 1);
-  assert.match(daemon.stderr, /already owned by another process/);
+  assert.equal(daemon.status, 0, daemon.stderr);
+  assert.match(daemon.stderr, /canonical relay already up/);
   assert.equal(fs.existsSync(path.join(home, `daemon-${port}.pid`)), false);
   assert.equal(fs.existsSync(path.join(home, `daemon-${port}.claim`)), false);
 
@@ -230,4 +232,125 @@ test('slow direct daemon handoff keeps a live normalized management lock', async
   assert.equal(record.ready, true);
   assert.equal(record.pid, daemon.pid);
   assert.equal(fs.existsSync(lockFile), false);
+});
+
+function deadPid() {
+  return spawnSync('/usr/bin/true').pid;
+}
+
+function plantClaim(home, port, owner) {
+  const claimDir = path.join(home, `daemon-${port}.claim`);
+  fs.mkdirSync(claimDir);
+  if (owner !== null) fs.writeFileSync(path.join(claimDir, 'owner'), `${owner}\n`);
+  return claimDir;
+}
+
+function plantDeadRecord(home, port, pid) {
+  const pidFile = path.join(home, `daemon-${port}.pid`);
+  fs.writeFileSync(pidFile, `${JSON.stringify({
+    schema: 1,
+    pid,
+    port,
+    entry: fs.realpathSync(DAEMON_PATH),
+    started: 'Thu Jan  1 00:00:00 2000',
+    childPid: null,
+    childEntry: fs.realpathSync(path.join(REPO_ROOT, 'lib', 'bserve.js')),
+    childStarted: null,
+    ready: true,
+  })}\n`);
+  return pidFile;
+}
+
+test('daemon reaps a claim tombstone left by a dead supervisor', async (t) => {
+  const home = makeTempGliderHome();
+  const port = await getFreePort();
+  const pid = deadPid();
+  const claimDir = plantClaim(home, port, `${pid}-1-1`);
+  const pidFile = plantDeadRecord(home, port, pid);
+  const daemon = spawn('/bin/bash', [DAEMON_PATH], {
+    cwd: REPO_ROOT,
+    env: {
+      ...process.env,
+      GLIDER: home,
+      GLIDER_NODE_BIN: process.execPath,
+      GLIDER_PORT: String(port),
+      PATH: '/usr/bin:/bin',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stderr = '';
+  daemon.stderr.on('data', (chunk) => { stderr += chunk; });
+  t.after(async () => {
+    if (daemon.exitCode === null) {
+      daemon.kill('SIGTERM');
+      await new Promise((resolve) => daemon.once('close', resolve));
+    }
+    removeTree(home);
+  });
+
+  await waitForHttp(`http://127.0.0.1:${port}/status`);
+  const record = await waitForRecord(pidFile, (candidate) => candidate.ready === true);
+  assert.equal(record.pid, daemon.pid);
+  assert.match(fs.readFileSync(path.join(claimDir, 'owner'), 'utf8'), new RegExp(`^${daemon.pid}-`));
+  assert.match(stderr, /reaping orphaned supervisor claim/);
+});
+
+test('daemon preserves a claim whose owner is still alive', async (t) => {
+  const home = makeTempGliderHome();
+  const port = await getFreePort();
+  const owner = spawn('/bin/sleep', ['30'], { stdio: 'ignore' });
+  t.after(() => {
+    try { process.kill(owner.pid, 'SIGTERM'); } catch {}
+    removeTree(home);
+  });
+  const claimDir = plantClaim(home, port, `${owner.pid}-1-1`);
+
+  const result = spawnSync('/bin/bash', [DAEMON_PATH], {
+    cwd: REPO_ROOT,
+    env: {
+      ...process.env,
+      GLIDER: home,
+      GLIDER_NODE_BIN: process.execPath,
+      GLIDER_PORT: String(port),
+      PATH: '/usr/bin:/bin',
+    },
+    encoding: 'utf8',
+    timeout: 15000,
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /claim exists without a verified owner/);
+  assert.doesNotMatch(result.stderr, /reaping/);
+  assert.equal(fs.readFileSync(path.join(claimDir, 'owner'), 'utf8').trim(), `${owner.pid}-1-1`);
+});
+
+test('standalone start reaps a dead-supervisor tombstone instead of refusing', async (t) => {
+  const home = makeTempGliderHome();
+  const port = await getFreePort();
+  const env = { GLIDER: home, GLIDER_PORT: String(port) };
+  t.after(async () => {
+    await runCli(['--json', 'stop'], { env }).catch(() => {});
+    removeTree(home);
+  });
+  const pid = deadPid();
+  const claimDir = plantClaim(home, port, `${pid}-1-1`);
+  const pidFile = plantDeadRecord(home, port, pid);
+
+  const result = await runCli(['--json', 'start'], { env });
+  assert.equal(result.code, 0, result.stdout + result.stderr);
+  assert.equal(jsonFromStdout(result.stdout).observation.running, true);
+  assert.equal(fs.existsSync(claimDir), false);
+  assert.equal(fs.existsSync(pidFile), false);
+});
+
+test('standalone start preserves a fresh claim whose owner token is not yet written', async (t) => {
+  const home = makeTempGliderHome();
+  const port = await getFreePort();
+  const env = { GLIDER: home, GLIDER_PORT: String(port) };
+  t.after(() => removeTree(home));
+  const claimDir = plantClaim(home, port, null);
+
+  const result = await runCli(['--json', 'start'], { env });
+  assert.equal(result.code, 1);
+  assert.match(jsonFromStdout(result.stdout).error, /daemon ownership is unverified/);
+  assert.equal(fs.existsSync(claimDir), true);
 });

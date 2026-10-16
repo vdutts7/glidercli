@@ -375,6 +375,55 @@ function inspectDaemonOwnership() {
   return { state: 'unverified', record };
 }
 
+const CLAIM_ORPHAN_GRACE_MS = 5000;
+
+function readClaimOwnerPid(claimDir) {
+  try {
+    const raw = fs.readFileSync(path.join(claimDir, 'owner'), 'utf8').trim();
+    const pid = Number.parseInt(raw.split('-')[0], 10);
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+function claimIsTombstone(claimDir) {
+  const ownerPid = readClaimOwnerPid(claimDir);
+  if (ownerPid !== null) return !getProcessIdentity(ownerPid);
+  // Unreadable owner: a supervisor may be between mkdir and writing its token.
+  try {
+    return Date.now() - fs.statSync(claimDir).mtimeMs >= CLAIM_ORPHAN_GRACE_MS;
+  } catch {
+    return false;
+  }
+}
+
+// Clear daemon lifecycle state left by a supervisor that died without cleanup
+// (crash, SIGKILL, power loss). Callers must first confirm no relay answers on
+// the port. Nothing is removed while the recorded supervisor or the claim owner
+// is alive. Returns true when state was reaped.
+function reapOrphanedDaemonState() {
+  const claimExists = fs.existsSync(DAEMON_CLAIM_DIR);
+  const recordExists = fs.existsSync(DAEMON_PID_FILE);
+  if (!claimExists && !recordExists) return false;
+
+  const record = recordExists ? readDaemonPidRecord(DAEMON_PID_FILE) : null;
+  const identity = record ? getProcessIdentity(record.pid) : null;
+  if (daemonSupervisorMatches(record, identity, DAEMON_ENTRY)) return false;
+  if (claimExists && !claimIsTombstone(DAEMON_CLAIM_DIR)) return false;
+
+  let reaped = false;
+  if (claimExists) {
+    try { fs.rmSync(DAEMON_CLAIM_DIR, { recursive: true, force: true }); reaped = true; } catch {}
+  }
+  if (record) {
+    try { removeDaemonPidRecordIfOwned(DAEMON_PID_FILE, record); reaped = true; } catch {}
+  } else if (recordExists) {
+    try { fs.unlinkSync(DAEMON_PID_FILE); reaped = true; } catch {}
+  }
+  return reaped;
+}
+
 function assertStandaloneRelayAllowed(ownership = inspectDaemonOwnership()) {
   if (ownership.state === 'owned') {
     throw new Error(
@@ -1012,6 +1061,8 @@ async function cmdStart({ render = true } = {}) {
       status = await getRelayStatus();
     } catch {}
 
+    if (!status?.pid) reapOrphanedDaemonState();
+
     const ownership = inspectDaemonOwnership();
     if (status?.pid) {
       if (
@@ -1501,7 +1552,11 @@ async function cmdInstallDaemon() {
   if (legacy.state === 'stale') {
     try { fs.unlinkSync(legacyPidFile); } catch {}
   }
-  
+
+  let preInstallStatus = null;
+  try { preInstallStatus = await getRelayStatus(); } catch {}
+  if (!preInstallStatus?.pid) reapOrphanedDaemonState();
+
   if (fs.existsSync(pidFile)) {
     const record = readDaemonPidRecord(pidFile);
     const identity = record ? getProcessIdentity(record.pid) : null;

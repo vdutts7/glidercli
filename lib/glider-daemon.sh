@@ -34,6 +34,7 @@ PID_FILE="$LOG_DIR/daemon-$PORT.pid"
 CLAIM_DIR="$LOG_DIR/daemon-$PORT.claim"
 MANAGEMENT_LOCK="$LOG_DIR/daemon-$PORT.management.lock"
 MAX_LOG_SIZE=10485760
+CLAIM_ORPHAN_GRACE_SECONDS=5
 child_pid=""
 child_started=""
 relay_ready=0
@@ -271,18 +272,69 @@ relay_owned_by_child() {
   ' "$PORT" "$child_pid"
 }
 
-acquire_claim() {
-  if mkdir "$CLAIM_DIR" 2>/dev/null; then
-    printf '%s\n' "$claim_token" > "$CLAIM_DIR/owner"
-    claim_owned=1
-    return 0
+claim_owner_pid() {
+  # The owner token is "PID-RANDOM-EPOCH"; the leading field is the supervisor PID.
+  owner_raw="$(cat "$CLAIM_DIR/owner" 2>/dev/null)" || return 1
+  owner_pid="${owner_raw%%-*}"
+  case "$owner_pid" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  printf '%s' "$owner_pid"
+}
+
+claim_age_seconds() {
+  "$NODE_BIN" -e '
+    try {
+      const ms = Date.now() - require("fs").statSync(process.argv[1]).mtimeMs;
+      process.stdout.write(String(Math.floor(ms / 1000)));
+    } catch { process.exit(1); }
+  ' "$CLAIM_DIR"
+}
+
+claim_is_orphaned() {
+  # Only a tombstone left by a dead supervisor may be reaped. All must hold:
+  #   1. no live supervisor matches the pid record,
+  #   2. the claim owner PID is dead; an unreadable owner (a supervisor between
+  #      mkdir and writing its token) counts only after a grace period,
+  #   3. nothing is answering on the relay port.
+  record_matches_supervisor >/dev/null 2>&1 && return 1
+  if owner_pid="$(claim_owner_pid)"; then
+    kill -0 "$owner_pid" 2>/dev/null && return 1
+  else
+    age="$(claim_age_seconds)" || return 1
+    [ "$age" -ge "$CLAIM_ORPHAN_GRACE_SECONDS" ] || return 1
   fi
+  relay_is_running && return 1
+  return 0
+}
+
+reap_orphaned_claim() {
+  echo "glider-daemon: reaping orphaned supervisor claim: $CLAIM_DIR" >&2
+  rm -f "$CLAIM_DIR/owner" 2>/dev/null || true
+  rmdir "$CLAIM_DIR" 2>/dev/null || true
+  if [ -f "$PID_FILE" ] && ! record_matches_supervisor >/dev/null 2>&1; then
+    rm -f "$PID_FILE"
+  fi
+}
+
+try_take_claim() {
+  mkdir "$CLAIM_DIR" 2>/dev/null || return 1
+  printf '%s\n' "$claim_token" > "$CLAIM_DIR/owner"
+  claim_owned=1
+}
+
+acquire_claim() {
+  try_take_claim && return 0
   i=0
   while [ "$i" -lt 20 ]; do
     existing_pid="$(record_matches_supervisor 2>/dev/null)" && {
       echo "glider-daemon: already running as PID $existing_pid on port $PORT" >&2
       exit 0
     }
+    if claim_is_orphaned; then
+      reap_orphaned_claim
+    fi
+    try_take_claim && return 0
     sleep 0.1
     i=$((i + 1))
   done

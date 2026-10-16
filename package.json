@@ -1,6 +1,6 @@
 {
   "name": "glidercli",
-  "version": "0.4.14",
+  "version": "0.4.15",
   "description": "Browser automation CLI. Control a configured Chromium browser through an extension CDP relay, run YAML tasks, and execute bounded autonomous loops.",
   "bin": {
     "glider": "bin/glider.js"
@@ -13,7 +13,7 @@
     "test:pack": "node --test tests/npm-tarball.test.js",
     "test:smoke": "node tests/live-browser.smoke.js",
     "test:live": "node tests/live-browser.smoke.js",
-    "prepublishOnly": "npm run test:syntax && npm test"
+    "prepublishOnly": "node --check bin/glider.js && node --check lib/bserve.js && node --test tests/*.test.js"
   },
   "keywords": [
     "browser",

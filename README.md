@@ -147,6 +147,7 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 |---------|-----|-----------|-----|
 | extension not connected | install/enable [`Glider` on Chrome Web Store](https://chromewebstore.google.com/detail/glider/njbidokkffhgpofcejgcfcgcinmeoalj) in selected browser profile; click Glider icon, then run `glider connect` | per browser launch | relay waits on extension WS |
 | extension socket up but worker dead | click Glider icon or `glider reload` | MV3 worker | status refuses healthy until pong |
+| daemon / `glider start` refuses after a killed supervisor | run `glider start` or `glider install` again (0.4.15+ reaps dead claim tombstones when nothing listens) | session-stable | crash/SIGKILL left `daemon-*.claim` without a live owner |
 | custom relay port has no extension | stay on `19988` with Chrome Web Store build | install-stable | published extension connects to `ws://localhost:19988/extension` |
 | wrong tab targeted | `glider targets` → `glider use-session session-6` | session-stable | multi-tab needs explicit session |
 | explore HAR empty bodies | replay in-tab with auth hook on XHR/fetch | site-specific | some SPAs never expose bearer in storage |
@@ -183,9 +184,9 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 ## Verification
 
 ```bash
-npm test                 # unit, CLI regression, relay integration, tarball boundary
-npm run test:live        # isolated live-browser fixture against the connected extension
-npm run test:syntax      # package JavaScript syntax gate
+node --check bin/glider.js && node --check lib/bserve.js
+node --test tests/*.test.js
+node tests/live-browser.smoke.js  # isolated live-browser fixture
 ```
 
 Live smoke creates + closes its own browser window.
