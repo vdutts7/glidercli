@@ -195,6 +195,18 @@ test('superseded extension close cannot clear the replacement connection', async
     first.once('open', resolve);
     first.once('error', reject);
   });
+  first.send(JSON.stringify({
+    method: 'forwardCDPEvent',
+    params: {
+      method: 'Target.attachedToTarget',
+      params: {
+        sessionId: 'old-session',
+        tabId: 1,
+        targetInfo: { targetId: 'old-target', type: 'page', title: 'Old', url: 'http://fixture.test/old', tabId: 1 },
+      },
+    },
+  }));
+  await waitForJson(`http://127.0.0.1:${port}/status`, (status) => status.targets === 1);
   const firstClosed = new Promise((resolve) => first.once('close', resolve));
   const firstClient = new WebSocket(`ws://127.0.0.1:${port}/cdp/same-client`);
   await new Promise((resolve, reject) => {
@@ -222,6 +234,7 @@ test('superseded extension close cannot clear the replacement connection', async
   let response = await requestJson(`http://127.0.0.1:${port}/status`);
   assert.equal(response.body.extension, true, relayStderr);
   assert.equal(response.body.extensionGeneration, 2);
+  assert.equal(response.body.targets, 0);
   assert.equal(response.body.clients, 1);
   assert.equal(replacementClient.readyState, WebSocket.OPEN);
 
@@ -326,6 +339,29 @@ test('relay retains targets during reconnect grace and serves CDP after reconnec
     extension.once('error', reject);
   });
   wireExtension(extension);
+
+  response = await requestJson(`http://127.0.0.1:${port}/status`);
+  assert.equal(response.body.targets, 0);
+
+  extension.send(JSON.stringify({
+    method: 'forwardCDPEvent',
+    params: {
+      method: 'Target.attachedToTarget',
+      params: {
+        sessionId: 'session-grace',
+        tabId: 7,
+        targetInfo: {
+          targetId: 'target-grace',
+          type: 'page',
+          title: 'Grace',
+          url: 'http://fixture.test/grace',
+          tabId: 7,
+        },
+      },
+      sessionId: 'session-grace',
+    },
+  }));
+  await waitForJson(`http://127.0.0.1:${port}/status`, (status) => status.targets === 1);
 
   response = await requestJson(`http://127.0.0.1:${port}/cdp`, {
     method: 'POST',

@@ -2212,26 +2212,66 @@ async function cmdHeal(args = []) {
 }
 
 async function cmdTabs() {
-  const targets = await getTargets();
-  const part = pinMachine.partition(targets);
-  if (jsonOutput) {
-    emitJson(true, { pages: part.pages, iframes: part.iframes, other: part.other, activeSessionId });
-    return;
+  let catalog = null;
+  try {
+    catalog = await httpGet('/catalog');
+  } catch {
+    catalog = null;
   }
-  if (part.pages.length === 0) {
-    log.warn('No page targets');
-    return;
-  }
-  console.log(`${GREEN}${part.pages.length}${NC} page(s) connected:\n`);
-  part.pages.forEach((t, i) => {
-    const mark = t.sessionId === activeSessionId ? `${GREEN}*${NC} ` : '  ';
-    console.log(`${mark}${CYAN}[${i + 1}]${NC} ${t.title || t.url}`);
-    console.log(`      ${DIM}${t.url}${NC}`);
-    const kids = part.iframes.filter((fr) => fr.parent_targetId === t.targetId);
-    for (const fr of kids) {
-      console.log(`      ${DIM}iframe${NC}  ${fr.url}`);
+  if (!catalog || catalog.error || !Array.isArray(catalog.windows)) {
+    const targets = await getTargets();
+    const part = pinMachine.partition(targets);
+    if (jsonOutput) {
+      emitJson(true, { pages: part.pages, iframes: part.iframes, other: part.other, activeSessionId, fallback: 'targets' });
+      return;
     }
-  });
+    if (part.pages.length === 0) {
+      log.warn('No page targets');
+      return;
+    }
+    console.log(`${GREEN}${part.pages.length}${NC} page(s) connected (catalog unavailable):\n`);
+    part.pages.forEach((t, i) => {
+      const mark = t.sessionId === activeSessionId ? `${GREEN}*${NC} ` : '  ';
+      console.log(`${mark}${CYAN}[${i + 1}]${NC} ${t.title || t.url}`);
+      console.log(`      ${DIM}${t.url}${NC}`);
+    });
+    return;
+  }
+  if (jsonOutput) {
+    emitJson(true, { ...catalog, activeSessionId });
+    return;
+  }
+  const winCount = catalog.windows.reduce((n, w) => n + (w.tabs || []).length, 0);
+  console.log(`${GREEN}${winCount}${NC} tab(s) in ${catalog.windows.length} window(s)\n`);
+  let n = 0;
+  for (const w of catalog.windows) {
+    const tag = w.current ? 'current' : 'other';
+    console.log(`${CYAN}window ${w.windowId}${NC} ${DIM}(${tag})${NC}`);
+    for (const t of w.tabs || []) {
+      n += 1;
+      const mark = t.sessionId && t.sessionId === activeSessionId ? `${GREEN}*${NC} ` : '  ';
+      const att = t.attached ? `${DIM} attached${NC}` : '';
+      const disc = t.discarded ? `${DIM} discarded${NC}` : '';
+      console.log(`${mark}${CYAN}[${n}]${NC} ${t.title || t.url}${att}${disc}`);
+      console.log(`      ${DIM}${t.url}${NC}`);
+    }
+    console.log();
+  }
+  if ((catalog.attached || []).length) {
+    console.log(`${CYAN}attached${NC} ${DIM}(debugger, not in chrome.tabs)${NC}`);
+    catalog.attached.forEach((t, i) => {
+      console.log(`  ${CYAN}[A${i + 1}]${NC} ${t.title || t.url}`);
+      console.log(`      ${DIM}${t.url}${NC}`);
+    });
+    console.log();
+  }
+  if ((catalog.stale || []).length) {
+    console.log(`${YELLOW}stale${NC} ${DIM}(dropped from map)${NC}`);
+    catalog.stale.forEach((t, i) => {
+      console.log(`  ${CYAN}[S${i + 1}]${NC} ${t.title || t.url}`);
+      console.log(`      ${DIM}${t.url}${NC}`);
+    });
+  }
 }
 
 async function cmdWindow(args) {
