@@ -2866,7 +2866,7 @@ async function cmdUseSession(arg, opts = []) {
     iframe: parsed.iframe || wantIframe,
   };
   let requestedSession = '';
-  if (chainArmed() || handle || parsed.window || parsed.tab || parsed.session || parsed.handle || parsed.index
+  if (chainArmed() || handle || chain.sessionId || parsed.window || parsed.tab || parsed.session || parsed.handle || parsed.index
     || parsed.target || parsed.context || parsed.current || parsed.incognito || parsed.iframe) {
     const hit = tabMap.resolveChain(chain);
     if (hit.row) {
