@@ -37,9 +37,38 @@ const DEBUG_URL = `http://127.0.0.1:${DEBUG_PORT}`;
 const LIB_DIR = path.join(__dirname, '..', 'lib');
 const REGISTRY_FILE = path.join(LIB_DIR, 'registry.json');
 
-// Active CDP session (multi-tab). Env or --session / --session-id on CLI.
+// Active CDP session (multi-tab). Env or window>index>tab>handle>target>session chain.
 let activeSessionId = process.env.GLIDER_SESSION_ID || null;
+let wantCurrent = false;
+let wantIncognito = false;
+let wantIframe = false;
+let wantWindowId = null;
+let wantIndex = null;
+let wantHandle = null;
 let wantTabId = null;
+let wantTargetId = null;
+let wantSessionId = null;
+let wantContextId = null;
+
+function chainOpts() {
+  return {
+    current: wantCurrent,
+    incognito: wantIncognito,
+    windowId: wantWindowId,
+    index: wantIndex,
+    handle: wantHandle,
+    tabId: wantTabId,
+    targetId: wantTargetId,
+    sessionId: wantSessionId,
+    browserContextId: wantContextId,
+    iframe: wantIframe,
+  };
+}
+
+function chainArmed() {
+  return !!(wantCurrent || wantIncognito || wantIframe || wantWindowId || wantIndex
+    || wantHandle || wantTabId || wantTargetId || wantSessionId || wantContextId);
+}
 let jsonOutput = false;
 let allowedDomainList = null;
 const { configPath, gliderHome, stateDir, capturesDir, scratchDir } = require(path.join(LIB_DIR, 'paths.js'));
@@ -530,6 +559,7 @@ function httpGet(urlPath) {
 
 function loadPersistedSession() {
   if (activeSessionId) return;
+  if (chainArmed()) return;
   const pin = readPinStore();
   if (pin.sessionId) activeSessionId = pin.sessionId;
 }
@@ -622,24 +652,60 @@ function parseGlobalFlags(argv) {
   const cliDomains = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    const equals = a.match(/^(--(?:session|session-id|tab|allowed-domains))=(.*)$/);
+    const equals = a.match(/^(--(?:session|session-id|window|tab|handle|index|target|context|allowed-domains))=(.*)$/);
     if (equals) {
       if (equals[2] === '') throw new Error(`${equals[1]} requires a value`);
       if (equals[1] === '--allowed-domains') {
         cliDomains.push(...equals[2].split(',').map((s) => s.trim()).filter(Boolean));
+      } else if (equals[1] === '--window') {
+        wantWindowId = equals[2];
       } else if (equals[1] === '--tab') {
         wantTabId = equals[2];
+      } else if (equals[1] === '--handle') {
+        wantHandle = equals[2];
+      } else if (equals[1] === '--index') {
+        wantIndex = equals[2];
+      } else if (equals[1] === '--target') {
+        wantTargetId = equals[2];
+      } else if (equals[1] === '--context') {
+        wantContextId = equals[2];
       } else {
-        activeSessionId = equals[2];
+        wantSessionId = equals[2];
       }
     } else if (a === '--session' || a === '--session-id') {
       const value = argv[i + 1];
       if (!value || value.startsWith('-')) throw new Error(`${a} requires a value`);
-      activeSessionId = argv[++i];
+      wantSessionId = argv[++i];
+    } else if (a === '--window') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('-')) throw new Error(`${a} requires a value`);
+      wantWindowId = argv[++i];
     } else if (a === '--tab') {
       const value = argv[i + 1];
       if (!value || value.startsWith('-')) throw new Error(`${a} requires a value`);
       wantTabId = argv[++i];
+    } else if (a === '--handle') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('-')) throw new Error(`${a} requires a value`);
+      wantHandle = argv[++i];
+    } else if (a === '--index') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('-')) throw new Error(`${a} requires a value`);
+      wantIndex = argv[++i];
+    } else if (a === '--target') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('-')) throw new Error(`${a} requires a value`);
+      wantTargetId = argv[++i];
+    } else if (a === '--context') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('-')) throw new Error(`${a} requires a value`);
+      wantContextId = argv[++i];
+    } else if (a === '--current') {
+      wantCurrent = true;
+    } else if (a === '--incognito') {
+      wantIncognito = true;
+    } else if (a === '--iframe') {
+      wantIframe = true;
     } else if (a === '--json') {
       jsonOutput = true;
     } else if (a === '--allowed-domains') {
@@ -651,9 +717,16 @@ function parseGlobalFlags(argv) {
     }
   }
   allowedDomainList = resolveAllowedDomains(cliDomains);
-  if (wantTabId && !activeSessionId) {
-    const hit = tabMap.resolveRef({ tabId: wantTabId });
-    if (hit.row && hit.row.sessionId) activeSessionId = hit.row.sessionId;
+  if (wantSessionId) activeSessionId = wantSessionId;
+  if (chainArmed()) {
+    const hit = tabMap.resolveChain(chainOpts());
+    if (hit.row) {
+      activeSessionId = hit.row.sessionId || null;
+    } else if (wantSessionId && !wantWindowId && !wantTabId && !wantHandle && !wantTargetId && !wantIndex && !wantCurrent && !wantIncognito && !wantIframe && !wantContextId) {
+      activeSessionId = wantSessionId;
+    } else if (hit.error && hit.error !== 'empty' && hit.error !== 'ambiguous') {
+      throw new Error(`no tab-map row for ${hit.via} (${hit.error}); run glider tabs`);
+    }
   }
   return rest;
 }
@@ -2666,46 +2739,53 @@ async function cmdUseSession(arg, opts = []) {
   const argv = [arg, ...opts].filter((value) => value !== undefined);
   const parsed = parseFlags(argv, {
     url: { type: 'string' },
+    window: { type: 'string' },
     tab: { type: 'string' },
     session: { type: 'string' },
+    handle: { type: 'string' },
+    index: { type: 'string' },
+    target: { type: 'string' },
+    context: { type: 'string' },
+    current: { type: 'boolean' },
+    incognito: { type: 'boolean' },
+    iframe: { type: 'boolean' },
   });
   const token = parsed._[0] || null;
-  let requestedSession = parsed.session || '';
-  if (parsed.tab) {
-    const hit = tabMap.resolveRef({ tabId: parsed.tab });
-    if (!hit.row) {
-      const message = `no tab map row for --tab ${parsed.tab} (run glider tabs)`;
-      if (jsonOutput) emitJson(false, null, message);
-      log.fail(message);
-      process.exit(1);
-    }
-    if (!hit.row.sessionId) {
-      const message = `tabId ${parsed.tab} is not attached`;
-      if (jsonOutput) emitJson(false, hit.row, message);
-      log.fail(message);
-      process.exit(1);
-    }
-    requestedSession = hit.row.sessionId;
-  }
-  if (!requestedSession && token && tabMap.lookslikeHandle(token)) {
-    const hit = tabMap.resolveRef({ handle: token });
+  const handle = parsed.handle || wantHandle || (token && tabMap.lookslikeHandle(token) ? token : null);
+  const sessionFromPos = token && !tabMap.lookslikeHandle(token) ? token : '';
+  const windowId = parsed.window || wantWindowId;
+  const tabId = parsed.tab || wantTabId;
+  const sessionId = parsed.session || sessionFromPos || wantSessionId;
+  const index = parsed.index || wantIndex;
+  const targetId = parsed.target || wantTargetId;
+  const browserContextId = parsed.context || wantContextId;
+  const current = parsed.current || wantCurrent;
+  const incognito = parsed.incognito || wantIncognito;
+  const iframe = parsed.iframe || wantIframe;
+  let requestedSession = '';
+  if (windowId || handle || tabId || sessionId || index || targetId || browserContextId || current || incognito || iframe) {
+    const hit = tabMap.resolveChain({
+      current, incognito, windowId, index, handle, tabId, targetId, sessionId, browserContextId, iframe,
+    });
     if (hit.row) {
       if (!hit.row.sessionId) {
-        const message = `handle ${token} is not attached`;
+        const message = `not attached (${hit.via || 'ref'})`;
         if (jsonOutput) emitJson(false, hit.row, message);
         log.fail(message);
         process.exit(1);
       }
       requestedSession = hit.row.sessionId;
+    } else if (sessionId && !windowId && !handle && !tabId && !index && !targetId && !browserContextId && !current && !incognito && !iframe) {
+      requestedSession = sessionId;
+    } else {
+      const message = `no tab-map row for ${hit.via || 'ref'} (${hit.error || 'empty'}); run glider tabs`;
+      if (jsonOutput) emitJson(false, null, message);
+      log.fail(message);
+      process.exit(1);
     }
   }
-  if (!requestedSession && token) requestedSession = token;
-  if (!requestedSession && wantTabId) {
-    const hit = tabMap.resolveRef({ tabId: wantTabId });
-    if (hit.row && hit.row.sessionId) requestedSession = hit.row.sessionId;
-  }
   if (!requestedSession && !parsed.url) {
-    log.fail('Usage: glider use <n|sessionId> | glider use --tab <tabId> | glider use-session --url <host-fragment>');
+    log.fail('Usage: glider [--current] [--incognito] [--window W] [--index N] [--handle n] [--tab T] [--target id] [--session S] [--iframe] use');
     process.exit(1);
   }
   const raw = await httpGet('/targets');
@@ -3881,7 +3961,7 @@ function showHelp() {
   showBanner();
   console.log(`
 ${B5}USAGE${NC}
-    glider [--session <id>] [--tab <tabId>] [--json] [--allowed-domains 'host,*'] <command> [args]
+    glider [--current] [--incognito] [--window <id>] [--index N] [--handle n] [--tab <tabId>] [--target id] [--session <id>] [--iframe] [--json] [--allowed-domains 'host,*'] <command> [args]
     ${DIM}GLIDER_SESSION_ID=session-N${NC}  ${DIM}pin tab for all /cdp commands${NC}
 
 ${B5}SETUP${NC}
@@ -3925,7 +4005,7 @@ ${B5}MULTI-WINDOW${NC}
 
 ${B5}MULTI-TAB${NC}
     ${BW}targets${NC}             List targets ${DIM}(sessionId, title, url)${NC}
-    ${BW}use${NC} / ${BW}use-session${NC}  Pin by TUI handle, --tab, sessionId, or --url
+    ${BW}use${NC} / ${BW}use-session${NC}  Pin window→tab→session (handle n, --url)
     ${BW}fetch${NC} <url>         Fetch URL with browser session ${DIM}(auth)${NC}
     ${BW}spawn${NC} <urls...>     Open multiple tabs
     ${BW}extract${NC} [opts]      Extract from all tabs
