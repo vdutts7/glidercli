@@ -2785,7 +2785,7 @@ async function cmdUseSession(arg, opts = []) {
     }
   }
   if (!requestedSession && !parsed.url) {
-    log.fail('Usage: glider [--current] [--incognito] [--window W] [--index N] [--handle n] [--tab T] [--target id] [--session S] [--iframe] use');
+    log.fail('Usage: glider [--current] [--incognito] [--window W] [--index N] [--handle n] [--tab T] [--target id] [--session S] [--iframe] pin');
     process.exit(1);
   }
   const raw = await httpGet('/targets');
@@ -5583,7 +5583,7 @@ async function main() {
     case 'targets':
       await cmdTargets();
       break;
-    case 'use':
+    case 'pin':
     case 'use-session':
       await cmdUseSessionV2(args[1], args.slice(2));
       break;

@@ -15,12 +15,23 @@ const ID = [96];
 const URL = [94];
 const LIME = [92];
 const WHITE = [97];
+const VALUE = [33];
 const CURRENT = [93];
 const OTHER = [90];
 const INCOGNITO = [95];
 const COUNT = [32];
 const STALE = [33];
-const FIELD = new Set(['window', 'status:', 'tabId:', 'active:', 'sessionId:']);
+const FIELD = new Set([
+  'window', 'windowId:', 'current:', 'focused:', 'incognito:', 'incognitoSource:',
+  'type:', 'state:', 'alwaysOnTop:', 'handle:', 'kind:', 'index:', 'tabId:', 'title:', 'url:',
+  'status:', 'load:', 'active:', 'highlighted:', 'pinned:', 'discarded:',
+  'attached:', 'audible:', 'muted:', 'mutedReason:', 'mutedExtensionId:', 'autoDiscardable:', 'groupId:',
+  'openerTabId:', 'pendingUrl:', 'favIconUrl:', 'frozen:', 'lastAccessed:',
+  'width:', 'height:', 'left:', 'top:', 'chromeSessionId:', 'successorTabId:', 'splitViewId:',
+  'selected:', 'sessionId:', 'targetId:', 'targetType:', 'subtype:', 'browserContextId:',
+  'openerId:', 'openerFrameId:', 'parentFrameId:', 'canAccessOpener:', 'cdpAttached:',
+  'parent_sessionId:', 'parent_targetId:', 'reason:',
+]);
 
 const catalog = {
   windows: [
@@ -113,15 +124,13 @@ function assertRoles(ansi, where) {
       if (sp.text === '[current]') assert.ok(eq(sp.sgr, CURRENT), `${where}: [current] ${sp.sgr}`);
       if (sp.text === '[other]') assert.ok(eq(sp.sgr, OTHER), `${where}: [other] ${sp.sgr}`);
       if (sp.text === '[incognito]') assert.ok(eq(sp.sgr, INCOGNITO), `${where}: [incognito] ${sp.sgr}`);
-      if (sp.text === 'attached') assert.ok(eq(sp.sgr, LIME), `${where}: attached ${sp.sgr}`);
-      if (sp.text === 'not attached') assert.ok(eq(sp.sgr, WHITE), `${where}: not attached ${sp.sgr}`);
-      if (sp.text === 'stale' && !sp.text.includes('dropped')) {
-        /* section header or status value */
-        assert.ok(eq(sp.sgr, STALE) || eq(sp.sgr, LABEL), `${where}: stale ${sp.sgr}`);
+      if (sp.text === 'not attached') assert.ok(eq(sp.sgr, VALUE), `${where}: not attached ${sp.sgr}`);
+      if (sp.text === 'true') {
+        const ok = eq(sp.sgr, LIME) || eq(sp.sgr, CURRENT) || eq(sp.sgr, INCOGNITO);
+        assert.ok(ok, `${where}: true sgr=${sp.sgr}`);
       }
-      if (sp.text === 'true') assert.ok(eq(sp.sgr, LIME), `${where}: active true ${sp.sgr}`);
-      if (sp.text === 'false') assert.ok(eq(sp.sgr, WHITE), `${where}: active false ${sp.sgr}`);
-      if (/^\[\d+\]$/.test(sp.text) || /^\[A\d+\]$/.test(sp.text) || /^\[S\d+\]$/.test(sp.text)) {
+      if (sp.text === 'false') assert.ok(eq(sp.sgr, VALUE), `${where}: false ${sp.sgr}`);
+      if (/^\[\d+\]$/.test(sp.text) || /^\[A\d+\]$/.test(sp.text) || /^\[S\d+\]$/.test(sp.text) || /^\[I\d+\]$/.test(sp.text) || /^\[O\d+\]$/.test(sp.text)) {
         assert.ok(eq(sp.sgr, ID), `${where}: index ${sp.text} ${sp.sgr}`);
       }
       if (/^\d+$/.test(sp.text) && sp.text.length >= 1) {
@@ -132,7 +141,12 @@ function assertRoles(ansi, where) {
     }
   }
   assert.ok(sawUrl >= 3, `${where}: expected URL values, got ${sawUrl}`);
-  assert.ok(sawLabel >= 6, `${where}: expected field labels, got ${sawLabel}`);
+  assert.ok(sawLabel >= 20, `${where}: expected field labels, got ${sawLabel}`);
+  const plain = ansi.replace(/\x1b\[[0-9;]*m/g, '');
+  for (const line of plain.split('\n')) {
+    const keys = line.match(/(?:^|\s)(?:windowId|current|focused|incognito|incognitoSource|type|state|alwaysOnTop|handle|kind|index|tabId|title|url|status|load|active|highlighted|pinned|discarded|attached|audible|muted|mutedReason|mutedExtensionId|autoDiscardable|groupId|openerTabId|pendingUrl|favIconUrl|frozen|lastAccessed|width|height|left|top|chromeSessionId|successorTabId|splitViewId|selected|sessionId|targetId|targetType|subtype|browserContextId|openerId|openerFrameId|parentFrameId|canAccessOpener|cdpAttached|parent_sessionId|parent_targetId|reason):/g);
+    assert.ok(!keys || keys.length <= 1, `${where}: packed fields: ${line}`);
+  }
 }
 
 function contrast(ansi) {
@@ -146,11 +160,10 @@ test('regression: formatCatalogTui field vs value SGR (screenshot catalog)', () 
   const ansi = formatCatalogTui(catalog, 'session-33');
   assertRoles(ansi, 'formatCatalogTui');
   contrast(ansi);
-  const win = ansi.split('\n').find((l) => l.includes('100387398'));
-  const winSpans = spans(win);
-  assert.ok(eq(winSpans[0].sgr, LABEL) && winSpans[0].text === 'window');
+  const winId = ansi.split('\n').find((l) => /windowId:/.test(l) && l.includes('100387398'));
+  const winSpans = spans(winId);
+  assert.ok(eq(winSpans[0].sgr, LABEL) && winSpans[0].text === 'windowId:');
   assert.ok(eq(winSpans[1].sgr, ID) && winSpans[1].text === '100387398');
-  assert.notEqual(JSON.stringify(winSpans[0].sgr), JSON.stringify(winSpans[1].sgr));
 });
 
 test('regression: glider tabs CLI SGR matches formatCatalogTui', async (t) => {

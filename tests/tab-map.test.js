@@ -38,7 +38,7 @@ test('map handles 1..n then A then S', () => {
   assert.equal(lookslikeHandle('I1'), true);
 });
 
-test('glider tabs writes map; glider use 1 pins that session', async (t) => {
+test('glider tabs writes map; glider pin 1 pins that session', async (t) => {
   const home = makeTempGliderHome();
   t.after(() => removeTree(home));
   const relay = await createMockRelay({
@@ -55,7 +55,7 @@ test('glider tabs writes map; glider use 1 pins that session', async (t) => {
   assert.equal(listed.code, 0, listed.stderr);
   const saved = JSON.parse(fs.readFileSync(path.join(home, 'state', 'tab-map.json'), 'utf8'));
   assert.equal(saved.handles['1'].sessionId, 's1');
-  const used = await runCli(['--json', 'use', '1'], { env });
+  const used = await runCli(['--json', 'pin', '1'], { env });
   assert.equal(used.code, 0, used.stderr);
   const body = jsonFromStdout(used.stdout);
   assert.equal(body.ok, true);
@@ -117,7 +117,7 @@ test('resolveChain current/incognito/index/target/iframe', () => {
   assert.equal(resolveChain({ browserContextId: 'ctx-1', map }).via, 'context');
 });
 
-test('glider use --tab 20 pins by chrome tabId', async (t) => {
+test('glider pin --tab 20 pins by chrome tabId', async (t) => {
   const home = makeTempGliderHome();
   t.after(() => removeTree(home));
   const relay = await createMockRelay({
@@ -131,7 +131,7 @@ test('glider use --tab 20 pins by chrome tabId', async (t) => {
   t.after(() => relay.close());
   const env = { GLIDER: home, GLIDER_PORT: String(relay.port) };
   await runCli(['tabs'], { env });
-  const used = await runCli(['--json', 'use', '--tab', '20'], { env });
+  const used = await runCli(['--json', '--tab', '20', 'pin'], { env });
   assert.equal(used.code, 0, used.stderr);
   assert.equal(jsonFromStdout(used.stdout).observation.sessionId, 's1');
 });
@@ -170,10 +170,10 @@ test('glider --window --tab chain pins; mismatch fails', async (t) => {
   t.after(() => relay.close());
   const env = { GLIDER: home, GLIDER_PORT: String(relay.port) };
   await runCli(['tabs'], { env });
-  const used = await runCli(['--json', '--window', '1', '--tab', '20', 'use'], { env });
+  const used = await runCli(['--json', '--window', '1', '--tab', '20', 'pin'], { env });
   assert.equal(used.code, 0, used.stderr);
   assert.equal(jsonFromStdout(used.stdout).observation.sessionId, 's1');
-  const bad = await runCli(['--json', '--window', '2', '--tab', '20', 'use'], { env });
+  const bad = await runCli(['--json', '--window', '2', '--tab', '20', 'pin'], { env });
   assert.notEqual(bad.code, 0);
 });
 
