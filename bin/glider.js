@@ -49,6 +49,17 @@ let wantTabId = null;
 let wantTargetId = null;
 let wantSessionId = null;
 let wantContextId = null;
+let wantActive = false;
+let wantAttached = false;
+let wantDiscarded = false;
+let wantHighlighted = false;
+let wantPinned = false;
+let wantStatus = null;
+let wantTitle = null;
+let wantFocusedWindowId = null;
+let wantOpenerTabId = null;
+let wantGroupId = null;
+let wantCookieStoreId = null;
 
 function chainOpts() {
   return {
@@ -62,12 +73,41 @@ function chainOpts() {
     sessionId: wantSessionId,
     browserContextId: wantContextId,
     iframe: wantIframe,
+    active: wantActive,
+    attached: wantAttached,
+    discarded: wantDiscarded,
+    highlighted: wantHighlighted,
+    pinned: wantPinned,
+    status: wantStatus,
+    title: wantTitle,
+    focusedWindowId: wantFocusedWindowId,
+    openerTabId: wantOpenerTabId,
+    groupId: wantGroupId,
+    cookieStoreId: wantCookieStoreId,
   };
 }
 
 function chainArmed() {
-  return !!(wantCurrent || wantIncognito || wantIframe || wantWindowId || wantIndex
-    || wantHandle || wantTabId || wantTargetId || wantSessionId || wantContextId);
+  const o = chainOpts();
+  return !!(o.current || o.incognito || o.iframe || o.windowId || o.index
+    || o.handle || o.tabId || o.targetId || o.sessionId || o.browserContextId
+    || o.active || o.attached || o.discarded || o.highlighted || o.pinned
+    || o.status || o.title || o.focusedWindowId || o.openerTabId || o.groupId || o.cookieStoreId);
+}
+
+function chainOnlySessionId() {
+  if (!wantSessionId) return false;
+  return chainOnlySessionIdMerged({ ...chainOpts(), sessionId: wantSessionId });
+}
+
+function chainOnlySessionIdMerged(chain) {
+  if (!chain || !chain.sessionId) return false;
+  return !(
+    chain.current || chain.incognito || chain.iframe || chain.windowId || chain.index
+    || chain.handle || chain.tabId || chain.targetId || chain.browserContextId
+    || chain.active || chain.attached || chain.discarded || chain.highlighted || chain.pinned
+    || chain.status || chain.title || chain.focusedWindowId || chain.openerTabId || chain.groupId || chain.cookieStoreId
+  );
 }
 let jsonOutput = false;
 let allowedDomainList = null;
@@ -652,7 +692,7 @@ function parseGlobalFlags(argv) {
   const cliDomains = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    const equals = a.match(/^(--(?:session|session-id|window|tab|handle|index|target|context|allowed-domains))=(.*)$/);
+    const equals = a.match(/^(--(?:session|session-id|window|tab|handle|index|target|context|browserContextId|focusedWindowId|openerTabId|groupId|cookieStoreId|status|title|allowed-domains))=(.*)$/);
     if (equals) {
       if (equals[2] === '') throw new Error(`${equals[1]} requires a value`);
       if (equals[1] === '--allowed-domains') {
@@ -667,8 +707,20 @@ function parseGlobalFlags(argv) {
         wantIndex = equals[2];
       } else if (equals[1] === '--target') {
         wantTargetId = equals[2];
-      } else if (equals[1] === '--context') {
+      } else if (equals[1] === '--context' || equals[1] === '--browserContextId') {
         wantContextId = equals[2];
+      } else if (equals[1] === '--focusedWindowId') {
+        wantFocusedWindowId = equals[2];
+      } else if (equals[1] === '--openerTabId') {
+        wantOpenerTabId = equals[2];
+      } else if (equals[1] === '--groupId') {
+        wantGroupId = equals[2];
+      } else if (equals[1] === '--cookieStoreId') {
+        wantCookieStoreId = equals[2];
+      } else if (equals[1] === '--status') {
+        wantStatus = equals[2];
+      } else if (equals[1] === '--title') {
+        wantTitle = equals[2];
       } else {
         wantSessionId = equals[2];
       }
@@ -696,10 +748,44 @@ function parseGlobalFlags(argv) {
       const value = argv[i + 1];
       if (!value || value.startsWith('-')) throw new Error(`${a} requires a value`);
       wantTargetId = argv[++i];
-    } else if (a === '--context') {
+    } else if (a === '--context' || a === '--browserContextId') {
       const value = argv[i + 1];
       if (!value || value.startsWith('-')) throw new Error(`${a} requires a value`);
       wantContextId = argv[++i];
+    } else if (a === '--focusedWindowId') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('-')) throw new Error(`${a} requires a value`);
+      wantFocusedWindowId = argv[++i];
+    } else if (a === '--openerTabId') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('-')) throw new Error(`${a} requires a value`);
+      wantOpenerTabId = argv[++i];
+    } else if (a === '--groupId') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('-')) throw new Error(`${a} requires a value`);
+      wantGroupId = argv[++i];
+    } else if (a === '--cookieStoreId') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('-')) throw new Error(`${a} requires a value`);
+      wantCookieStoreId = argv[++i];
+    } else if (a === '--status') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('-')) throw new Error(`${a} requires a value`);
+      wantStatus = argv[++i];
+    } else if (a === '--title') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('-')) throw new Error(`${a} requires a value`);
+      wantTitle = argv[++i];
+    } else if (a === '--active') {
+      wantActive = true;
+    } else if (a === '--attached') {
+      wantAttached = true;
+    } else if (a === '--discarded') {
+      wantDiscarded = true;
+    } else if (a === '--highlighted') {
+      wantHighlighted = true;
+    } else if (a === '--pinned') {
+      wantPinned = true;
     } else if (a === '--current') {
       wantCurrent = true;
     } else if (a === '--incognito') {
@@ -722,7 +808,7 @@ function parseGlobalFlags(argv) {
     const hit = tabMap.resolveChain(chainOpts());
     if (hit.row) {
       activeSessionId = hit.row.sessionId || null;
-    } else if (wantSessionId && !wantWindowId && !wantTabId && !wantHandle && !wantTargetId && !wantIndex && !wantCurrent && !wantIncognito && !wantIframe && !wantContextId) {
+    } else if (chainOnlySessionId()) {
       activeSessionId = wantSessionId;
     } else if (hit.error && hit.error !== 'empty' && hit.error !== 'ambiguous') {
       throw new Error(`no tab-map row for ${hit.via} (${hit.error}); run glider tabs`);
@@ -2466,15 +2552,39 @@ async function cmdTabs() {
 }
 
 async function cmdWindow(args) {
+  const subcmd = args[0] || 'list';
+  if (subcmd === 'list') {
+    let catalog = await fetchCatalogQuiet();
+    if (!catalog || catalog.listTabsOk === false) {
+      await autoHealRelay();
+      catalog = await fetchCatalogQuiet();
+    }
+    if (!catalog || catalog.error || !Array.isArray(catalog.windows)) {
+      if (jsonOutput) {
+        emitJson(false, null, 'catalog unavailable');
+        process.exitCode = 1;
+        return;
+      }
+      log.fail('catalog unavailable');
+      process.exitCode = 1;
+      return;
+    }
+    const map = tabMap.writeMap(catalog);
+    if (jsonOutput) {
+      emitJson(true, { ...catalog, activeSessionId, map });
+      return;
+    }
+    console.log(formatCatalogTui(catalog, activeSessionId));
+    return;
+  }
+
   const { WindowManager } = require(path.join(LIB_DIR, 'bwindow.js'));
   const wm = new WindowManager();
-  
+
   try {
     await wm.connect();
     await wm.init();
-    
-    const subcmd = args[0] || 'list';
-    
+
     switch (subcmd) {
       case 'new': {
         const url = args[1] || 'about:blank';
@@ -2533,20 +2643,9 @@ async function cmdWindow(args) {
         break;
       }
       
-      case 'list':
       default: {
-        const targets = wm.list();
-        if (targets.length === 0) {
-          log.warn('No windows/tabs tracked');
-        } else {
-          console.log(`${GREEN}${targets.length}${NC} target(s):\n`);
-          targets.forEach((t, i) => {
-            const marker = t.createdByGlider ? `${GREEN}●${NC}` : `${DIM}○${NC}`;
-            console.log(`  ${marker} ${CYAN}${t.targetId.substring(0, 16)}...${NC}`);
-            console.log(`      ${DIM}${t.url || 'unknown'}${NC}`);
-          });
-        }
-        break;
+        log.fail(`Unknown window subcommand: ${subcmd}`);
+        process.exit(1);
       }
     }
   } catch (err) {
@@ -2753,20 +2852,23 @@ async function cmdUseSession(arg, opts = []) {
   const token = parsed._[0] || null;
   const handle = parsed.handle || wantHandle || (token && tabMap.lookslikeHandle(token) ? token : null);
   const sessionFromPos = token && !tabMap.lookslikeHandle(token) ? token : '';
-  const windowId = parsed.window || wantWindowId;
-  const tabId = parsed.tab || wantTabId;
-  const sessionId = parsed.session || sessionFromPos || wantSessionId;
-  const index = parsed.index || wantIndex;
-  const targetId = parsed.target || wantTargetId;
-  const browserContextId = parsed.context || wantContextId;
-  const current = parsed.current || wantCurrent;
-  const incognito = parsed.incognito || wantIncognito;
-  const iframe = parsed.iframe || wantIframe;
+  const chain = {
+    ...chainOpts(),
+    windowId: parsed.window || wantWindowId,
+    tabId: parsed.tab || wantTabId,
+    sessionId: parsed.session || sessionFromPos || wantSessionId,
+    index: parsed.index || wantIndex,
+    targetId: parsed.target || wantTargetId,
+    browserContextId: parsed.context || wantContextId,
+    handle,
+    current: parsed.current || wantCurrent,
+    incognito: parsed.incognito || wantIncognito,
+    iframe: parsed.iframe || wantIframe,
+  };
   let requestedSession = '';
-  if (windowId || handle || tabId || sessionId || index || targetId || browserContextId || current || incognito || iframe) {
-    const hit = tabMap.resolveChain({
-      current, incognito, windowId, index, handle, tabId, targetId, sessionId, browserContextId, iframe,
-    });
+  if (chainArmed() || handle || parsed.window || parsed.tab || parsed.session || parsed.handle || parsed.index
+    || parsed.target || parsed.context || parsed.current || parsed.incognito || parsed.iframe) {
+    const hit = tabMap.resolveChain(chain);
     if (hit.row) {
       if (!hit.row.sessionId) {
         const message = `not attached (${hit.via || 'ref'})`;
@@ -2775,8 +2877,8 @@ async function cmdUseSession(arg, opts = []) {
         process.exit(1);
       }
       requestedSession = hit.row.sessionId;
-    } else if (sessionId && !windowId && !handle && !tabId && !index && !targetId && !browserContextId && !current && !incognito && !iframe) {
-      requestedSession = sessionId;
+    } else if (chainOnlySessionIdMerged(chain)) {
+      requestedSession = chain.sessionId;
     } else {
       const message = `no tab-map row for ${hit.via || 'ref'} (${hit.error || 'empty'}); run glider tabs`;
       if (jsonOutput) emitJson(false, null, message);

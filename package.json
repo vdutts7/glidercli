@@ -8,7 +8,7 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "test:syntax": "node --check bin/glider.js && node --check lib/bserve.js && node --check lib/bexplore.js && node --check lib/tab-catalog.js && node --check lib/tab-tui.js && node --check lib/tab-map.js && node --check lib/pin-machine.js && node --check lib/relay-heal.js && node --check lib/pkg-update.js",
-    "test:regression": "node --test tests/browser-config.test.js tests/core.test.js tests/cli-regression.test.js tests/relay-integration.test.js tests/tab-tui-color-regression.test.js",
+    "test:regression": "node --test tests/browser-config.test.js tests/core.test.js tests/cli-regression.test.js tests/relay-integration.test.js tests/tab-tui-color-regression.test.js tests/tab-map.test.js tests/tab-catalog.test.js",
     "test:integration": "node --test tests/relay-integration.test.js tests/daemon-lifecycle.test.js",
     "test:pack": "node --test tests/npm-tarball.test.js",
     "test:smoke": "node tests/live-browser.smoke.js",

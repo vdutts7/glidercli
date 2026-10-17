@@ -117,6 +117,38 @@ test('resolveChain current/incognito/index/target/iframe', () => {
   assert.equal(resolveChain({ browserContextId: 'ctx-1', map }).via, 'context');
 });
 
+
+test('resolveChain 690 chain flags active attached pinned title status', () => {
+  const map = buildMap({
+    windows: [{
+      windowId: 5,
+      tabs: [
+        {
+          tabId: 1, sessionId: 's1', title: 'Hello World', url: 'https://a.test/', load: 'complete',
+          attached: true, active: true, pinned: true, openerTabId: 9, groupId: -1, cookieStoreId: 'store-1',
+        },
+        {
+          tabId: 2, title: 'Other', url: 'https://b.test/', load: 'loading',
+          attached: false, active: false, highlighted: true, discarded: true,
+        },
+      ],
+    }],
+    attached: [],
+    stale: [],
+  });
+  assert.equal(resolveChain({ active: true, map }).row.tabId, 1);
+  assert.equal(resolveChain({ attached: true, map }).via, 'attached');
+  assert.equal(resolveChain({ pinned: true, map }).row.sessionId, 's1');
+  assert.equal(resolveChain({ title: 'hello', map }).via, 'title');
+  assert.equal(resolveChain({ status: 'complete', map }).via, 'status');
+  assert.equal(resolveChain({ focusedWindowId: 5, active: true, map }).via, 'focusedWindowId>active');
+  assert.equal(resolveChain({ openerTabId: 9, map }).via, 'openerTabId');
+  assert.equal(resolveChain({ groupId: '-1', map }).via, 'groupId');
+  assert.equal(resolveChain({ cookieStoreId: 'store-1', map }).via, 'cookieStoreId');
+  assert.equal(resolveChain({ highlighted: true, map }).row.tabId, 2);
+  assert.equal(resolveChain({ discarded: true, map }).via, 'discarded');
+});
+
 test('glider pin --tab 20 pins by chrome tabId', async (t) => {
   const home = makeTempGliderHome();
   t.after(() => removeTree(home));
