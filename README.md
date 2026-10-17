@@ -144,7 +144,7 @@ Copy `config/domains.template.json` into `~/.glider/config/domains.json` to seed
 
 ## Tabs
 
-`glider tabs` is the visible Helium rail, not the debugger map. TUI (0.4.25): `[n]` is the handle. Under each tab: URL, `status:`, `tabId` / `sessionId` / `active`. `glider tabs` writes `$GLIDER/state/tab-map.json`. Pin without a dump: `glider use 1`, `glider use --tab 20`, `glider --tab 20 eval '1+1'`, `glider use-session <sessionId>`. `--json tabs` is the full catalog.
+`glider tabs` is the visible Helium rail, not the debugger map. TUI (0.4.27): `[n]` is the handle. Under each tab: URL, `status:`, `tabId`, `active`, then `sessionId` only when attached. `glider tabs` writes `$GLIDER/state/tab-map.json`. Chain: `--current` `--incognito` `--window` `--index` `--handle` `--tab` `--target` `--session` `--iframe` `--context`. `--json tabs` is the full catalog.
 
 1. current window `chrome.tabs` (live title/url, including `chrome://newtab`)
 2. other windows

@@ -1,0 +1,2042 @@
+{
+  "id": "glidercli.tab-identity.scorched",
+  "canonical": true,
+  "written_for": [
+    "/extract",
+    "tab-map graph",
+    "CLI flag chain"
+  ],
+  "paths": {
+    "this_file": "/Users/vdog/Documents/a/glidercli/docs/tab-identity.scorched.json",
+    "tab_map_json": "$GLIDER/state/tab-map.json",
+    "tab_map_js": "/Users/vdog/Documents/a/glidercli/lib/tab-map.js",
+    "tab_catalog_js": "/Users/vdog/Documents/a/glidercli/lib/tab-catalog.js",
+    "tab_tui_js": "/Users/vdog/Documents/a/glidercli/lib/tab-tui.js",
+    "pin_machine_js": "/Users/vdog/Documents/a/glidercli/lib/pin-machine.js",
+    "bserve_js": "/Users/vdog/Documents/a/glidercli/lib/bserve.js",
+    "bwindow_js": "/Users/vdog/Documents/a/glidercli/lib/bwindow.js",
+    "glider_bin": "/Users/vdog/Documents/a/glidercli/bin/glider.js",
+    "paths_js": "/Users/vdog/Documents/a/glidercli/lib/paths.js",
+    "crx_background": "/Users/vdog/Documents/a/glider/background.js",
+    "pin_store": "$GLIDER/config/active-session.json",
+    "gate": "$CURTOOLS/test/glider-cli-tab-map.gate.sh",
+    "live_tab_map_observed": "/Users/vdog/.glider/state/tab-map.json"
+  },
+  "mandate": "Nothing is off the table. Everything is to be done right now. This is blind: no prioritization, no judgment, no exclusion, no tampering, no dilution. The job is purely resource gathering, and then they're done and handed off to the next person. All they do is gather everything. Their job is not to decide what gets filtered or anything like that. Zero tampering. full canonical integrity of data",
+  "probe": {
+    "style": "rabid_raccoon_asshole_probing",
+    "metaphor": "hyena_scavenging",
+    "depth": "deep_deep_deep",
+    "labor": "aggressive_slave_labor",
+    "segments_opened": 48,
+    "residue_sweeps": 3,
+    "flags": {
+      "--target": "both",
+      "--mode": "exhaustive",
+      "--output": "json",
+      "--action": "report",
+      "--probe": "raccoon"
+    }
+  },
+  "graph_global_to_leaf": [
+    {
+      "rank": 1,
+      "id": "browserContextId",
+      "plane": "cdp",
+      "parent": null,
+      "note": "Target.TargetInfo.browserContextId. not chrome.windows.incognito"
+    },
+    {
+      "rank": 2,
+      "id": "windowId",
+      "plane": "chrome.windows",
+      "parent": "browserContextId",
+      "predicates": [
+        "current",
+        "focused",
+        "incognito",
+        "type",
+        "state"
+      ]
+    },
+    {
+      "rank": 3,
+      "id": "index",
+      "plane": "chrome.tabs",
+      "parent": "windowId",
+      "note": "tab order inside window"
+    },
+    {
+      "rank": 4,
+      "id": "tabId",
+      "plane": "chrome.tabs",
+      "parent": "index",
+      "aliases": [
+        "chrome.tabs.Tab.id",
+        "listTabs.id"
+      ],
+      "predicates": [
+        "active",
+        "highlighted",
+        "discarded",
+        "pinned",
+        "status",
+        "attached"
+      ]
+    },
+    {
+      "rank": 5,
+      "id": "handle",
+      "plane": "glidercli.tab-map",
+      "parent": "tabId",
+      "values": [
+        "1..n",
+        "An",
+        "Sn"
+      ],
+      "note": "listing index after catalog sort, not chrome"
+    },
+    {
+      "rank": 6,
+      "id": "url",
+      "plane": "chrome.tabs|cdp",
+      "parent": "tabId",
+      "sibling": "title"
+    },
+    {
+      "rank": 7,
+      "id": "title",
+      "plane": "chrome.tabs|cdp",
+      "parent": "tabId",
+      "sibling": "url"
+    },
+    {
+      "rank": 8,
+      "id": "sessionId",
+      "plane": "glider.extension mint",
+      "parent": "tabId",
+      "form": "session-N",
+      "empty_when": "not attached",
+      "collides_with": "chrome.sessions.Session.sessionId"
+    },
+    {
+      "rank": 9,
+      "id": "targetId",
+      "plane": "cdp Target",
+      "parent": "sessionId",
+      "empty_when": "not attached"
+    },
+    {
+      "rank": 10,
+      "id": "iframe.sessionId",
+      "plane": "cdp childSessions",
+      "parent": "targetId",
+      "fields": [
+        "parent_sessionId",
+        "parent_targetId",
+        "parentFrameId",
+        "openerId",
+        "targetType"
+      ]
+    }
+  ],
+  "catalog_buckets": [
+    {
+      "id": "windows",
+      "source": "chrome.tabs.query via listTabs grouped by windowId",
+      "sort": "current window first then windowId ascending",
+      "tabs_sort": "index ascending"
+    },
+    {
+      "id": "attached",
+      "source": "cdp pages not matched to chrome.tabs",
+      "handle_prefix": "A",
+      "tui": "debugger, not in chrome.tabs"
+    },
+    {
+      "id": "stale",
+      "source": "cdp page tabId gone from chrome.tabs when listTabsOk",
+      "handle_prefix": "S",
+      "reason": "tab_gone",
+      "tui": "dropped from map"
+    },
+    {
+      "id": "iframes",
+      "source": "pin-machine.partition type iframe",
+      "in_tab_map": false
+    },
+    {
+      "id": "pages",
+      "source": "pin-machine.partition type page",
+      "in_tab_map": false
+    },
+    {
+      "id": "reapSessionIds",
+      "source": "stale[].sessionId",
+      "action": "bserve reapFromMap connectedTargets"
+    }
+  ],
+  "writers": [
+    {
+      "id": "listTabs",
+      "file": "glider/background.js",
+      "lines": "158-178",
+      "emits": [
+        "focusedWindowId",
+        "tabs[].id",
+        "tabs[].windowId",
+        "tabs[].index",
+        "tabs[].title",
+        "tabs[].url",
+        "tabs[].active",
+        "tabs[].discarded",
+        "tabs[].highlighted",
+        "tabs[].pinned",
+        "tabs[].status"
+      ]
+    },
+    {
+      "id": "buildLiveCatalog",
+      "file": "glidercli/lib/bserve.js",
+      "lines": "127-153",
+      "reads": [
+        "listed.tabs",
+        "listed.result.tabs",
+        "listed.focusedWindowId",
+        "listed.windows",
+        "listed.result.windows",
+        "connectedTargets"
+      ],
+      "endpoint": "GET /catalog"
+    },
+    {
+      "id": "buildCatalog",
+      "file": "glidercli/lib/tab-catalog.js",
+      "fn": "buildCatalog"
+    },
+    {
+      "id": "writeMap",
+      "file": "glidercli/lib/tab-map.js",
+      "fn": "writeMap",
+      "path": "$GLIDER/state/tab-map.json"
+    },
+    {
+      "id": "cmdTabs",
+      "file": "glidercli/bin/glider.js",
+      "fn": "cmdTabs",
+      "also": "formatCatalogTui"
+    },
+    {
+      "id": "attachTab",
+      "file": "glider/background.js",
+      "mints": "session-${nextSessionId++}",
+      "stores": "connectedTabs.set(tabId, {sessionId, targetId})"
+    },
+    {
+      "id": "childSessions",
+      "file": "glider/background.js",
+      "stores": "{tabId, targetId, targetType, url}"
+    },
+    {
+      "id": "persistSession",
+      "file": "glidercli/bin/glider.js",
+      "path": "$GLIDER/config/active-session.json",
+      "fields": [
+        "sessionId",
+        "targetId",
+        "host",
+        "url",
+        "reason",
+        "updated"
+      ]
+    },
+    {
+      "id": "WindowManager",
+      "file": "glidercli/lib/bwindow.js",
+      "map": "targetId -> {sessionId, url, windowId, createdByGlider}"
+    }
+  ],
+  "listTabs_row_fields": [
+    "id",
+    "windowId",
+    "index",
+    "title",
+    "url",
+    "active",
+    "discarded",
+    "highlighted",
+    "pinned",
+    "status",
+    "incognito"
+  ],
+  "listTabs_does_not_emit": [
+    "openerTabId",
+    "favIconUrl",
+    "audible",
+    "mutedInfo",
+    "groupId",
+    "cookieStoreId",
+    "autoDiscardable",
+    "pendingUrl",
+    "width",
+    "height",
+    "lastAccessed",
+    "selected",
+    "frozen",
+    "splitViewId",
+    "sessionId_chrome_sessions",
+    "browserContextId"
+  ],
+  "bserve_looks_for_windows_array": {
+    "code": "listed.windows || listed.result.windows",
+    "listTabs_emits_windows": true,
+    "consequence": "chromeWindows always [] unless another RPC fills it"
+  },
+  "catalog_window_fields": [
+    "windowId",
+    "current",
+    "incognito",
+    "incognitoSource",
+    "tabs"
+  ],
+  "catalog_tab_fields_chromeRow": [
+    "tabId",
+    "windowId",
+    "index",
+    "title",
+    "url",
+    "active",
+    "discarded",
+    "highlighted",
+    "incognito",
+    "incognitoSource",
+    "attached",
+    "sessionId",
+    "targetId",
+    "browserContextId"
+  ],
+  "catalog_tab_fields_dropped_from_listTabs": [
+    "pinned",
+    "status",
+    "id_as_id"
+  ],
+  "catalog_attached_stale_fields": [
+    "tabId",
+    "sessionId",
+    "targetId",
+    "title",
+    "url",
+    "type",
+    "browserContextId",
+    "reason"
+  ],
+  "catalog_file_fields": [
+    "focusedWindowId",
+    "listTabsOk",
+    "windows",
+    "attached",
+    "stale",
+    "reapSessionIds",
+    "iframes",
+    "pages"
+  ],
+  "tab_map_file_fields": [
+    "writtenAt",
+    "handles"
+  ],
+  "tab_map_row_fields": [
+    "handle",
+    "tabId",
+    "sessionId",
+    "targetId",
+    "windowId",
+    "title",
+    "url",
+    "attached",
+    "active",
+    "discarded"
+  ],
+  "tab_map_row_omits_vs_catalog": [
+    "index",
+    "highlighted",
+    "incognito",
+    "incognitoSource",
+    "browserContextId",
+    "current",
+    "type",
+    "reason",
+    "pinned",
+    "status"
+  ],
+  "resolveChain": {
+    "order": [
+      "windowId",
+      "handle",
+      "tabId",
+      "sessionId"
+    ],
+    "via_tokens": [
+      "window",
+      "handle",
+      "tab",
+      "session",
+      "active",
+      "unique"
+    ],
+    "errors": [
+      "window",
+      "handle",
+      "handle_not_in_window",
+      "tab",
+      "session",
+      "ambiguous",
+      "empty"
+    ],
+    "window_only_default": "row where active && sessionId",
+    "handle_regex": "^(?:\\d+|[AS]\\d+)$",
+    "exports": [
+      "resolveChain",
+      "resolveRef"
+    ]
+  },
+  "cli_flags_that_exist": [
+    {
+      "flag": "--window",
+      "binds": "wantWindowId",
+      "equals": true,
+      "global": true,
+      "use_parseFlags": true
+    },
+    {
+      "flag": "--tab",
+      "binds": "wantTabId",
+      "equals": true,
+      "global": true,
+      "use_parseFlags": true
+    },
+    {
+      "flag": "--session",
+      "binds": "wantSessionId",
+      "equals": true,
+      "global": true,
+      "use_parseFlags": true,
+      "alias": "--session-id"
+    },
+    {
+      "flag": "--session-id",
+      "binds": "wantSessionId",
+      "equals": true,
+      "global": true
+    },
+    {
+      "flag": "--url",
+      "binds": "pinMachine host",
+      "global": false,
+      "command": "use / use-session"
+    },
+    {
+      "flag": "--json",
+      "binds": "jsonOutput",
+      "global": true
+    },
+    {
+      "flag": "--allowed-domains",
+      "binds": "cliDomains",
+      "equals": true,
+      "global": true
+    },
+    {
+      "positional": "handle_or_sessionId",
+      "command": "use",
+      "handle_if": "lookslikeHandle"
+    },
+    {
+      "env": "GLIDER_SESSION_ID",
+      "binds": "activeSessionId"
+    },
+    {
+      "env": "GLIDER",
+      "binds": "gliderHome / mapPath / SESSION_STORE"
+    },
+    {
+      "env": "GLIDER_PORT",
+      "relay": true
+    },
+    {
+      "env": "RELAY_PORT",
+      "relay": true
+    },
+    {
+      "store": "$GLIDER/config/active-session.json",
+      "loadPersistedSession": "skipped if wantWindowId|wantTabId|wantSessionId"
+    },
+    {
+      "flag": "--handle",
+      "binds": "wantHandle",
+      "global": true
+    },
+    {
+      "flag": "--index",
+      "binds": "wantIndex",
+      "global": true
+    },
+    {
+      "flag": "--target",
+      "binds": "wantTargetId",
+      "global": true
+    },
+    {
+      "flag": "--context",
+      "binds": "wantContextId",
+      "global": true
+    },
+    {
+      "flag": "--current",
+      "binds": "wantCurrent",
+      "global": true
+    },
+    {
+      "flag": "--incognito",
+      "binds": "wantIncognito",
+      "global": true
+    },
+    {
+      "flag": "--iframe",
+      "binds": "wantIframe",
+      "global": true
+    }
+  ],
+  "cli_flags_that_do_not_exist": [
+    "--active",
+    "--attached",
+    "--discarded",
+    "--highlighted",
+    "--pinned",
+    "--status",
+    "--title",
+    "--browserContextId",
+    "--focusedWindowId",
+    "--openerTabId",
+    "--groupId",
+    "--cookieStoreId"
+  ],
+  "tui": {
+    "order_per_tab": [
+      "[handle] title|url",
+      "url",
+      "status:",
+      "tabId then active then sessionId-if-attached"
+    ],
+    "status_values": [
+      "attached",
+      "not attached",
+      "stale"
+    ],
+    "status_extra": [
+      "discarded"
+    ],
+    "window_tags": [
+      "[current]",
+      "[other]",
+      "[incognito]"
+    ],
+    "sessionId_hidden_when": "falsy sessionId",
+    "pin_asterisk_when": "t.sessionId === activeSessionId",
+    "sgr": {
+      "GREEN": "32",
+      "YELLOW": "33",
+      "CYAN": "36",
+      "DIM": "2",
+      "LIME": "92",
+      "GREY": "97",
+      "OTHER": "90",
+      "CURRENT": "93",
+      "MAGENTA": "95"
+    },
+    "json_tabs": "full catalog plus activeSessionId plus map"
+  },
+  "pin_machine": {
+    "PAGE": "page",
+    "NEVER": [
+      "iframe",
+      "worker",
+      "service_worker",
+      "shared_worker",
+      "browser"
+    ],
+    "info_fields": [
+      "sessionId",
+      "targetId",
+      "type",
+      "url",
+      "title",
+      "parentFrameId",
+      "attached",
+      "tabId"
+    ],
+    "iframe_extra": [
+      "parent_sessionId",
+      "parent_targetId"
+    ],
+    "states": [
+      "S0_empty",
+      "S4_pin",
+      "F_orphan_iframe",
+      "F_need_context",
+      "F_ambiguous",
+      "F_stale",
+      "F_no_page"
+    ],
+    "reasons": [
+      "explicit_session",
+      "parent_of_oopif",
+      "same_tab_new_session",
+      "page_url"
+    ],
+    "pin_fields": [
+      "sessionId",
+      "targetId",
+      "type",
+      "url",
+      "host",
+      "reason"
+    ]
+  },
+  "cdp_targetinfo_fields": [
+    "targetId",
+    "type",
+    "title",
+    "url",
+    "attached",
+    "canAccessOpener",
+    "openerId",
+    "openerFrameId",
+    "browserContextId",
+    "subtype"
+  ],
+  "chrome_tabs_Tab_api": [
+    "id",
+    "index",
+    "windowId",
+    "openerTabId",
+    "selected",
+    "highlighted",
+    "active",
+    "pinned",
+    "audible",
+    "discarded",
+    "autoDiscardable",
+    "mutedInfo",
+    "url",
+    "title",
+    "favIconUrl",
+    "status",
+    "incognito",
+    "width",
+    "height",
+    "sessionId",
+    "cookieStoreId",
+    "groupId",
+    "lastAccessed",
+    "pendingUrl",
+    "frozen",
+    "splitViewId"
+  ],
+  "chrome_windows_Window_api": [
+    "alwaysOnTop",
+    "focused",
+    "height",
+    "id",
+    "incognito",
+    "left",
+    "sessionId",
+    "state",
+    "tabs",
+    "top",
+    "type",
+    "width"
+  ],
+  "incognito_sources_in_code": [
+    "chrome.windows",
+    "chrome.tabs",
+    ""
+  ],
+  "cookieStores_in_tests_ignored_by_buildCatalog": true,
+  "session_id_collisions": [
+    {
+      "name": "glider mint",
+      "form": "session-N",
+      "where": "attachTab"
+    },
+    {
+      "name": "chrome.sessions.Session.sessionId",
+      "where": "chrome.tabs.Tab.sessionId restored tabs"
+    },
+    {
+      "name": "CDP Target.attachedToTarget params.sessionId",
+      "where": "flatten child"
+    },
+    {
+      "name": "GLIDER_SESSION_ID",
+      "where": "env"
+    }
+  ],
+  "http_endpoints": {
+    "GET /catalog": "buildLiveCatalog",
+    "GET /targets": "connected CDP sessions",
+    "GET /status": "catalog true when GET /catalog exists",
+    "POST /cdp": "forward CDP; injects pinned sessionId",
+    "WS /extension": "crx",
+    "WS /cdp": "cli"
+  },
+  "commands_touching_identity": [
+    "tabs",
+    "use",
+    "use-session",
+    "targets",
+    "window new",
+    "window tab",
+    "window close",
+    "window closeall",
+    "window focus",
+    "window list",
+    "attach-all",
+    "heal",
+    "connect",
+    "eval",
+    "snapshot",
+    "goto"
+  ],
+  "resolve_errors_verbatim": [
+    "no tab-map row for ${via} (${error}); run glider tabs",
+    "not attached (${via})",
+    "Usage: glider [--window W] [--tab T] [--session S] use [n] | glider use-session --url <host-fragment>"
+  ],
+  "observed_runtime_map": {
+    "handles": {
+      "1": {
+        "handle": "1",
+        "tabId": 100387399,
+        "sessionId": "session-2",
+        "targetId": "1D56CA91D00B81848F49517006981339",
+        "windowId": 100387398,
+        "title": "AR's lane, diagram, etc - Claude",
+        "url": "https://claude.ai/chat/314a2963-b311-4d8c-a992-95a2e5a0309a",
+        "attached": true,
+        "active": false,
+        "discarded": false
+      },
+      "2": {
+        "handle": "2",
+        "tabId": 100387400,
+        "sessionId": "session-3",
+        "targetId": "85D227B306E6EA1F01F1C27A7D9747D9",
+        "windowId": 100387398,
+        "title": "Data intelligence fit - DeepSeek",
+        "url": "https://chat.deepseek.com/a/chat/s/ee227c5c-964f-4cb7-a51c-2f74474eb096",
+        "attached": true,
+        "active": false,
+        "discarded": false
+      },
+      "3": {
+        "handle": "3",
+        "tabId": 100387401,
+        "sessionId": "session-4",
+        "targetId": "AF893337C0CEF8BD307DFDF091390959",
+        "windowId": 100387398,
+        "title": "analyze_amit-dhariwal_security-role - Claude",
+        "url": "https://claude.ai/chat/015e537d-5127-4be4-b1f2-49cd69374cb2",
+        "attached": true,
+        "active": true,
+        "discarded": false
+      },
+      "4": {
+        "handle": "4",
+        "tabId": 100387405,
+        "sessionId": "",
+        "targetId": "",
+        "windowId": 100387398,
+        "title": "\u00b7",
+        "url": "file:///Users/vdog/Downloads/2026-10-15_claude_analyze-amit-dhariwal-security-role_015e537d-5127-4be4-b1f2-49cd69374cb2/artifacts/T12-obsidian-graph.html",
+        "attached": false,
+        "active": false,
+        "discarded": false
+      }
+    },
+    "writtenAt": 1792189776386
+  },
+  "entities": [
+    {
+      "type": "artifact",
+      "value": "$GLIDER/state/tab-map.json",
+      "source_span": "path.join(stateDir(), 'tab-map.json')"
+    },
+    {
+      "type": "artifact",
+      "value": "$GLIDER/config/active-session.json",
+      "source_span": "SESSION_STORE"
+    },
+    {
+      "type": "artifact",
+      "value": "GET /catalog",
+      "source_span": "req.url === '/catalog'"
+    },
+    {
+      "type": "artifact",
+      "value": "lib/tab-map.js",
+      "source_span": "function writeMap"
+    },
+    {
+      "type": "artifact",
+      "value": "lib/tab-catalog.js",
+      "source_span": "function buildCatalog"
+    },
+    {
+      "type": "artifact",
+      "value": "lib/tab-tui.js",
+      "source_span": "function idsLine"
+    },
+    {
+      "type": "artifact",
+      "value": "lib/pin-machine.js",
+      "source_span": "function resolvePin"
+    },
+    {
+      "type": "artifact",
+      "value": "lib/bserve.js",
+      "source_span": "async function buildLiveCatalog"
+    },
+    {
+      "type": "artifact",
+      "value": "lib/bwindow.js",
+      "source_span": "this.targets = new Map()"
+    },
+    {
+      "type": "artifact",
+      "value": "glider/background.js listTabs",
+      "source_span": "if (msg.method === 'listTabs')"
+    },
+    {
+      "type": "artifact",
+      "value": "docs/tab-identity.scorched.json",
+      "source_span": "this file"
+    },
+    {
+      "type": "tool",
+      "value": "glidercli",
+      "source_span": "package name glidercli"
+    },
+    {
+      "type": "tool",
+      "value": "chrome.tabs",
+      "source_span": "chrome.tabs.query({})"
+    },
+    {
+      "type": "tool",
+      "value": "chrome.windows",
+      "source_span": "chrome.windows.getLastFocused()"
+    },
+    {
+      "type": "tool",
+      "value": "chrome.debugger",
+      "source_span": "chrome.debugger.attach({ tabId }, '1.3')"
+    },
+    {
+      "type": "tool",
+      "value": "CDP Target",
+      "source_span": "Target.getTargetInfo / Target.getTargets / Target.attachToTarget"
+    },
+    {
+      "type": "concept",
+      "value": "handle",
+      "source_span": "handle: String(handle)"
+    },
+    {
+      "type": "concept",
+      "value": "attached",
+      "source_span": "attached: !!t.attached"
+    },
+    {
+      "type": "concept",
+      "value": "stale",
+      "source_span": "reason: 'tab_gone'"
+    },
+    {
+      "type": "concept",
+      "value": "current window",
+      "source_span": "current: focusedWindowId != null && wid === focusedWindowId"
+    },
+    {
+      "type": "concept",
+      "value": "incognitoSource",
+      "source_span": "incognitoSource: 'chrome.windows' | 'chrome.tabs' | ''"
+    },
+    {
+      "type": "concept",
+      "value": "browserContextId !== incognito",
+      "source_span": "CDP browserContextId is not that flag"
+    },
+    {
+      "type": "concept",
+      "value": "OOPIF",
+      "source_span": "childSessions / parent_of_oopif / _oopif"
+    },
+    {
+      "type": "concept",
+      "value": "flatten session",
+      "source_span": "{tabId, sessionId: childRoute}"
+    },
+    {
+      "type": "action",
+      "value": "resolveChain",
+      "source_span": "window > handle > tab > session"
+    },
+    {
+      "type": "action",
+      "value": "writeMap",
+      "source_span": "tabMap.writeMap(catalog)"
+    },
+    {
+      "type": "action",
+      "value": "reapFromMap",
+      "source_span": "connectedTargets.delete"
+    },
+    {
+      "type": "action",
+      "value": "persistPin",
+      "source_span": "persistSession(pin.sessionId, pin)"
+    },
+    {
+      "type": "action",
+      "value": "attachTab",
+      "source_span": "session-${nextSessionId++}"
+    },
+    {
+      "type": "action",
+      "value": "cmdTabs",
+      "source_span": "formatCatalogTui(catalog, activeSessionId)"
+    },
+    {
+      "type": "action",
+      "value": "cmdUseSession",
+      "source_span": "lookslikeHandle then resolveChain"
+    },
+    {
+      "type": "people",
+      "value": "operator",
+      "source_span": "user_query /extract it"
+    },
+    {
+      "type": "people",
+      "value": "vd7",
+      "source_span": "package.json author"
+    },
+    {
+      "type": "concept",
+      "value": "id",
+      "source_span": "id"
+    },
+    {
+      "type": "concept",
+      "value": "windowId",
+      "source_span": "windowId"
+    },
+    {
+      "type": "concept",
+      "value": "index",
+      "source_span": "index"
+    },
+    {
+      "type": "concept",
+      "value": "title",
+      "source_span": "title"
+    },
+    {
+      "type": "concept",
+      "value": "url",
+      "source_span": "url"
+    },
+    {
+      "type": "concept",
+      "value": "active",
+      "source_span": "active"
+    },
+    {
+      "type": "concept",
+      "value": "discarded",
+      "source_span": "discarded"
+    },
+    {
+      "type": "concept",
+      "value": "highlighted",
+      "source_span": "highlighted"
+    },
+    {
+      "type": "concept",
+      "value": "pinned",
+      "source_span": "pinned"
+    },
+    {
+      "type": "concept",
+      "value": "status",
+      "source_span": "status"
+    },
+    {
+      "type": "concept",
+      "value": "tabId",
+      "source_span": "tabId"
+    },
+    {
+      "type": "concept",
+      "value": "windowId",
+      "source_span": "windowId"
+    },
+    {
+      "type": "concept",
+      "value": "index",
+      "source_span": "index"
+    },
+    {
+      "type": "concept",
+      "value": "title",
+      "source_span": "title"
+    },
+    {
+      "type": "concept",
+      "value": "url",
+      "source_span": "url"
+    },
+    {
+      "type": "concept",
+      "value": "active",
+      "source_span": "active"
+    },
+    {
+      "type": "concept",
+      "value": "discarded",
+      "source_span": "discarded"
+    },
+    {
+      "type": "concept",
+      "value": "highlighted",
+      "source_span": "highlighted"
+    },
+    {
+      "type": "concept",
+      "value": "incognito",
+      "source_span": "incognito"
+    },
+    {
+      "type": "concept",
+      "value": "incognitoSource",
+      "source_span": "incognitoSource"
+    },
+    {
+      "type": "concept",
+      "value": "attached",
+      "source_span": "attached"
+    },
+    {
+      "type": "concept",
+      "value": "sessionId",
+      "source_span": "sessionId"
+    },
+    {
+      "type": "concept",
+      "value": "targetId",
+      "source_span": "targetId"
+    },
+    {
+      "type": "concept",
+      "value": "browserContextId",
+      "source_span": "browserContextId"
+    },
+    {
+      "type": "concept",
+      "value": "handle",
+      "source_span": "handle"
+    },
+    {
+      "type": "concept",
+      "value": "tabId",
+      "source_span": "tabId"
+    },
+    {
+      "type": "concept",
+      "value": "sessionId",
+      "source_span": "sessionId"
+    },
+    {
+      "type": "concept",
+      "value": "targetId",
+      "source_span": "targetId"
+    },
+    {
+      "type": "concept",
+      "value": "windowId",
+      "source_span": "windowId"
+    },
+    {
+      "type": "concept",
+      "value": "title",
+      "source_span": "title"
+    },
+    {
+      "type": "concept",
+      "value": "url",
+      "source_span": "url"
+    },
+    {
+      "type": "concept",
+      "value": "attached",
+      "source_span": "attached"
+    },
+    {
+      "type": "concept",
+      "value": "active",
+      "source_span": "active"
+    },
+    {
+      "type": "concept",
+      "value": "discarded",
+      "source_span": "discarded"
+    },
+    {
+      "type": "concept",
+      "value": "id",
+      "source_span": "id"
+    },
+    {
+      "type": "concept",
+      "value": "index",
+      "source_span": "index"
+    },
+    {
+      "type": "concept",
+      "value": "windowId",
+      "source_span": "windowId"
+    },
+    {
+      "type": "concept",
+      "value": "openerTabId",
+      "source_span": "openerTabId"
+    },
+    {
+      "type": "concept",
+      "value": "selected",
+      "source_span": "selected"
+    },
+    {
+      "type": "concept",
+      "value": "highlighted",
+      "source_span": "highlighted"
+    },
+    {
+      "type": "concept",
+      "value": "active",
+      "source_span": "active"
+    },
+    {
+      "type": "concept",
+      "value": "pinned",
+      "source_span": "pinned"
+    },
+    {
+      "type": "concept",
+      "value": "audible",
+      "source_span": "audible"
+    },
+    {
+      "type": "concept",
+      "value": "discarded",
+      "source_span": "discarded"
+    },
+    {
+      "type": "concept",
+      "value": "autoDiscardable",
+      "source_span": "autoDiscardable"
+    },
+    {
+      "type": "concept",
+      "value": "mutedInfo",
+      "source_span": "mutedInfo"
+    },
+    {
+      "type": "concept",
+      "value": "url",
+      "source_span": "url"
+    },
+    {
+      "type": "concept",
+      "value": "title",
+      "source_span": "title"
+    },
+    {
+      "type": "concept",
+      "value": "favIconUrl",
+      "source_span": "favIconUrl"
+    },
+    {
+      "type": "concept",
+      "value": "status",
+      "source_span": "status"
+    },
+    {
+      "type": "concept",
+      "value": "incognito",
+      "source_span": "incognito"
+    },
+    {
+      "type": "concept",
+      "value": "width",
+      "source_span": "width"
+    },
+    {
+      "type": "concept",
+      "value": "height",
+      "source_span": "height"
+    },
+    {
+      "type": "concept",
+      "value": "sessionId",
+      "source_span": "sessionId"
+    },
+    {
+      "type": "concept",
+      "value": "cookieStoreId",
+      "source_span": "cookieStoreId"
+    },
+    {
+      "type": "concept",
+      "value": "groupId",
+      "source_span": "groupId"
+    },
+    {
+      "type": "concept",
+      "value": "lastAccessed",
+      "source_span": "lastAccessed"
+    },
+    {
+      "type": "concept",
+      "value": "pendingUrl",
+      "source_span": "pendingUrl"
+    },
+    {
+      "type": "concept",
+      "value": "frozen",
+      "source_span": "frozen"
+    },
+    {
+      "type": "concept",
+      "value": "splitViewId",
+      "source_span": "splitViewId"
+    },
+    {
+      "type": "concept",
+      "value": "alwaysOnTop",
+      "source_span": "alwaysOnTop"
+    },
+    {
+      "type": "concept",
+      "value": "focused",
+      "source_span": "focused"
+    },
+    {
+      "type": "concept",
+      "value": "height",
+      "source_span": "height"
+    },
+    {
+      "type": "concept",
+      "value": "id",
+      "source_span": "id"
+    },
+    {
+      "type": "concept",
+      "value": "incognito",
+      "source_span": "incognito"
+    },
+    {
+      "type": "concept",
+      "value": "left",
+      "source_span": "left"
+    },
+    {
+      "type": "concept",
+      "value": "sessionId",
+      "source_span": "sessionId"
+    },
+    {
+      "type": "concept",
+      "value": "state",
+      "source_span": "state"
+    },
+    {
+      "type": "concept",
+      "value": "tabs",
+      "source_span": "tabs"
+    },
+    {
+      "type": "concept",
+      "value": "top",
+      "source_span": "top"
+    },
+    {
+      "type": "concept",
+      "value": "type",
+      "source_span": "type"
+    },
+    {
+      "type": "concept",
+      "value": "width",
+      "source_span": "width"
+    },
+    {
+      "type": "concept",
+      "value": "targetId",
+      "source_span": "targetId"
+    },
+    {
+      "type": "concept",
+      "value": "type",
+      "source_span": "type"
+    },
+    {
+      "type": "concept",
+      "value": "title",
+      "source_span": "title"
+    },
+    {
+      "type": "concept",
+      "value": "url",
+      "source_span": "url"
+    },
+    {
+      "type": "concept",
+      "value": "attached",
+      "source_span": "attached"
+    },
+    {
+      "type": "concept",
+      "value": "canAccessOpener",
+      "source_span": "canAccessOpener"
+    },
+    {
+      "type": "concept",
+      "value": "openerId",
+      "source_span": "openerId"
+    },
+    {
+      "type": "concept",
+      "value": "openerFrameId",
+      "source_span": "openerFrameId"
+    },
+    {
+      "type": "concept",
+      "value": "browserContextId",
+      "source_span": "browserContextId"
+    },
+    {
+      "type": "concept",
+      "value": "subtype",
+      "source_span": "subtype"
+    },
+    {
+      "type": "concept",
+      "value": "sessionId",
+      "source_span": "sessionId"
+    },
+    {
+      "type": "concept",
+      "value": "targetId",
+      "source_span": "targetId"
+    },
+    {
+      "type": "concept",
+      "value": "type",
+      "source_span": "type"
+    },
+    {
+      "type": "concept",
+      "value": "url",
+      "source_span": "url"
+    },
+    {
+      "type": "concept",
+      "value": "title",
+      "source_span": "title"
+    },
+    {
+      "type": "concept",
+      "value": "parentFrameId",
+      "source_span": "parentFrameId"
+    },
+    {
+      "type": "concept",
+      "value": "attached",
+      "source_span": "attached"
+    },
+    {
+      "type": "concept",
+      "value": "tabId",
+      "source_span": "tabId"
+    },
+    {
+      "type": "concept",
+      "value": "parent_sessionId",
+      "source_span": "parent_sessionId"
+    },
+    {
+      "type": "concept",
+      "value": "parent_targetId",
+      "source_span": "parent_targetId"
+    },
+    {
+      "type": "concept",
+      "value": "S0_empty",
+      "source_span": "S0_empty"
+    },
+    {
+      "type": "concept",
+      "value": "S4_pin",
+      "source_span": "S4_pin"
+    },
+    {
+      "type": "concept",
+      "value": "F_orphan_iframe",
+      "source_span": "F_orphan_iframe"
+    },
+    {
+      "type": "concept",
+      "value": "F_need_context",
+      "source_span": "F_need_context"
+    },
+    {
+      "type": "concept",
+      "value": "F_ambiguous",
+      "source_span": "F_ambiguous"
+    },
+    {
+      "type": "concept",
+      "value": "F_stale",
+      "source_span": "F_stale"
+    },
+    {
+      "type": "concept",
+      "value": "F_no_page",
+      "source_span": "F_no_page"
+    },
+    {
+      "type": "concept",
+      "value": "explicit_session",
+      "source_span": "explicit_session"
+    },
+    {
+      "type": "concept",
+      "value": "parent_of_oopif",
+      "source_span": "parent_of_oopif"
+    },
+    {
+      "type": "concept",
+      "value": "same_tab_new_session",
+      "source_span": "same_tab_new_session"
+    },
+    {
+      "type": "concept",
+      "value": "page_url",
+      "source_span": "page_url"
+    },
+    {
+      "type": "concept",
+      "value": "window",
+      "source_span": "window"
+    },
+    {
+      "type": "concept",
+      "value": "handle",
+      "source_span": "handle"
+    },
+    {
+      "type": "concept",
+      "value": "tab",
+      "source_span": "tab"
+    },
+    {
+      "type": "concept",
+      "value": "session",
+      "source_span": "session"
+    },
+    {
+      "type": "concept",
+      "value": "active",
+      "source_span": "active"
+    },
+    {
+      "type": "concept",
+      "value": "unique",
+      "source_span": "unique"
+    },
+    {
+      "type": "concept",
+      "value": "window",
+      "source_span": "window"
+    },
+    {
+      "type": "concept",
+      "value": "handle",
+      "source_span": "handle"
+    },
+    {
+      "type": "concept",
+      "value": "handle_not_in_window",
+      "source_span": "handle_not_in_window"
+    },
+    {
+      "type": "concept",
+      "value": "tab",
+      "source_span": "tab"
+    },
+    {
+      "type": "concept",
+      "value": "session",
+      "source_span": "session"
+    },
+    {
+      "type": "concept",
+      "value": "ambiguous",
+      "source_span": "ambiguous"
+    },
+    {
+      "type": "concept",
+      "value": "empty",
+      "source_span": "empty"
+    },
+    {
+      "type": "concept",
+      "value": "focusedWindowId",
+      "source_span": "focusedWindowId"
+    },
+    {
+      "type": "concept",
+      "value": "listTabsOk",
+      "source_span": "listTabsOk"
+    },
+    {
+      "type": "concept",
+      "value": "windows",
+      "source_span": "windows"
+    },
+    {
+      "type": "concept",
+      "value": "attached",
+      "source_span": "attached"
+    },
+    {
+      "type": "concept",
+      "value": "stale",
+      "source_span": "stale"
+    },
+    {
+      "type": "concept",
+      "value": "reapSessionIds",
+      "source_span": "reapSessionIds"
+    },
+    {
+      "type": "concept",
+      "value": "iframes",
+      "source_span": "iframes"
+    },
+    {
+      "type": "concept",
+      "value": "pages",
+      "source_span": "pages"
+    },
+    {
+      "type": "concept",
+      "value": "windowId",
+      "source_span": "windowId"
+    },
+    {
+      "type": "concept",
+      "value": "current",
+      "source_span": "current"
+    },
+    {
+      "type": "concept",
+      "value": "incognito",
+      "source_span": "incognito"
+    },
+    {
+      "type": "concept",
+      "value": "incognitoSource",
+      "source_span": "incognitoSource"
+    },
+    {
+      "type": "concept",
+      "value": "tabs",
+      "source_span": "tabs"
+    },
+    {
+      "type": "concept",
+      "value": "tabId",
+      "source_span": "tabId"
+    },
+    {
+      "type": "concept",
+      "value": "sessionId",
+      "source_span": "sessionId"
+    },
+    {
+      "type": "concept",
+      "value": "targetId",
+      "source_span": "targetId"
+    },
+    {
+      "type": "concept",
+      "value": "title",
+      "source_span": "title"
+    },
+    {
+      "type": "concept",
+      "value": "url",
+      "source_span": "url"
+    },
+    {
+      "type": "concept",
+      "value": "type",
+      "source_span": "type"
+    },
+    {
+      "type": "concept",
+      "value": "browserContextId",
+      "source_span": "browserContextId"
+    },
+    {
+      "type": "concept",
+      "value": "reason",
+      "source_span": "reason"
+    },
+    {
+      "type": "concept",
+      "value": "writtenAt",
+      "source_span": "writtenAt"
+    },
+    {
+      "type": "concept",
+      "value": "handles",
+      "source_span": "handles"
+    },
+    {
+      "type": "concept",
+      "value": "An",
+      "source_span": "An"
+    },
+    {
+      "type": "concept",
+      "value": "Sn",
+      "source_span": "Sn"
+    },
+    {
+      "type": "concept",
+      "value": "session-N",
+      "source_span": "session-N"
+    },
+    {
+      "type": "concept",
+      "value": "GLIDER_SESSION_ID",
+      "source_span": "GLIDER_SESSION_ID"
+    },
+    {
+      "type": "concept",
+      "value": "wantWindowId",
+      "source_span": "wantWindowId"
+    },
+    {
+      "type": "concept",
+      "value": "wantTabId",
+      "source_span": "wantTabId"
+    },
+    {
+      "type": "concept",
+      "value": "wantSessionId",
+      "source_span": "wantSessionId"
+    },
+    {
+      "type": "concept",
+      "value": "activeSessionId",
+      "source_span": "activeSessionId"
+    },
+    {
+      "type": "concept",
+      "value": "listTabsOk",
+      "source_span": "listTabsOk"
+    },
+    {
+      "type": "concept",
+      "value": "focusedWindowId",
+      "source_span": "focusedWindowId"
+    }
+  ],
+  "commands": {
+    "existing": [
+      {
+        "name": "glider tabs",
+        "purpose": "catalog + writeMap + TUI",
+        "dimensions": [
+          "tui",
+          "json",
+          "map"
+        ],
+        "source_span": "async function cmdTabs()"
+      },
+      {
+        "name": "glider use",
+        "purpose": "pin by handle/tab/session/url",
+        "dimensions": [
+          "handle",
+          "window",
+          "tab",
+          "session",
+          "url"
+        ],
+        "source_span": "case 'use':"
+      },
+      {
+        "name": "glider use-session",
+        "purpose": "alias of use",
+        "dimensions": [
+          "session",
+          "url"
+        ],
+        "source_span": "use-session"
+      },
+      {
+        "name": "glider targets",
+        "purpose": "raw CDP session list",
+        "dimensions": [
+          "sessionId",
+          "title",
+          "url"
+        ],
+        "source_span": "glider targets"
+      },
+      {
+        "name": "glider window list",
+        "purpose": "WindowManager targets",
+        "dimensions": [
+          "targetId",
+          "windowId"
+        ],
+        "source_span": "glider window list"
+      },
+      {
+        "name": "glider window new",
+        "purpose": "create window",
+        "dimensions": [
+          "url"
+        ],
+        "source_span": "window new"
+      },
+      {
+        "name": "glider window tab",
+        "purpose": "create tab",
+        "dimensions": [
+          "url"
+        ],
+        "source_span": "window tab"
+      },
+      {
+        "name": "glider window close",
+        "purpose": "close by targetId",
+        "dimensions": [
+          "targetId"
+        ],
+        "source_span": "window close"
+      },
+      {
+        "name": "glider window closeall",
+        "purpose": "close glider-created",
+        "dimensions": [],
+        "source_span": "window closeall"
+      },
+      {
+        "name": "glider window focus",
+        "purpose": "focus by targetId",
+        "dimensions": [
+          "targetId"
+        ],
+        "source_span": "window focus"
+      },
+      {
+        "name": "listTabs",
+        "purpose": "extension RPC chrome.tabs.query",
+        "dimensions": [
+          "tabs",
+          "focusedWindowId"
+        ],
+        "source_span": "msg.method === 'listTabs'"
+      },
+      {
+        "name": "Target.getTargets",
+        "purpose": "parents + OOPIF children",
+        "dimensions": [
+          "targetId",
+          "type",
+          "_oopif",
+          "openerId"
+        ],
+        "source_span": "method === 'Target.getTargets'"
+      },
+      {
+        "name": "Target.attachToTarget",
+        "purpose": "flatten child session",
+        "dimensions": [
+          "targetId",
+          "sessionId"
+        ],
+        "source_span": "Target.attachToTarget"
+      },
+      {
+        "name": "--window",
+        "purpose": "chain windowId",
+        "dimensions": [
+          "global",
+          "equals"
+        ],
+        "source_span": "a === '--window'"
+      },
+      {
+        "name": "--tab",
+        "purpose": "chain tabId",
+        "dimensions": [
+          "global",
+          "equals"
+        ],
+        "source_span": "a === '--tab'"
+      },
+      {
+        "name": "--session",
+        "purpose": "chain sessionId",
+        "dimensions": [
+          "global",
+          "equals",
+          "env"
+        ],
+        "source_span": "a === '--session'"
+      },
+      {
+        "name": "--url",
+        "purpose": "pinMachine host",
+        "dimensions": [
+          "use-session"
+        ],
+        "source_span": "url: { type: 'string' }"
+      }
+    ],
+    "potential": [
+      {
+        "name": "--handle",
+        "purpose": "flag for graph node not yet bound",
+        "dimensions": [
+          "missing",
+          "chain"
+        ],
+        "source_span": "cli_flags_that_do_not_exist"
+      },
+      {
+        "name": "--target",
+        "purpose": "flag for graph node not yet bound",
+        "dimensions": [
+          "missing",
+          "chain"
+        ],
+        "source_span": "cli_flags_that_do_not_exist"
+      },
+      {
+        "name": "--index",
+        "purpose": "flag for graph node not yet bound",
+        "dimensions": [
+          "missing",
+          "chain"
+        ],
+        "source_span": "cli_flags_that_do_not_exist"
+      },
+      {
+        "name": "--incognito",
+        "purpose": "flag for graph node not yet bound",
+        "dimensions": [
+          "missing",
+          "chain"
+        ],
+        "source_span": "cli_flags_that_do_not_exist"
+      },
+      {
+        "name": "--current",
+        "purpose": "flag for graph node not yet bound",
+        "dimensions": [
+          "missing",
+          "chain"
+        ],
+        "source_span": "cli_flags_that_do_not_exist"
+      },
+      {
+        "name": "--context",
+        "purpose": "flag for graph node not yet bound",
+        "dimensions": [
+          "missing",
+          "chain"
+        ],
+        "source_span": "cli_flags_that_do_not_exist"
+      },
+      {
+        "name": "--iframe",
+        "purpose": "flag for graph node not yet bound",
+        "dimensions": [
+          "missing",
+          "chain"
+        ],
+        "source_span": "cli_flags_that_do_not_exist"
+      },
+      {
+        "name": "--active",
+        "purpose": "flag for graph node not yet bound",
+        "dimensions": [
+          "missing",
+          "chain"
+        ],
+        "source_span": "cli_flags_that_do_not_exist"
+      },
+      {
+        "name": "--attached",
+        "purpose": "flag for graph node not yet bound",
+        "dimensions": [
+          "missing",
+          "chain"
+        ],
+        "source_span": "cli_flags_that_do_not_exist"
+      },
+      {
+        "name": "--discarded",
+        "purpose": "flag for graph node not yet bound",
+        "dimensions": [
+          "missing",
+          "chain"
+        ],
+        "source_span": "cli_flags_that_do_not_exist"
+      },
+      {
+        "name": "--highlighted",
+        "purpose": "flag for graph node not yet bound",
+        "dimensions": [
+          "missing",
+          "chain"
+        ],
+        "source_span": "cli_flags_that_do_not_exist"
+      },
+      {
+        "name": "--pinned",
+        "purpose": "flag for graph node not yet bound",
+        "dimensions": [
+          "missing",
+          "chain"
+        ],
+        "source_span": "cli_flags_that_do_not_exist"
+      },
+      {
+        "name": "--status",
+        "purpose": "flag for graph node not yet bound",
+        "dimensions": [
+          "missing",
+          "chain"
+        ],
+        "source_span": "cli_flags_that_do_not_exist"
+      },
+      {
+        "name": "--title",
+        "purpose": "flag for graph node not yet bound",
+        "dimensions": [
+          "missing",
+          "chain"
+        ],
+        "source_span": "cli_flags_that_do_not_exist"
+      },
+      {
+        "name": "--browserContextId",
+        "purpose": "flag for graph node not yet bound",
+        "dimensions": [
+          "missing",
+          "chain"
+        ],
+        "source_span": "cli_flags_that_do_not_exist"
+      },
+      {
+        "name": "--focusedWindowId",
+        "purpose": "flag for graph node not yet bound",
+        "dimensions": [
+          "missing",
+          "chain"
+        ],
+        "source_span": "cli_flags_that_do_not_exist"
+      },
+      {
+        "name": "--openerTabId",
+        "purpose": "flag for graph node not yet bound",
+        "dimensions": [
+          "missing",
+          "chain"
+        ],
+        "source_span": "cli_flags_that_do_not_exist"
+      },
+      {
+        "name": "--groupId",
+        "purpose": "flag for graph node not yet bound",
+        "dimensions": [
+          "missing",
+          "chain"
+        ],
+        "source_span": "cli_flags_that_do_not_exist"
+      },
+      {
+        "name": "--cookieStoreId",
+        "purpose": "flag for graph node not yet bound",
+        "dimensions": [
+          "missing",
+          "chain"
+        ],
+        "source_span": "cli_flags_that_do_not_exist"
+      },
+      {
+        "name": "listWindows",
+        "purpose": "emit chrome.windows[] so incognito/current meta is real",
+        "dimensions": [
+          "windows",
+          "incognito",
+          "focused"
+        ],
+        "source_span": "chromeWindows = listed.windows always []"
+      }
+    ]
+  },
+  "residue": [
+    "listTabs maps chrome.tabs.Tab.id to id; chromeRow reads tab.id",
+    "listTabs pinned+status never copied by chromeRow",
+    "bserve chromeWindows always [] because listTabs has no windows key",
+    "windowIncognito fallback tab.incognito never true because listTabs omits incognito",
+    "TUI [incognito] depends on catalog.windows[].incognito which is starved",
+    "attached/stale rows have no windowId unless tabId leftover",
+    "rowHandle windowId 0 when missing",
+    "lookslikeHandle matches decimal so chrome tabId 100387399 as positional use token is a handle not session",
+    "global parse eats --tab before cmdUseSession sees it; wantTabId leftover",
+    "session-only CDP pass-through when map miss",
+    "iframe graph lives in catalog.iframes and childSessions not tab-map.json",
+    "Target.getTargets returns _oopif and openerId not parentFrameId",
+    "bwindow WindowManager is a second target map beside tab-map.json",
+    "pin.url can come from CDP targetInfo.url not catalog url",
+    "file:// tabs appear in chrome.tabs and map",
+    "handle An/Sn after window tabs even if windowId 0",
+    "godelify gate greps strings not live graph completeness",
+    "package 0.4.26 not published at harvest time unless later bumped",
+    "user phrases: only show sessionId if active; status before sessionId; flags chain global to granular; enumerate everything in the map; canonical scorched earth JSON; /extract it"
+  ],
+  "handoff": "complete \u2014 next person decides filtering"
+}
