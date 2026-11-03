@@ -6,7 +6,7 @@
 <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/ralph-wiggum.webp?v=1791987543" alt="ralph" width="80" height="80" />
 
 <h1 align="center">glider CLI</h1>
-<p align="center"><i><b>Browser automation CLI- CDP on your logged-in tabs via a local WebSocket relay and the Glider extension</b></i></p>
+<p align="center"><i><b>Browser automation CLI- directly drive authenticated tabs via CDP + WebSocket relay (agent-native)</b></i></p>
 
 <a href="https://github.com/vdutts7/glidercli"><img src="./assets/badges/github.badge.svg?v=1791987543" alt="GitHub" height="40" /></a>
 <a href="https://www.npmjs.com/package/glidercli"><img src="./assets/badges/npm.badge.svg?v=1791987543" alt="glidercli on npm" height="40" /></a>
