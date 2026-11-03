@@ -1,7 +1,7 @@
 {
   "meta": {
     "project": "glidercli",
-    "updated": "2026-10-16"
+    "updated": "2026-11-03"
   },
   "architecture": {
     "flow": "glidercli -> bserve (localhost relay) -> Chromium extension -> chrome.debugger -> tab",
@@ -43,7 +43,11 @@
     "registry_base": "$GLIDER",
     "resolve": "glider resolve <url> --json",
     "browser": "$GLIDER/config/browser.json",
-    "daemon_log": "$GLIDER/daemon.log"
+    "daemon_log": "$GLIDER/daemon.log",
+    "cookies_jar": "$GLIDER/cookies/<host>/header.txt",
+    "cookies_index": "$GLIDER/cookies/domains.json",
+    "cookie_jar_verb": "glider cookie-jar sync|read|list|add|rm|rebuild",
+    "cookie_jar_extra_warch": "GLIDER_EXTRA_WARCH_ROOT (optional, path-separated) for rebuild scan"
   },
   "discovery": "glider --help"
 }

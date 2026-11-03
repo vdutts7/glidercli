@@ -7,20 +7,20 @@
     "CLI flag chain"
   ],
   "paths": {
-    "this_file": "/Users/vdog/Documents/a/glidercli/docs/tab-identity.scorched.json",
+    "this_file": "docs/tab-identity.scorched.json",
     "tab_map_json": "$GLIDER/state/tab-map.json",
-    "tab_map_js": "/Users/vdog/Documents/a/glidercli/lib/tab-map.js",
-    "tab_catalog_js": "/Users/vdog/Documents/a/glidercli/lib/tab-catalog.js",
-    "tab_tui_js": "/Users/vdog/Documents/a/glidercli/lib/tab-tui.js",
-    "pin_machine_js": "/Users/vdog/Documents/a/glidercli/lib/pin-machine.js",
-    "bserve_js": "/Users/vdog/Documents/a/glidercli/lib/bserve.js",
-    "bwindow_js": "/Users/vdog/Documents/a/glidercli/lib/bwindow.js",
-    "glider_bin": "/Users/vdog/Documents/a/glidercli/bin/glider.js",
-    "paths_js": "/Users/vdog/Documents/a/glidercli/lib/paths.js",
-    "crx_background": "/Users/vdog/Documents/a/glider/background.js",
+    "tab_map_js": "lib/tab-map.js",
+    "tab_catalog_js": "lib/tab-catalog.js",
+    "tab_tui_js": "lib/tab-tui.js",
+    "pin_machine_js": "lib/pin-machine.js",
+    "bserve_js": "lib/bserve.js",
+    "bwindow_js": "lib/bwindow.js",
+    "glider_bin": "bin/glider.js",
+    "paths_js": "lib/paths.js",
+    "crx_background": "glider extension background.js (separate repo)",
     "pin_store": "$GLIDER/config/active-session.json",
-    "gate": "$CURTOOLS/test/glider-cli-tab-map.gate.sh",
-    "live_tab_map_observed": "/Users/vdog/.glider/state/tab-map.json"
+    "verify": "npm run test:regression",
+    "live_tab_map_observed": "$GLIDER/state/tab-map.json"
   },
   "mandate": "Nothing is off the table. Everything is to be done right now. This is blind: no prioritization, no judgment, no exclusion, no tampering, no dilution. The job is purely resource gathering, and then they're done and handed off to the next person. All they do is gather everything. Their job is not to decide what gets filtered or anything like that. Zero tampering. full canonical integrity of data",
   "probe": {

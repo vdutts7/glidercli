@@ -51,6 +51,7 @@ test('package whitelist contains the complete consumer plane and excludes mainta
     'lib/relay-config.js',
     'lib/guard.js',
     'lib/paths.js',
+    'lib/cookie-jar.js',
     'lib/tab-tui.js',
     'lib/tab-map.js',
     'config/browser.json.example',

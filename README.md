@@ -6,7 +6,7 @@
 <img src="https://raw.githubusercontent.com/vdutts7/squircle/main/webp/ralph-wiggum.webp?v=1791987543" alt="ralph" width="80" height="80" />
 
 <h1 align="center">glider CLI</h1>
-<p align="center"><i>Attach to the logged-in Chromium tab. Keep the page out of the agent context window.</i></p>
+<p align="center"><i><b>Browser automation CLI- CDP on your logged-in tabs via a local WebSocket relay and the Glider extension</b></i></p>
 
 <a href="https://github.com/vdutts7/glidercli"><img src="./assets/badges/github.badge.svg?v=1791987543" alt="GitHub" height="40" /></a>
 <a href="https://www.npmjs.com/package/glidercli"><img src="./assets/badges/npm.badge.svg?v=1791987543" alt="glidercli on npm" height="40" /></a>
@@ -91,15 +91,17 @@ Not supported today: Firefox/Safari/WebKit/Gecko, DuckDuckGo, browsers without C
 
 ### Browser config
 
-CLI or the file. One shape.
+via CLI:
 
 ```bash
 glider config browser chrome
 ```
 
-writes `{ "use": "chrome" }` to `$GLIDER/config/browser.json`. Chrome is the default. `glider config browser` lists the same commands.
+via `$GLIDER/config/browser.json`:
 
-macOS launch. Linux/Windows: planned.
+```json
+{ "use": "chrome" }
+```
 
 ---
 
@@ -133,6 +135,16 @@ glider loop hn-scrape.yaml
 | domain index | `~/.glider/config/domains.json` |
 | per-host intel | `~/.glider/warch/HOST/glider.json` |
 | explore cache | `~/.glider/bexplore/HOST/` |
+| cookie jar | `~/.glider/cookies/HOST/header.txt` (+ `domains.json` index) |
+
+```bash
+glider connect
+glider cookie-jar add chat.example.com
+glider cookie-jar sync chat.example.com
+glider cookie-jar read chat.example.com
+```
+
+Offline curl: `COOKIE_FILE=~/.glider/cookies/HOST/header.txt`. Index: `glider cookie-jar rebuild` scans `$GLIDER/warch/**/glider.json` for `cookie_jar.enabled`. Optional extra tree: set `GLIDER_EXTRA_WARCH_ROOT` (path-separated).
 
 | Env | Default | Role |
 |-----|---------|------|

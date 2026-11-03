@@ -3448,6 +3448,114 @@ function maskCookieValue(v) {
   return s.slice(0, 12) + '...(' + (s.length - 20) + ' chars)...' + s.slice(-6);
 }
 
+async function fetchExtensionCookieHeaderLine(host) {
+  const url = /^https?:\/\//i.test(host) ? host : `https://${host}/`;
+  if (!await ensureConnected()) process.exit(1);
+  const payload = await httpPost('/extension', {
+    method: 'getCookies',
+    params: { url },
+  });
+  if (!payload || payload.error) {
+    throw new Error(payload?.error || 'no response from extension');
+  }
+  let cookies = payload.data || payload.result?.cookies || payload.cookies || [];
+  if (!Array.isArray(cookies)) throw new Error('unexpected response shape from extension');
+  const nowSec = Math.floor(Date.now() / 1000);
+  const line = cookies
+    .filter((c) => !c.expirationDate || c.expirationDate >= nowSec)
+    .map((c) => `${c.name}=${c.value}`)
+    .join('; ');
+  return line;
+}
+
+async function cmdCookieJar(opts = []) {
+  const cj = require(path.join(LIB_DIR, 'cookie-jar.js'));
+  const sub = opts[0] || 'sync';
+  const arg = opts[1];
+  const fetchLive = (domain) => fetchExtensionCookieHeaderLine(domain);
+
+  if (sub === '--help' || sub === '-h' || sub === 'help') {
+    console.log('Usage: glider cookie-jar sync [domain] | read <domain> | age <domain> | list | add <domain> | rm <domain> | rebuild');
+    return;
+  }
+
+  const needsRelay = new Set(['sync', 'read']);
+  if (needsRelay.has(sub)) {
+    if (!await checkServer()) {
+      log.info('Server not running, starting...');
+      await cmdStart({ render: false });
+    }
+    if (!await ensureConnected()) process.exit(1);
+  }
+
+  try {
+    if (sub === 'sync') {
+      if (arg) {
+        const r = await cj.syncOne(arg, fetchLive);
+        log.ok(`${r.domain}: ${r.count} cookies synced`);
+      } else {
+        const r = await cj.syncAll(fetchLive);
+        console.log(`synced ${r.ok}, failed ${r.fail}`);
+        if (r.fail) process.exitCode = 1;
+      }
+      return;
+    }
+    if (sub === 'read') {
+      if (!arg) {
+        log.fail('Usage: glider cookie-jar read <domain>');
+        process.exit(1);
+      }
+      const line = await cj.readDomain(arg, fetchLive, (msg) => log.warn(msg));
+      console.log(line);
+      return;
+    }
+    if (sub === 'age') {
+      if (!arg) {
+        log.fail('Usage: glider cookie-jar age <domain>');
+        process.exit(1);
+      }
+      console.log(cj.ageDomain(arg));
+      return;
+    }
+    if (sub === 'list') {
+      console.log(`${'DOMAIN'.padEnd(30)} ${'AGE(s)'.padStart(8)} ${'STALE'.padStart(6)}`);
+      for (const row of cj.listJars()) {
+        console.log(`${row.domain.padEnd(30)} ${row.age.padStart(8)} ${row.stale.padStart(6)}`);
+      }
+      return;
+    }
+    if (sub === 'add') {
+      if (!arg) {
+        log.fail('Usage: glider cookie-jar add <domain>');
+        process.exit(1);
+      }
+      const r = cj.addDomain(arg);
+      console.log(r.added ? `added ${r.domain}` : `${r.domain} already tracked`);
+      return;
+    }
+    if (sub === 'rm') {
+      if (!arg) {
+        log.fail('Usage: glider cookie-jar rm <domain>');
+        process.exit(1);
+      }
+      const r = cj.rmDomain(arg);
+      console.log(r.removed ? `removed ${r.domain}` : `${r.domain} not tracked`);
+      return;
+    }
+    if (sub === 'rebuild') {
+      const r = cj.rebuildDomains();
+      console.log(`rebuilt ${r.path}: ${r.count} domain(s)`);
+      return;
+    }
+    log.fail(`unknown: ${sub}. try: sync|read|age|list|add|rm|rebuild`);
+    process.exit(1);
+  } catch (e) {
+    if (e.code === 'SYNC_EMPTY' || e.code === 'READ_MISS') log.fail(e.message);
+    else log.fail(e.message);
+    process.exit(1);
+  }
+}
+
 // Spawn multiple tabs
 async function cmdSpawn(urls) {
   if (!urls || urls.length === 0) {
@@ -4238,6 +4346,7 @@ ${YELLOW}DOMAIN EXTENSIONS:${NC}
   console.log(`    ${GREEN}${'emulate'.padEnd(16)}${NC} ${DIM}tz | geo | viewport | offline | ua | color-scheme${NC}`);
   console.log(`    ${GREEN}${'storage'.padEnd(16)}${NC} ${DIM}get | set | delete | keys | jar (localStorage)${NC}`);
   console.log(`    ${GREEN}${'cookies'.padEnd(16)}${NC} ${DIM}(read: no flags) | --set NAME=VAL --host H | --delete NAME --host H${NC}`);
+  console.log(`    ${GREEN}${'cookie-jar'.padEnd(16)}${NC} ${DIM}sync [domain] | read | age | list | add | rm | rebuild${NC}`);
   console.log(`    ${GREEN}${'history'.padEnd(16)}${NC} ${DIM}back | forward | reload${NC}`);
   console.log(`    ${GREEN}${'dialog'.padEnd(16)}${NC} ${DIM}dialog auto accept|dismiss${NC}`);
   console.log(`    ${GREEN}${'console'.padEnd(16)}${NC} ${DIM}tail | dump (partial: exits 2 until event streaming lands)${NC}`);
@@ -5599,7 +5708,7 @@ async function main() {
 
   const relayIndependent = new Set([
     'help', '--help', '-h', 'update', 'version', '-v', '--version',
-    'config', 'domains', 'resolve',
+    'config', 'domains', 'resolve', 'cookie-jar',
   ]);
   if (relayConfigError && !relayIndependent.has(cmd)) {
     throw relayConfigError;
@@ -5617,7 +5726,7 @@ async function main() {
     'start', 'stop', 'restart', 'status', 'test', 'doctor', 'heal', 'connect',
     'install', 'uninstall', 'config',
     'help', '--help', '-h', 'update', 'version', '-v', '--version',
-    'domains', 'resolve',
+    'domains', 'resolve', 'cookie-jar',
   ]);
   if (!noRelayPreflight.has(cmd)) {
     if (!await checkServer()) {
@@ -5829,6 +5938,9 @@ async function main() {
       } else {
         await cmdCookies(args.slice(1));
       }
+      break;
+    case 'cookie-jar':
+      await cmdCookieJar(args.slice(1));
       break;
     case 'spawn':
       await cmdSpawn(args.slice(1));
