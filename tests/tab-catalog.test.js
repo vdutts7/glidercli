@@ -165,6 +165,47 @@ test('listTabs fail does not call chrome-missing CDP stale', () => {
   assert.equal(cat.attached[0].sessionId, 'ghost');
 });
 
+test('listTabs ok + empty chrome.tabs does not stale/reap live CDP pages (status/tabs split-brain)', () => {
+  const cat = buildCatalog({
+    focusedWindowId: 0,
+    listTabsOk: true,
+    chromeTabs: [],
+    chromeWindows: [],
+    cdpPages: [
+      {
+        sessionId: 'session-495273',
+        targetId: 'A54FBC5CEAFC3D362A2508835412FD3F',
+        tabId: 100390742,
+        targetInfo: {
+          type: 'page',
+          title: 'Claude',
+          url: 'https://claude.ai/chat/314a2963-b311-4d8c-a992-95a2e5a0309a',
+          tabId: 100390742,
+        },
+      },
+      {
+        sessionId: 'session-495276',
+        targetId: 'D4667F156B53ED0E4ECFEF795436C51A',
+        tabId: 100391106,
+        targetInfo: {
+          type: 'page',
+          title: 'Voice',
+          url: 'https://voice.google.com/u/1/messages',
+          tabId: 100391106,
+        },
+      },
+    ],
+  });
+  assert.equal(cat.windows.length, 0);
+  assert.equal(cat.stale.length, 0);
+  assert.deepEqual(cat.reapSessionIds, []);
+  assert.equal(cat.attached.length, 2);
+  assert.equal(cat.listTabsOk, false);
+  const map = new Map(cat.attached.map((r) => [r.sessionId, r]));
+  assert.equal(reapFromMap(map, cat.reapSessionIds).length, 0);
+  assert.equal(map.size, 2);
+});
+
 test('reapFromMap drops only named sessions', () => {
   const m = new Map([
     ['a', { sessionId: 'a' }],

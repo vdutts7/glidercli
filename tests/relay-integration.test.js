@@ -581,3 +581,92 @@ test('GET /catalog joins chrome.tabs, keeps debugger-only attached, reaps stale 
   assert.equal(after.body.some((row) => row.sessionId === 's-ghost'), false);
   assert.equal(after.body.some((row) => row.sessionId === 's-live'), true);
 });
+
+test('GET /catalog empty listTabs does not reap CDP pages with tabIds (status/tabs split-brain)', async (t) => {
+  const port = await getFreePort();
+  const relay = spawn(process.execPath, [path.join(REPO_ROOT, 'lib', 'bserve.js')], {
+    cwd: REPO_ROOT,
+    env: { ...process.env, GLIDER_PORT: String(port), GLIDER_RELAY_RECONNECT_GRACE_MS: '0' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(async () => {
+    if (relay.exitCode !== null) return;
+    relay.kill('SIGTERM');
+    await new Promise((resolve) => relay.once('close', resolve));
+  });
+  await waitForHttp(`http://127.0.0.1:${port}/status`);
+
+  const extension = new WebSocket(`ws://127.0.0.1:${port}/extension`);
+  t.after(() => extension.close());
+  await new Promise((resolve, reject) => {
+    extension.once('open', resolve);
+    extension.once('error', reject);
+  });
+  extension.on('message', (raw) => {
+    const message = JSON.parse(raw.toString());
+    if (message.method === 'ping') {
+      extension.send(JSON.stringify({ method: 'pong' }));
+      return;
+    }
+    if (message.id === undefined) return;
+    if (message.method === 'listTabs') {
+      extension.send(JSON.stringify({
+        id: message.id,
+        result: { focusedWindowId: 0, tabs: [], windows: [] },
+      }));
+      return;
+    }
+    extension.send(JSON.stringify({ id: message.id, result: {} }));
+  });
+  extension.send(JSON.stringify({
+    method: 'forwardCDPEvent',
+    params: {
+      method: 'Target.attachedToTarget',
+      params: {
+        sessionId: 'session-495273',
+        tabId: 100390742,
+        targetInfo: {
+          targetId: 'A54FBC5CEAFC3D362A2508835412FD3F',
+          type: 'page',
+          title: 'Claude',
+          url: 'https://claude.ai/chat/314a2963-b311-4d8c-a992-95a2e5a0309a',
+          tabId: 100390742,
+        },
+      },
+    },
+  }));
+  extension.send(JSON.stringify({
+    method: 'forwardCDPEvent',
+    params: {
+      method: 'Target.attachedToTarget',
+      params: {
+        sessionId: 'session-495276',
+        tabId: 100391106,
+        targetInfo: {
+          targetId: 'D4667F156B53ED0E4ECFEF795436C51A',
+          type: 'page',
+          title: 'Voice',
+          url: 'https://voice.google.com/u/1/messages',
+          tabId: 100391106,
+        },
+      },
+    },
+  }));
+  await waitForJson(`http://127.0.0.1:${port}/status`, (body) => body.targets === 2);
+
+  const before = await requestJson(`http://127.0.0.1:${port}/targets`);
+  assert.equal(before.body.length, 2);
+
+  const catalog = await requestJson(`http://127.0.0.1:${port}/catalog`);
+  assert.equal(catalog.status, 200);
+  assert.equal(catalog.body.listTabsOk, false);
+  assert.equal(catalog.body.windows.length, 0);
+  assert.equal(catalog.body.stale.length, 0);
+  assert.deepEqual(catalog.body.reapSessionIds || [], []);
+  assert.equal(catalog.body.attached.length, 2);
+
+  const after = await requestJson(`http://127.0.0.1:${port}/targets`);
+  assert.equal(after.body.length, 2);
+  assert.equal(after.body.some((row) => row.sessionId === 'session-495273'), true);
+  assert.equal(after.body.some((row) => row.sessionId === 'session-495276'), true);
+});
