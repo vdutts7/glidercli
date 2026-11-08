@@ -3335,11 +3335,14 @@ async function cmdCookies(opts = []) {
     else if (a === '--header' || a === '--as-header') asHeader = true;
     else if (a === '--help') {
       console.log('Usage: glider cookies <url> | --host <h> | --url <u> [--name <n>] [--value] [--header] [--json]');
+      console.log('       glider cookies --set NAME=VAL (--host H | --url U) [--store-id|--session-id|--tab|--incognito]');
+      console.log('       glider cookies --delete NAME (--host H | --url U) [--store-id|--session-id|--tab|--incognito]');
       console.log('  Read cookies (INCLUDING HttpOnly) for a URL via the extension cookies API.');
       console.log('  --host <h>   convenience: expands to https://<h>/');
       console.log('  --name <n>   filter to a single cookie by exact name');
       console.log('  --value      print full cookie value (default: masked)');
       console.log('  --header     emit as "Cookie: k=v; k=v" header line');
+      console.log('  Write uses chrome.cookies.set/remove; pin store with --incognito / --session-id for Incognito.');
       return;
     }
     else if (!a.startsWith('-')) positional.push(a);
@@ -3448,12 +3451,14 @@ function maskCookieValue(v) {
   return s.slice(0, 12) + '...(' + (s.length - 20) + ' chars)...' + s.slice(-6);
 }
 
-async function fetchExtensionCookieHeaderLine(host) {
+async function fetchExtensionCookies(host, storeId = null) {
   const url = /^https?:\/\//i.test(host) ? host : `https://${host}/`;
   if (!await ensureConnected()) process.exit(1);
+  const params = { url };
+  if (storeId != null && storeId !== '') params.storeId = String(storeId);
   const payload = await httpPost('/extension', {
     method: 'getCookies',
-    params: { url },
+    params,
   });
   if (!payload || payload.error) {
     throw new Error(payload?.error || 'no response from extension');
@@ -3461,25 +3466,101 @@ async function fetchExtensionCookieHeaderLine(host) {
   let cookies = payload.data || payload.result?.cookies || payload.cookies || [];
   if (!Array.isArray(cookies)) throw new Error('unexpected response shape from extension');
   const nowSec = Math.floor(Date.now() / 1000);
-  const line = cookies
-    .filter((c) => !c.expirationDate || c.expirationDate >= nowSec)
-    .map((c) => `${c.name}=${c.value}`)
-    .join('; ');
-  return line;
+  const live = cookies.filter((c) => !c.expirationDate || c.expirationDate >= nowSec);
+  const header = live.map((c) => `${c.name}=${c.value}`).join('; ');
+  return { header, cookies: live };
+}
+
+async function fetchExtensionCookieHeaderLine(host) {
+  const { header } = await fetchExtensionCookies(host);
+  return header;
+}
+
+async function listExtensionCookieStores() {
+  const payload = await httpPost('/extension', { method: 'listCookieStores', params: {} });
+  if (!payload || payload.error) {
+    throw new Error(payload?.error || 'listCookieStores failed (reload CRX for listCookieStores)');
+  }
+  const stores = payload.stores || payload.result?.stores || payload.data || [];
+  if (!Array.isArray(stores)) throw new Error('unexpected listCookieStores shape');
+  return stores;
+}
+
+/** Resolve chrome.cookies storeId from --store-id | --session-id | --tab | --incognito. */
+async function resolveCookieStoreId(opts = {}) {
+  if (opts.storeId != null && opts.storeId !== '') return String(opts.storeId);
+
+  let tabId = opts.tabId != null && opts.tabId !== '' ? Number(opts.tabId) : null;
+  if ((opts.sessionId || opts.incognito) && tabId == null) {
+    try {
+      const catalog = await httpGet('/catalog');
+      const pages = catalog?.pages || [];
+      const windows = catalog?.windows || [];
+      if (opts.sessionId) {
+        const page = pages.find((p) => p.sessionId === opts.sessionId);
+        if (page?.tabId != null && page.tabId !== '') tabId = Number(page.tabId);
+        if (tabId == null) {
+          for (const w of windows) {
+            for (const t of w.tabs || []) {
+              if (t.sessionId === opts.sessionId && t.tabId != null && t.tabId !== '') {
+                tabId = Number(t.tabId);
+                break;
+              }
+            }
+            if (tabId != null) break;
+          }
+        }
+      }
+      if (opts.incognito && tabId == null) {
+        for (const w of windows) {
+          if (!w.incognito) continue;
+          const t = (w.tabs || []).find((x) => x.tabId != null && x.tabId !== '');
+          if (t) { tabId = Number(t.tabId); break; }
+        }
+      }
+    } catch (_) { /* fall through to stores */ }
+  }
+
+  const stores = await listExtensionCookieStores();
+  if (tabId != null && !Number.isNaN(tabId)) {
+    const hit = stores.find((s) => Array.isArray(s.tabIds) && s.tabIds.map(Number).includes(tabId));
+    if (hit) return String(hit.id);
+    throw new Error(`no cookie store contains tabId=${tabId}`);
+  }
+  if (opts.incognito) {
+    const hit = stores.find((s) => !!s.incognito);
+    if (hit) return String(hit.id);
+    throw new Error('no incognito cookie store (open an Incognito window first)');
+  }
+  return null; // default store
 }
 
 async function cmdCookieJar(opts = []) {
   const cj = require(path.join(LIB_DIR, 'cookie-jar.js'));
   const sub = opts[0] || 'sync';
-  const arg = opts[1];
-  const fetchLive = (domain) => fetchExtensionCookieHeaderLine(domain);
+  const rest = opts.slice(1);
+  const flagOpts = {};
+  const positionals = [];
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i];
+    if (a === '--store-id' || a === '--storeId') flagOpts.storeId = rest[++i];
+    else if (a === '--session-id' || a === '--session') flagOpts.sessionId = rest[++i];
+    else if (a === '--tab' || a === '--tab-id') flagOpts.tabId = rest[++i];
+    else if (a === '--incognito') flagOpts.incognito = true;
+    else if (!a.startsWith('-')) positionals.push(a);
+  }
+  const arg = positionals[0];
+
+  const fetchLive = async (domain) => fetchExtensionCookies(domain);
 
   if (sub === '--help' || sub === '-h' || sub === 'help') {
     console.log('Usage: glider cookie-jar sync [domain] | read <domain> | age <domain> | list | add <domain> | rm <domain> | rebuild');
+    console.log('       glider cookie-jar inject <domain> [--store-id ID | --session-id SID | --tab TABID | --incognito]');
+    console.log('  inject: write jar cookies into a Chromium cookie store (Incognito needs --incognito or --session-id)');
     return;
   }
 
-  const needsRelay = new Set(['sync', 'read']);
+  const needsRelay = new Set(['sync', 'read', 'inject']);
   if (needsRelay.has(sub)) {
     if (!await checkServer()) {
       log.info('Server not running, starting...');
@@ -3500,12 +3581,31 @@ async function cmdCookieJar(opts = []) {
       }
       return;
     }
+    if (sub === 'inject') {
+      if (!arg) {
+        log.fail('Usage: glider cookie-jar inject <domain> [--store-id ID | --session-id SID | --tab TABID | --incognito]');
+        process.exit(1);
+      }
+      const storeId = await resolveCookieStoreId(flagOpts);
+      const setCookieFn = async (details) => {
+        const r = await httpPost('/extension', { method: 'setCookie', params: details });
+        if (r && r.error) throw new Error(r.error);
+        return r?.cookie || r?.result?.cookie || r;
+      };
+      const r = await cj.injectDomain(arg, setCookieFn, { storeId });
+      if (jsonOutput) emitJson(true, r);
+      else log.ok(`injected ${r.count} cookie(s) for ${r.domain}${storeId ? ` storeId=${storeId}` : ' (default store)'}`);
+      return;
+    }
     if (sub === 'read') {
       if (!arg) {
         log.fail('Usage: glider cookie-jar read <domain>');
         process.exit(1);
       }
-      const line = await cj.readDomain(arg, fetchLive, (msg) => log.warn(msg));
+      const line = await cj.readDomain(arg, async (d) => {
+        const { header } = await fetchExtensionCookies(d);
+        return header;
+      }, (msg) => log.warn(msg));
       console.log(line);
       return;
     }
@@ -3547,10 +3647,10 @@ async function cmdCookieJar(opts = []) {
       console.log(`rebuilt ${r.path}: ${r.count} domain(s)`);
       return;
     }
-    log.fail(`unknown: ${sub}. try: sync|read|age|list|add|rm|rebuild`);
+    log.fail(`unknown: ${sub}. try: sync|read|inject|age|list|add|rm|rebuild`);
     process.exit(1);
   } catch (e) {
-    if (e.code === 'SYNC_EMPTY' || e.code === 'READ_MISS') log.fail(e.message);
+    if (e.code === 'SYNC_EMPTY' || e.code === 'READ_MISS' || e.code === 'INJECT_MISS' || e.code === 'INJECT_EMPTY') log.fail(e.message);
     else log.fail(e.message);
     process.exit(1);
   }
@@ -4346,7 +4446,7 @@ ${YELLOW}DOMAIN EXTENSIONS:${NC}
   console.log(`    ${GREEN}${'emulate'.padEnd(16)}${NC} ${DIM}tz | geo | viewport | offline | ua | color-scheme${NC}`);
   console.log(`    ${GREEN}${'storage'.padEnd(16)}${NC} ${DIM}get | set | delete | keys | jar (localStorage)${NC}`);
   console.log(`    ${GREEN}${'cookies'.padEnd(16)}${NC} ${DIM}(read: no flags) | --set NAME=VAL --host H | --delete NAME --host H${NC}`);
-  console.log(`    ${GREEN}${'cookie-jar'.padEnd(16)}${NC} ${DIM}sync [domain] | read | age | list | add | rm | rebuild${NC}`);
+  console.log(`    ${GREEN}${'cookie-jar'.padEnd(16)}${NC} ${DIM}sync [domain] | inject <domain> | read | age | list | add | rm | rebuild${NC}`);
   console.log(`    ${GREEN}${'history'.padEnd(16)}${NC} ${DIM}back | forward | reload${NC}`);
   console.log(`    ${GREEN}${'dialog'.padEnd(16)}${NC} ${DIM}dialog auto accept|dismiss${NC}`);
   console.log(`    ${GREEN}${'console'.padEnd(16)}${NC} ${DIM}tail | dump (partial: exits 2 until event streaming lands)${NC}`);
@@ -5644,24 +5744,47 @@ async function cmdCookieWrite(argv) {
     delete: { type: 'string' },
     host: { type: 'string' },
     url: { type: 'string' },
+    'store-id': { type: 'string' },
+    storeId: { type: 'string' },
+    'session-id': { type: 'string' },
+    session: { type: 'string' },
+    tab: { type: 'string' },
+    incognito: { type: 'boolean' },
   });
   assertExclusiveFlags(opts, ['set', 'delete']);
   assertExclusiveFlags(opts, ['host', 'url']);
   if ((!opts.host && !opts.url) || (!opts.set && !opts.delete)) {
-    log.fail('Usage: glider cookies --set NAME=VAL (--host H | --url U)  |  --delete NAME (--host H | --url U)');
+    log.fail('Usage: glider cookies --set NAME=VAL (--host H | --url U) [--store-id|--session-id|--tab|--incognito]');
+    log.fail('       glider cookies --delete NAME (--host H | --url U) [--store-id|--session-id|--tab|--incognito]');
     process.exit(1);
   }
   await _guardAndConnect('cookies-write');
   const cookieUrl = opts.url || (/^https?:\/\//i.test(opts.host) ? opts.host : `https://${opts.host}`);
+  let storeId = null;
+  try {
+    storeId = await resolveCookieStoreId({
+      storeId: opts['store-id'] || opts.storeId,
+      sessionId: opts['session-id'] || opts.session,
+      tabId: opts.tab,
+      incognito: !!opts.incognito,
+    });
+  } catch (e) {
+    log.fail(e.message);
+    process.exit(1);
+  }
   try {
     if (opts.set) {
       const [name, ...rest] = opts.set.split('='); const value = rest.join('=');
       if (!name || rest.length === 0) throw new Error('--set expects NAME=VALUE');
-      const r = await httpPost('/extension', { method: 'setCookie', params: { url: cookieUrl, name, value } });
-      if (jsonOutput) emitJson(true, r); else log.ok(`cookie set: ${name}@${new URL(cookieUrl).host}`);
+      const params = { url: cookieUrl, name, value };
+      if (storeId) params.storeId = storeId;
+      const r = await httpPost('/extension', { method: 'setCookie', params });
+      if (jsonOutput) emitJson(true, r); else log.ok(`cookie set: ${name}@${new URL(cookieUrl).host}${storeId ? ` storeId=${storeId}` : ''}`);
     } else if (opts.delete) {
-      const r = await httpPost('/extension', { method: 'removeCookie', params: { url: cookieUrl, name: opts.delete } });
-      if (jsonOutput) emitJson(true, r); else log.ok(`cookie deleted: ${opts.delete}@${new URL(cookieUrl).host}`);
+      const params = { url: cookieUrl, name: opts.delete };
+      if (storeId) params.storeId = storeId;
+      const r = await httpPost('/extension', { method: 'removeCookie', params });
+      if (jsonOutput) emitJson(true, r); else log.ok(`cookie deleted: ${opts.delete}@${new URL(cookieUrl).host}${storeId ? ` storeId=${storeId}` : ''}`);
     }
   } catch (e) { log.fail(`cookie write failed: ${e.message}`); process.exit(1); }
 }
