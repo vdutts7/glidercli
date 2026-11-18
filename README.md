@@ -146,6 +146,22 @@ glider cookie-jar read chat.example.com
 
 Offline curl: `COOKIE_FILE=~/.glider/cookies/HOST/header.txt`. Index: `glider cookie-jar rebuild` scans `$GLIDER/warch/**/glider.json` for `cookie_jar.enabled`. Optional extra tree: set `GLIDER_EXTRA_WARCH_ROOT` (path-separated).
 
+### Isolated headless subscribers
+
+Glider owns the browser lifecycle, CDP client, cookie import/export, network
+capture, private artifacts, and temporary-profile cleanup. Domain packages
+subscribe to that runtime and keep only their site-specific behavior:
+
+```bash
+glider headless contract
+glider headless run ./subscriber.mjs -- inspect --entity-id 123
+```
+
+Subscribers export `apiVersion = "headless-subscriber/v1"`, `configure()`, and
+`run()`. The runtime never attaches to, creates, or focuses a tab in the
+operator's GUI browser. Cookie rotation is exported only after the subscriber
+calls `markAuthenticated()`.
+
 | Env | Default | Role |
 |-----|---------|------|
 | `GLIDER` | `~/.glider` | home: config, cache, warch |
@@ -235,9 +251,9 @@ Incomplete event-stream features fail closed: `wait --network-idle`, console str
 
 | status | item |
 |--------|------|
-| done | CDP relay, YAML tasks, loop, daemon, multi-tab, `resolve`, `glider tabs` catalog |
+| done | CDP relay, YAML tasks, loop, daemon, multi-tab, `resolve`, `glider tabs` catalog, isolated headless subscriber runtime |
 | planned | Linux and Windows browser launch |
-| | headless cloud mode |
+| | remote headless workers |
 | | task chaining |
 
 ---

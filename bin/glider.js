@@ -4336,6 +4336,9 @@ ${B5}EXTRACTION PATTERNS${NC} ${DIM}(bulletproof, domain-agnostic)${NC}
 ${B5}AUTOMATION${NC}
     ${BW}run${NC} <task.yaml>     Execute YAML task file
     ${BW}loop${NC} <task.yaml>     Loop until marker
+    ${BW}headless run${NC} <subscriber.mjs> -- [args]
+                         Run a versioned subscriber in an isolated Chromium profile
+    ${BW}headless contract${NC}   Print the subscriber API contract
 
 ${B5}EXAMPLES${NC}
     ${DIM}$${NC} glider install              ${DIM}# one-time setup${NC}
@@ -4377,6 +4380,7 @@ ${YELLOW}RALPH WIGGUM PATTERN:${NC}
 ${YELLOW}REQUIREMENTS:${NC}
     - Node.js 18+
     - Glider extension from Chrome Web Store connected in a Chromium browser
+    - Headless subscribers use a local Chromium binary and do not require the extension
 
 ${YELLOW}DOMAIN EXTENSIONS:${NC}
     Add custom domain commands via $GLIDER/config/domains.json:
@@ -5831,7 +5835,7 @@ async function main() {
 
   const relayIndependent = new Set([
     'help', '--help', '-h', 'update', 'version', '-v', '--version',
-    'config', 'domains', 'resolve', 'cookie-jar',
+    'config', 'domains', 'resolve', 'cookie-jar', 'headless',
   ]);
   if (relayConfigError && !relayIndependent.has(cmd)) {
     throw relayConfigError;
@@ -5849,7 +5853,7 @@ async function main() {
     'start', 'stop', 'restart', 'status', 'test', 'doctor', 'heal', 'connect',
     'install', 'uninstall', 'config',
     'help', '--help', '-h', 'update', 'version', '-v', '--version',
-    'domains', 'resolve', 'cookie-jar',
+    'domains', 'resolve', 'cookie-jar', 'headless',
   ]);
   if (!noRelayPreflight.has(cmd)) {
     if (!await checkServer()) {
@@ -6064,6 +6068,9 @@ async function main() {
       break;
     case 'cookie-jar':
       await cmdCookieJar(args.slice(1));
+      break;
+    case 'headless':
+      await require(path.join(LIB_DIR, 'headless-runtime.js')).cmdHeadless(args.slice(1));
       break;
     case 'spawn':
       await cmdSpawn(args.slice(1));
