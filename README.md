@@ -224,8 +224,8 @@ CLI 0.4.18 expects an extension with `listTabs` plus `incognito` on tabs/windows
 | `glider click` | click |
 | `glider type` | type |
 | `glider screenshot` | PNG |
-| `glider frozen` | detect frozen tab |
-| `glider thaw` | unfreeze tab |
+| `glider frozen` | detect frozen tab (detect only; unknown flags/args fail closed) |
+| `glider thaw` | unfreeze tab (`--verify` / `--all`). Not a subcommand of `frozen` |
 | `glider explore` | crawl + HAR |
 | `glider resolve` | host warch |
 | `glider run` | YAML task |

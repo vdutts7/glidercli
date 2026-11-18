@@ -3056,6 +3056,9 @@ async function cmdCorsFetch(url, opts = []) {
 // Semantics: 'hidden|true' → macrotasks (setTimeout/fetch/XHR/workers) will not fire.
 // Exit code: 0 if visible, 1 if hidden (chainable in scripts).
 async function cmdFrozen(opts = []) {
+  // Detect only. Unknown flags/positionals fail closed (never silent-ignore).
+  // Wrong form `glider frozen thaw` must die here with the correct verb tip —
+  // no compatibility redirect.
   let sessionId = null;
   for (let i = 0; i < opts.length; i++) {
     const a = opts[i];
@@ -3064,7 +3067,22 @@ async function cmdFrozen(opts = []) {
       console.log('Usage: glider frozen [--session <id>]');
       console.log('  Detect whether the attached tab is macrotask-frozen (hidden).');
       console.log('  Exit code: 0 = visible, 1 = hidden (frozen).');
+      console.log('  Detect only. To unfreeze: glider thaw [--session <id>] [--all] [--verify]');
       return;
+    } else if (a.startsWith('-')) {
+      log.fail(`unknown flag: ${a}`);
+      console.log('Usage: glider frozen [--session <id>]');
+      console.log('  Detect only. To unfreeze: glider thaw [--verify]');
+      process.exit(2);
+    } else {
+      log.fail(`unknown argument: ${a}`);
+      console.log('Usage: glider frozen [--session <id>]');
+      if (a === 'thaw' || a === 'unfreeze' || a === 'wake' || a === 'activate' || a === 'restore') {
+        console.log(`  '${a}' is not a frozen subcommand. Use: glider thaw [--session <id>] [--all] [--verify]`);
+      } else {
+        console.log(`  '${a}' is not a frozen subcommand. To unfreeze: glider thaw [--verify]`);
+      }
+      process.exit(2);
     }
   }
   if (!await ensureConnected()) process.exit(1);
@@ -3134,6 +3152,14 @@ async function cmdThaw(opts = []) {
       console.log('  --verify  re-check visibility + async liveness after thawing');
       console.log('  Reverse of `glider frozen` (detect). Idempotent.');
       return;
+    } else if (a.startsWith('-')) {
+      log.fail(`unknown flag: ${a}`);
+      console.log('Usage: glider thaw [--session <id>] [--all] [--verify]');
+      process.exit(2);
+    } else {
+      log.fail(`unknown argument: ${a}`);
+      console.log('Usage: glider thaw [--session <id>] [--all] [--verify]');
+      process.exit(2);
     }
   }
   if (!await ensureConnected()) process.exit(1);

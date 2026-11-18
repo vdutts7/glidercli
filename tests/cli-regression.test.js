@@ -988,3 +988,22 @@ test('freeze and thaw forward CDP lifecycle commands through the relay', async (
   result = await runCli(['--json', 'thaw'], { env });
   assert.equal(result.code, 0, result.stderr);
 });
+
+test('glider frozen rejects thaw subcommand and unknown args fail closed', async (t) => {
+  const relay = await createMockRelay();
+  t.after(() => relay.close());
+  const env = { GLIDER_PORT: String(relay.port) };
+
+  let result = await runCli(['frozen', 'thaw'], { env });
+  assert.equal(result.code, 2, result.stderr);
+  assert.match(result.stderr + result.stdout, /unknown argument: thaw/);
+  assert.match(result.stderr + result.stdout, /Use: glider thaw/);
+
+  result = await runCli(['frozen', 'nope'], { env });
+  assert.equal(result.code, 2, result.stderr);
+  assert.match(result.stderr + result.stdout, /unknown argument: nope/);
+
+  result = await runCli(['frozen', '--bogus'], { env });
+  assert.equal(result.code, 2, result.stderr);
+  assert.match(result.stderr + result.stdout, /unknown flag: --bogus/);
+});
