@@ -45,6 +45,7 @@
     "lib/",
     "docs/",
     "config/",
-    "README.md"
+    "README.md",
+    "capabilities.json"
   ]
 }
