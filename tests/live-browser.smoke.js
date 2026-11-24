@@ -558,6 +558,12 @@ async function main() {
       assert.equal(result.body.ok, true, result.body.error);
       return result.body.observation;
     });
+    // Product auto-heal: frozen/backgrounded tab answers CDP without manual `glider thaw`.
+    await record('auto_thaw', async () => {
+      const { body } = await runJson(['eval', 'document.title']);
+      assert.equal(body.observation, 'Glider Capability Fixture');
+      return { observation: body.observation, path: 'ensureSessionRunnable via /cdp' };
+    });
     await record('thaw_after_freeze', async () => {
       const result = await runJson(['thaw', '--verify']);
       assert.equal(result.body.ok, true, result.body.error);
@@ -640,13 +646,36 @@ async function main() {
     return summary;
   }, { total: values.length });
 
+  // Scoreboard: required=true rows must PASS. Deferred/required=false never invent checks.
+  const contractPath = path.join(__dirname, 'contract.json');
+  if (fs.existsSync(contractPath)) {
+    const contract = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
+    const required = (contract.capabilities || []).filter((row) => row && row.required === true && row.plane === 'live');
+    const missing = [];
+    const failed = [];
+    for (const row of required) {
+      const result = report.results[row.id];
+      if (!result) missing.push(row.id);
+      else if (result.status !== 'PASS') failed.push(row.id);
+    }
+    report.contract = {
+      path: 'tests/contract.json',
+      required: required.length,
+      missing,
+      failed,
+    };
+    if (missing.length || failed.length) {
+      report.summary.CONTRACT_FAIL = missing.length + failed.length;
+    }
+  }
+
   const rendered = JSON.stringify(report, null, 2) + '\n';
   if (REPORT_PATH) {
     fs.mkdirSync(path.dirname(path.resolve(REPORT_PATH)), { recursive: true });
     fs.writeFileSync(REPORT_PATH, rendered);
   }
   process.stdout.write(rendered);
-  if (report.summary.FAIL) process.exit(1);
+  if (report.summary.FAIL || report.summary.CONTRACT_FAIL) process.exit(1);
 }
 
 main().catch((error) => {

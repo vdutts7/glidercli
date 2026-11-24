@@ -1,0 +1,970 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "id": "glidercli.tests.contract",
+  "version": "0.1.0",
+  "about": "Public test scoreboard for glidercli. Missing test = deferred OK. Wrong/broken test = forbidden. Live executor = tests/live-browser.smoke.js only.",
+  "law": {
+    "no_broken_tests": true,
+    "missing_ok": true,
+    "wrong_forbidden": true,
+    "cursor_never_imports": true,
+    "sole_live_runner": "tests/live-browser.smoke.js"
+  },
+  "planes": {
+    "unit": {
+      "cmd": "npm test",
+      "crx": false
+    },
+    "live": {
+      "cmd": "npm run test:live",
+      "crx": true,
+      "runner": "tests/live-browser.smoke.js"
+    },
+    "pack": {
+      "cmd": "npm run test:pack",
+      "crx": false
+    }
+  },
+  "capabilities": [
+    {
+      "id": "relay_cdp_round_trip",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "status"
+      ]
+    },
+    {
+      "id": "tab_thaw",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "thaw"
+      ]
+    },
+    {
+      "id": "page_title",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "title"
+      ]
+    },
+    {
+      "id": "page_url",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "url"
+      ]
+    },
+    {
+      "id": "page_text",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "text"
+      ]
+    },
+    {
+      "id": "page_html",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "html"
+      ]
+    },
+    {
+      "id": "page_snapshot",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "snapshot"
+      ]
+    },
+    {
+      "id": "click_by_text",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "click"
+      ]
+    },
+    {
+      "id": "click_scroll_into_view",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": []
+    },
+    {
+      "id": "hover_element",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "hover"
+      ]
+    },
+    {
+      "id": "right_click",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "right-click"
+      ]
+    },
+    {
+      "id": "double_click",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "double-click"
+      ]
+    },
+    {
+      "id": "click_at_coord",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "click-at"
+      ]
+    },
+    {
+      "id": "drag_drop",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "drag"
+      ]
+    },
+    {
+      "id": "rich_editor_write",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": []
+    },
+    {
+      "id": "rich_editor_append",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": []
+    },
+    {
+      "id": "rich_editor_clear",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": []
+    },
+    {
+      "id": "rich_editor_insert_code",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": []
+    },
+    {
+      "id": "rich_editor_insert_at_cursor",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": []
+    },
+    {
+      "id": "keyboard_unicode_paste",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": []
+    },
+    {
+      "id": "keyboard_chord",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "key"
+      ]
+    },
+    {
+      "id": "keyboard_sequence",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "key"
+      ]
+    },
+    {
+      "id": "select_dropdown_by_text",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "select"
+      ]
+    },
+    {
+      "id": "toggle_switch",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": []
+    },
+    {
+      "id": "upload_file",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "upload"
+      ]
+    },
+    {
+      "id": "wait_until_selector_matches",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "wait"
+      ]
+    },
+    {
+      "id": "wait_until_gone",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "wait"
+      ]
+    },
+    {
+      "id": "wait_until_matches_js",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "wait"
+      ]
+    },
+    {
+      "id": "wait_until_stable",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "wait"
+      ]
+    },
+    {
+      "id": "wait_url_matches",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "wait"
+      ]
+    },
+    {
+      "id": "list_frames",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "frames"
+      ]
+    },
+    {
+      "id": "iframe_scope_eval",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "frame-eval"
+      ]
+    },
+    {
+      "id": "shadow_root_sync_read",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": []
+    },
+    {
+      "id": "a11y_snapshot",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "a11y"
+      ]
+    },
+    {
+      "id": "safe_eval_args",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "eval"
+      ]
+    },
+    {
+      "id": "eval_await_promise",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "eval"
+      ]
+    },
+    {
+      "id": "run_cdp_on_backgrounded_tab",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "eval"
+      ]
+    },
+    {
+      "id": "storage_set_get",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "storage"
+      ]
+    },
+    {
+      "id": "set_cookie",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "cookies"
+      ]
+    },
+    {
+      "id": "get_httponly_cookies",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "cookies"
+      ]
+    },
+    {
+      "id": "delete_cookie",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "cookies"
+      ]
+    },
+    {
+      "id": "in_page_fetch",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "fetch"
+      ]
+    },
+    {
+      "id": "extension_cors_fetch",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "cfetch"
+      ]
+    },
+    {
+      "id": "dialog_auto_handle",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "dialog"
+      ]
+    },
+    {
+      "id": "history_back",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "history"
+      ]
+    },
+    {
+      "id": "emulate_timezone",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "emulate"
+      ]
+    },
+    {
+      "id": "emulate_geolocation",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "emulate"
+      ]
+    },
+    {
+      "id": "emulate_viewport",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "emulate"
+      ]
+    },
+    {
+      "id": "emulate_offline",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "emulate"
+      ]
+    },
+    {
+      "id": "emulate_ua",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "emulate"
+      ]
+    },
+    {
+      "id": "emulate_color_scheme",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "emulate"
+      ]
+    },
+    {
+      "id": "element_screenshot",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "screenshot"
+      ]
+    },
+    {
+      "id": "clip_screenshot",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "screenshot"
+      ]
+    },
+    {
+      "id": "full_page_screenshot",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "screenshot"
+      ]
+    },
+    {
+      "id": "pdf_export",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "pdf"
+      ]
+    },
+    {
+      "id": "session_liveness_probe",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "use-session",
+        "pin"
+      ]
+    },
+    {
+      "id": "attach_all_tabs",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "attach-all"
+      ]
+    },
+    {
+      "id": "capture_har",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "har"
+      ]
+    },
+    {
+      "id": "detect_frozen_tab",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "frozen"
+      ]
+    },
+    {
+      "id": "halt_background_tab_freeze",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "freeze"
+      ]
+    },
+    {
+      "id": "thaw_after_freeze",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "thaw"
+      ]
+    },
+    {
+      "id": "target_cleanup",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": []
+    },
+    {
+      "id": "wait_network_idle",
+      "plane": "live",
+      "required": false,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "PARTIAL",
+      "covers": [],
+      "reason": "CLI now fails closed with exit 2 until relay Network event state is implemented"
+    },
+    {
+      "id": "discard_hidden_tabs",
+      "plane": "live",
+      "required": false,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "SKIPPED_SAFETY",
+      "covers": [],
+      "reason": "Global discard can affect operator tabs and is intentionally excluded from live smoke"
+    },
+    {
+      "id": "replay_request",
+      "plane": "live",
+      "required": false,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "NOT_IMPLEMENTED",
+      "covers": [],
+      "reason": "No public replay verb exists"
+    },
+    {
+      "id": "mock_response",
+      "plane": "live",
+      "required": false,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "PARTIAL",
+      "covers": [],
+      "reason": "CLI fails closed with exit 2 until Fetch.requestPaused events are routed"
+    },
+    {
+      "id": "intercept_download",
+      "plane": "live",
+      "required": false,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "NOT_IMPLEMENTED",
+      "covers": [],
+      "reason": "No public download interception verb exists"
+    },
+    {
+      "id": "console_tail",
+      "plane": "live",
+      "required": false,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "PARTIAL",
+      "covers": [],
+      "reason": "CLI fails closed with exit 2 until Runtime.consoleAPICalled events are routed"
+    },
+    {
+      "id": "extension_reload_self",
+      "plane": "live",
+      "required": false,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "PARTIAL",
+      "covers": [],
+      "reason": "extension stayed connected after reloadSelf; chrome.runtime.reload may be blocked here"
+    },
+    {
+      "id": "scaffold_config",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "config"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_connect",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "connect"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_console",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "console"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_cookie_jar",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "cookie-jar"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_doctor",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "doctor"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_domains",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "domains"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_explore",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "explore"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_goto",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "goto"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_headless",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "headless"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "auto_thaw",
+      "plane": "live",
+      "required": true,
+      "runner": "tests/live-browser.smoke.js",
+      "status": "implemented",
+      "covers": [
+        "heal",
+        "thaw",
+        "session-runnable"
+      ]
+    },
+    {
+      "id": "scaffold_install",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "install"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_loop",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "loop"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_mock",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "mock"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_reload",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "reload"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_resolve",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "resolve"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_restart",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "restart"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_run",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "run"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_start",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "start"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_stop",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "stop"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_tabs",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "tabs"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_targets",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "targets"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_type",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "type"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_uninstall",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "uninstall"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_update",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "update"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    },
+    {
+      "id": "scaffold_window",
+      "plane": "live",
+      "required": false,
+      "runner": null,
+      "status": "DEFERRED_NO_TEST",
+      "covers": [
+        "window"
+      ],
+      "reason": "Scaffold only. No test yet. Do not invent a broken check."
+    }
+  ]
+}

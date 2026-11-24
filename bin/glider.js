@@ -32,6 +32,11 @@ const YAML = require('yaml');
 
 // Config
 const { relayPort } = require('../lib/relay-config.js');
+const {
+  ensureSessionRunnable,
+  waitForTargetSession,
+  isLifecycleMethod,
+} = require('../lib/session-runnable.js');
 const DEBUG_PORT = process.env.GLIDER_DEBUG_PORT || 9222;
 const DEBUG_URL = `http://127.0.0.1:${DEBUG_PORT}`;
 const LIB_DIR = path.join(__dirname, '..', 'lib');
@@ -893,11 +898,31 @@ async function pickLiveSessionId() {
   return null;
 }
 
+// Product gate: every non-lifecycle /cdp call re-asserts runnable state.
+// No memo — freeze/background can happen between verbs; Chromium stays healed.
+async function autoEnsureSessionRunnable(sessionId) {
+  try {
+    await ensureSessionRunnable({
+      sessionId: sessionId || null,
+      send: (call) => httpPostRaw('/cdp', call),
+    });
+  } catch {
+    // Best-effort; verb still runs. Explicit glider thaw remains available.
+  }
+}
+
 async function httpPost(urlPath, body) {
   const payload = { ...body };
   const pinned = activeSessionId;
   if (urlPath === '/cdp' && pinned && payload.sessionId == null) {
     payload.sessionId = pinned;
+  }
+  if (
+    urlPath === '/cdp'
+    && payload.method
+    && !isLifecycleMethod(payload.method)
+  ) {
+    await autoEnsureSessionRunnable(payload.sessionId || pinned || null);
   }
   try {
     return await httpPostRaw(urlPath, payload);
@@ -910,6 +935,7 @@ async function httpPost(urlPath, body) {
     ) {
       const live = await pickLiveSessionId();
       if (live) {
+        await autoEnsureSessionRunnable(live);
         const retry = { ...body, sessionId: live };
         return httpPostRaw(urlPath, retry);
       }
@@ -3206,12 +3232,11 @@ async function cmdThaw(opts = []) {
 
   const results = [];
   for (const sid of sessions) {
-    const p1 = { method: 'Emulation.setFocusEmulationEnabled', params: { enabled: true } };
-    const p2 = { method: 'Page.setWebLifecycleState', params: { state: 'active' } };
-    if (sid) { p1.sessionId = sid; p2.sessionId = sid; }
     try {
-      await httpPost('/cdp', p1);
-      await httpPost('/cdp', p2);
+      await ensureSessionRunnable({
+        sessionId: sid || null,
+        send: (call) => httpPostRaw('/cdp', call),
+      });
       const entry = { sessionId: sid || activeSessionId || '(pinned)', thawed: true };
       if (verify) {
         const vp = { method: 'Runtime.evaluate', params: { expression: `document.visibilityState`, returnByValue: true } };
@@ -4011,16 +4036,21 @@ async function cmdExplore(url, opts = []) {
       log.info(`[explore] Opening fresh tab for capture...`);
       const result = await wm.createTab(url);
       freshTargetId = result.targetId;
+      if (result.sessionId) sessionId = result.sessionId;
     } finally {
       await wm.close();
     }
-    await new Promise(r => setTimeout(r, 2500));
-    try {
-      const targetsRes = await httpGet('/targets');
-      const targets = (targetsRes && targetsRes.targets) || targetsRes || [];
-      const t = (Array.isArray(targets) ? targets : []).find(x => x.targetId === freshTargetId);
-      if (t && t.sessionId) sessionId = t.sessionId;
-    } catch {}
+    if (!sessionId && freshTargetId) {
+      sessionId = await waitForTargetSession({
+        targetId: freshTargetId,
+        listTargets: async () => {
+          const targetsRes = await httpGet('/targets');
+          return (targetsRes && targetsRes.targets) || targetsRes || [];
+        },
+        timeoutMs: 10000,
+        intervalMs: 100,
+      });
+    }
     if (!sessionId) log.info('[explore] fresh-tab created but sessionId not resolved (bexplore will auto-pin)');
     else log.ok(`[explore] fresh-tab session: ${sessionId}`);
   }

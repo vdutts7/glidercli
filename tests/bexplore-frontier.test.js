@@ -12,7 +12,31 @@ const {
   harDocumentUrls,
 } = require('../lib/bexplore.js');
 
-test('pinned exploration thaws the background tab before enabling CDP domains', async () => {
+test('enableSession uses shared runnable gate before CDP domain enables', async () => {
+  const explorer = new SiteExplorer({ sessionId: 'session-fresh', depth: 0 });
+  const calls = [];
+  explorer.sendWithRetry = async (method, params, options) => {
+    calls.push({ method, params, options });
+    return {};
+  };
+  explorer.send = async (method, params, options) => {
+    calls.push({ method, params, options });
+    return {};
+  };
+
+  await explorer.enableSession('session-fresh');
+
+  assert.deepEqual(calls.map((call) => call.method).slice(0, 4), [
+    'Emulation.setFocusEmulationEnabled',
+    'Page.setWebLifecycleState',
+    'Runtime.enable',
+    'Page.enable',
+  ]);
+  assert.equal(calls[0].options.sessionId, 'session-fresh');
+  assert.deepEqual(calls[1].params, { state: 'active' });
+});
+
+test('pinned exploration enables session through the shared gate', async () => {
   const explorer = new SiteExplorer({ sessionId: 'session-fresh', depth: 0 });
   const calls = [];
   explorer.fetchTargets = async () => [{
@@ -24,18 +48,14 @@ test('pinned exploration thaws the background tab before enabling CDP domains', 
     calls.push({ method, params, options });
     return {};
   };
-  explorer.enableSession = async (sessionId) => {
-    calls.push({ method: 'enableSession', sessionId });
-  };
+  explorer.sendWithRetry = explorer.send;
 
   await explorer.init();
 
-  assert.deepEqual(calls.map((call) => call.method), [
-    'Target.setAutoAttach',
-    'Emulation.setFocusEmulationEnabled',
-    'Page.setWebLifecycleState',
-    'enableSession',
-  ]);
+  assert.equal(calls[0].method, 'Target.setAutoAttach');
+  assert.equal(calls[1].method, 'Emulation.setFocusEmulationEnabled');
+  assert.equal(calls[2].method, 'Page.setWebLifecycleState');
+  assert.equal(calls[3].method, 'Runtime.enable');
   assert.equal(calls[1].options.sessionId, 'session-fresh');
   assert.deepEqual(calls[2].params, { state: 'active' });
 });

@@ -276,13 +276,14 @@ CLI 0.4.18 expects an extension with `listTabs` plus `incognito` on tabs/windows
 
 ## Verification
 
+Scoreboard: [`tests/contract.json`](tests/contract.json) — missing test OK (deferred); wrong/broken test forbidden.
+
 ```bash
-node --check bin/glider.js && node --check lib/bserve.js
-node --test tests/*.test.js
-node tests/live-browser.smoke.js  # isolated live-browser fixture
+npm test                 # unit / mock / in-process relay (no CRX)
+npm run test:live        # real Chromium + Glider extension (tests/live-browser.smoke.js)
 ```
 
-Live smoke creates + closes its own browser window.
+Live smoke creates + closes its own browser window. Required rows in `contract.json` are the live checks that must pass; deferred rows are scaffolding only.
 
 Incomplete event-stream features fail closed: `wait --network-idle`, console streaming, response fulfillment. No success-shaped fallback.
 
