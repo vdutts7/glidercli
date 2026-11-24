@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema#",
   "_meta": {
     "namespace": "glidercli.capabilities",
-    "purpose": "Product capability definition for Glider (public). Not CLI verb synonyms \u2014 named browser-fu powers + primitives. Test scoreboard = tests/contract.json.",
+    "purpose": "Product capability definition for Glider (public). Named browser-fu powers + primitives. Scoreboard = tests/contract.json.",
     "regen_rule": "Append-only for capabilities + walls_smashed. On change, bump version + add changelog entry.",
     "read_first": [
       "capabilities",
@@ -31,8 +31,7 @@
       }
     ],
     "last_updated_utc": "2026-07-14T15:33:54Z",
-    "home": "$GLIDERCLI/capabilities.json",
-    "operator_walls": "$CURREGISTRY/glider/walls.json",
+    "home": "capabilities.json (this file, in glidercli)",
     "scoreboard": "tests/contract.json",
     "moved_from_cursor_utc": "2026-11-24T12:03:24Z"
   },
@@ -542,26 +541,6 @@
       ],
       "captured_at": "2026-07-29T21:35:51Z"
     },
-    "edge_resource_reclaim": {
-      "layer": "host_launchd_audit",
-      "one_line": "Host-bound Edge resource observation and quit-only cache reclaim; policy and cadence belong to the selected Edge host manifest.",
-      "invoke": {
-        "cli": "$CURTOOLS/system/edge/entrypoint.sh reclaim",
-        "config": "$CURTOOLS/system/edge/entrypoint.sh apply",
-        "launchd": "com.ag.system.edge.reclaim",
-        "audit": "$CURTOOLS/system/MacBook-Pro/audit.sh"
-      },
-      "src_refs": [
-        "$CURTOOLS/system/edge/reclaim.sh",
-        "$CURTOOLS/system/edge/config.sh",
-        "$CURTOOLS/system/MacBook-Pro/audit.sh",
-        "$CURREGISTRY/system/resource/edge/manifest.json"
-      ],
-      "cli_handle": "$CURTOOLS/system/edge/entrypoint.sh reclaim",
-      "consumed_by": [
-        "edge_helper_sw_cache_farm_control"
-      ]
-    },
     "chromium_profile_preferences": {
       "layer": "browser_profile",
       "one_line": "Atomically edit a Chromium profile Preferences JSON while the browser is quit, then reopen and verify retained state.",
@@ -606,7 +585,7 @@
     },
     "claude_cowork_scheduled_tasks": {
       "cli": "NO CLI",
-      "description": "API probe only. CRX not wired (failures.json F-001). GET /api/organizations/{ORG}/cowork/scheduled_tasks and /{trig_id}; optional /v1/code/triggers?tags=cowork-scheduled with anthropic-beta ccr-triggers-2026-01-30; runs via /v1/code/sessions?only_trigger_sessions=true",
+      "description": "API probe only. CRX not wired (failures.json F-001). GET /api/organizations/{ORG}/cowork/scheduled_tasks and /{trig_id}; also /v1/code/triggers?tags=cowork-scheduled with anthropic-beta ccr-triggers-2026-01-30; runs via /v1/code/sessions?only_trigger_sessions=true",
       "domain": "claude.ai",
       "crx_status": "NOT_WIRED"
     }
@@ -830,7 +809,7 @@
     },
     "wait_until_selector_matches_v": {
       "id": "wait_until_selector_matches_v",
-      "one_line": "Poll until querySelector(sel) matches (present + optional text).",
+      "one_line": "Poll until querySelector(sel) matches (present; text when supplied).",
       "primitive": "dom_action_layer",
       "primitive_ids": [
         "dom_action_layer"
@@ -1140,7 +1119,7 @@
     },
     "set_cookie": {
       "id": "set_cookie",
-      "one_line": "chrome.cookies.set with optional storeId (Incognito pin via getAllCookieStores).",
+      "one_line": "chrome.cookies.set with storeId when supplied (Incognito pin via getAllCookieStores).",
       "primitive": "extension_ws_bridge",
       "primitive_ids": [
         "extension_ws_bridge"
@@ -1268,16 +1247,6 @@
       "cli_handle": null,
       "gap_ref": null
     },
-    "edge_helper_sw_cache_farm_control": {
-      "one_line": "Permanent control of Edge Helper RAM + SW cache disk farm on MacBook-Pro",
-      "primitive": "edge_resource_reclaim (config+reclaim+launchd+audit)",
-      "primitive_ids": [
-        "edge_resource_reclaim"
-      ],
-      "recipe": "Read shared Edge manifest resource_contract, then machine-selected host binding. Explicit actions only; native memory management is not a hard cap and routine reclaim never removes persistent site storage.",
-      "cli_handle": "$CURTOOLS/system/edge/entrypoint.sh reclaim",
-      "gap_ref": null
-    },
     "halt_background_tab_freeze": {
       "one_line": "Halt a hidden/background tab's task queues (timers/rAF/fetch/JS alloc) in place to contain a runaway/leaking bg tab, without killing the renderer or losing DOM state.",
       "primitive": "chrome_debugger_cdp",
@@ -1322,10 +1291,10 @@
     }
   },
   "flywheel_rules": [
-    "Before opening any new potemkin scorch: read $CURREGISTRY/glider/capabilities.json first.",
+    "Before opening any new potemkin scorch: read capabilities.json in this package first.",
     "If a wall matches an entry in walls_smashed, apply the solved_by primitive directly \u2014 no rediscovery.",
     "If wall is new: solve it, then APPEND to walls_smashed with root_cause + solved_by + src_refs + checkpoint.",
-    "If a primitive is discovered but not yet exposed in `glider --help`, file an entry under 'cli_gaps' with the exact patch needed."
+    "If a primitive is discovered but absent from in `glider --help`, file an entry under 'cli_gaps' with the exact patch needed."
   ],
   "cli_gaps": [
     {
@@ -1738,7 +1707,7 @@
       "id": "glider_click_object_form_broken"
     }
   ],
-  "version": "2.0.0",
+  "version": "2.0.1",
   "changelog": [
     {
       "ts_utc": "2026-07-14T20:26:00Z",
@@ -1939,6 +1908,11 @@
       "version": "2.0.0",
       "utc": "2026-11-24T12:03:24Z",
       "summary": "Moved public capabilities out of Cursor registry into glidercli product definition. Walls stay operator-local."
+    },
+    {
+      "version": "2.0.1",
+      "utc": "2026-11-24T12:11:08Z",
+      "summary": "Strip Cursor/operator provenance from public capabilities; edge reclaim stays walls/private."
     }
   ],
   "updated_utc": "2026-08-23T20:51:00Z",
@@ -1947,7 +1921,7 @@
       "id": "runtime_console_forwarder",
       "where": "$WSLHOME/glider/bserve.js (or equivalent bg-page)",
       "issue": "No bg-page subscription to Runtime.consoleAPICalled + Console.messageAdded. CLI cannot tail live console output.",
-      "fix_sketch": "in bg init: attach Runtime domain via CDP session; on consoleAPICalled event, buffer last N=500 messages in ring; expose HTTP /extension?method=consoleBuffer&sessionId=X to return + optionally clear",
+      "fix_sketch": "in bg init: attach Runtime domain via CDP session; on consoleAPICalled event, buffer last N=500 messages in ring; expose HTTP /extension?method=consoleBuffer&sessionId=X to return; clear when requested",
       "cli_dependency": "console_tail_verb (CLI surface already shipped v0.4.0)",
       "impact_if_shipped": "glider console tail + dump become fully functional; unblocks debugging js errors / warn logs / tribal lib logging across all warch citizens",
       "status": "open",
