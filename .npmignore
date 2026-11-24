@@ -1,0 +1,13 @@
+# Keep out of public tarball even when files[] includes lib/docs
+**/*.pyc
+**/*.pyo
+**/__pycache__/
+*.tgz
+.DS_Store
+.git/
+.hooks/
+.ruff_cache/
+docs/*.scorched.json
+docs/tab-identity.scorched.json
+node_modules/
+tests/

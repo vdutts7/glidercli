@@ -131,7 +131,7 @@ glider loop hn-scrape.yaml
 
 | Output | Path |
 |--------|------|
-| LaunchAgent daemon log | AGLOGS namespace `glider/relay` |
+| LaunchAgent daemon log | stderr, or optional sink via `GLIDER_AGLOGS_NAMESPACE` + `GLIDER_AGLOG_BIN` |
 | domain index | `~/.glider/config/domains.json` |
 | per-host intel | `~/.glider/warch/HOST/glider.json` |
 | explore cache | `~/.glider/bexplore/HOST/` |

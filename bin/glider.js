@@ -1953,7 +1953,11 @@ async function cmdInstallDaemon() {
       if (jsonOutput) emitJson(true, { running: true, port: PORT, pid: record.pid, childPid: record.childPid, alreadyRunning });
       log.ok(alreadyRunning ? 'Daemon already running' : 'Daemon started');
       log.info('Relay will auto-restart on crash');
-      log.info('Logs: AGLOGS glider/relay');
+      log.info(
+        process.env.GLIDER_AGLOGS_NAMESPACE
+          ? `Logs: log adapter namespace ${process.env.GLIDER_AGLOGS_NAMESPACE}`
+          : 'Logs: daemon stderr (optional GLIDER_AGLOGS_NAMESPACE + GLIDER_AGLOG_BIN)',
+      );
       log.info(`PID: ${record.pid}`);
       return;
     }

@@ -10,38 +10,48 @@ const { REPO_ROOT } = require('./helpers.js');
 
 const CWS_URL = 'https://chromewebstore.google.com/detail/glider/njbidokkffhgpofcejgcfcgcinmeoalj';
 
-function addPackageEntry(files, relativePath) {
-  const normalized = relativePath.replace(/\/+$/, '');
-  const absolute = path.resolve(REPO_ROOT, normalized);
-  assert.equal(
-    path.relative(REPO_ROOT, absolute).startsWith('..'),
-    false,
-    `package entry escapes repository: ${relativePath}`
-  );
-  assert.equal(fs.existsSync(absolute), true, `package entry does not exist: ${relativePath}`);
-  const stat = fs.lstatSync(absolute);
-  if (!stat.isDirectory()) {
-    files.add(normalized.split(path.sep).join('/'));
-    return;
-  }
-  for (const entry of fs.readdirSync(absolute, { withFileTypes: true })) {
-    addPackageEntry(files, path.join(normalized, entry.name));
+function gitTrackedFiles() {
+  const out = execFileSync('git', ['-C', REPO_ROOT, 'ls-files', '-z'], { encoding: 'utf8' });
+  return new Set(out.split('\0').filter(Boolean));
+}
+
+function npmPackedFiles() {
+  const packDir = fs.mkdtempSync(path.join(os.tmpdir(), 'glidercli-pack-'));
+  try {
+    const name = execFileSync('npm', ['pack', '--pack-destination', packDir], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim().split(/\s+/).pop();
+    const tgz = path.join(packDir, name);
+    const listing = execFileSync('tar', ['-tzf', tgz], { encoding: 'utf8' })
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => line.replace(/^package\//, ''))
+      .filter((line) => line && line !== '.' && !line.endsWith('/'));
+    return { tgz, listing };
+  } finally {
+    fs.rmSync(packDir, { recursive: true, force: true });
   }
 }
 
-function packageFiles(packageJson) {
-  assert.equal(Array.isArray(packageJson.files), true, 'package.json files whitelist is required');
-  const files = new Set(['package.json']);
-  for (const entry of packageJson.files) {
-    assert.equal(typeof entry, 'string', 'package files entries must be strings');
-    addPackageEntry(files, entry);
-  }
-  return files;
-}
-
-test('package whitelist contains the complete consumer plane and excludes maintainer files', () => {
+test('npm pack ships only git-tracked consumer-plane files', () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
-  const files = packageFiles(packageJson);
+  assert.equal(Array.isArray(packageJson.files), true, 'package.json files whitelist is required');
+  assert.equal(Object.hasOwn(packageJson, 'main'), false, 'CLI-only package must not declare a missing module entry');
+
+  const tracked = gitTrackedFiles();
+  const { listing } = npmPackedFiles();
+  assert.ok(listing.length > 0, 'npm pack produced empty listing');
+
+  for (const entry of listing) {
+    assert.equal(
+      tracked.has(entry),
+      true,
+      `untracked/generated path packed: ${entry}`,
+    );
+  }
+
   for (const required of [
     'README.md',
     'package.json',
@@ -53,28 +63,19 @@ test('package whitelist contains the complete consumer plane and excludes mainta
     'lib/paths.js',
     'lib/cookie-jar.js',
     'lib/headless-runtime.js',
+    'lib/status-model.js',
+    'lib/target-registry.js',
     'lib/tab-tui.js',
     'lib/tab-map.js',
     'config/browser.json.example',
   ]) {
-    assert.equal(files.has(required), true, `missing ${required}`);
-  }
-  for (const excluded of [
-    'tests/',
-    'scripts/',
-    'claude-sidebar-har-capture.js',
-    'linkedin-har-capture.js',
-  ]) {
-    for (const entry of files) {
-      assert.equal(
-        entry === excluded || entry.startsWith(excluded),
-        false,
-        `maintainer file leaked: ${entry}`
-      );
-    }
+    assert.equal(listing.includes(required), true, `missing ${required}`);
   }
 
-  assert.equal(Object.hasOwn(packageJson, 'main'), false, 'CLI-only package must not declare a missing module entry');
+  for (const entry of listing) {
+    assert.equal(entry.startsWith('tests/'), false, `tests leaked: ${entry}`);
+    assert.equal(entry.startsWith('scripts/'), false, `scripts leaked: ${entry}`);
+  }
 
   const setup = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'docs', 'setup.json'), 'utf8'));
   assert.deepEqual(setup.install.extension, {
@@ -93,7 +94,7 @@ test('package whitelist contains the complete consumer plane and excludes mainta
 
   const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'glidercli-consumer-'));
   try {
-    for (const entry of files) {
+    for (const entry of listing) {
       const destination = path.join(stage, entry);
       fs.mkdirSync(path.dirname(destination), { recursive: true });
       fs.copyFileSync(path.join(REPO_ROOT, entry), destination);

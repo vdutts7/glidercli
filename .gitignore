@@ -31,6 +31,10 @@ logs/
 
 # Cache
 .cache/
+.ruff_cache/
+**/__pycache__/
+*.pyc
+*.pyo
 
 # Coverage
 coverage/

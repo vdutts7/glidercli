@@ -7,8 +7,9 @@ DAEMON_PATH="$SCRIPT_DIR/glider-daemon.sh"
 BSERVE="$SCRIPT_DIR/bserve.js"
 LOG_DIR="${GLIDER:-$HOME/.glider}"
 PORT="${GLIDER_PORT:-${RELAY_PORT:-19988}}"
+# Optional structured log sink. Both env vars required; no hardcoded host paths.
 AGLOG_NAMESPACE="${GLIDER_AGLOGS_NAMESPACE:-}"
-AGLOG_BIN="${GLIDER_AGLOG_BIN:-${AG:-$HOME/.agents}/tools/lib/aglog.sh}"
+AGLOG_BIN="${GLIDER_AGLOG_BIN:-}"
 
 case "$PORT" in
   ''|*[!0-9]*|0|0*) echo "glider-daemon: invalid relay port: $PORT" >&2; exit 2 ;;
@@ -45,8 +46,12 @@ management_lock_owned=0
 
 mkdir -p "$LOG_DIR"
 
+if [ -n "$AGLOG_NAMESPACE" ] && [ -z "$AGLOG_BIN" ]; then
+  echo "glider-daemon: GLIDER_AGLOGS_NAMESPACE set but GLIDER_AGLOG_BIN is empty" >&2
+  exit 78
+fi
 if [ -n "$AGLOG_NAMESPACE" ] && [ ! -x "$AGLOG_BIN" ]; then
-  echo "glider-daemon: AGLOGS adapter is unavailable: $AGLOG_BIN" >&2
+  echo "glider-daemon: log adapter is unavailable: $AGLOG_BIN" >&2
   exit 78
 fi
 
@@ -470,7 +475,7 @@ write_pid_record
 initial_handoff=1
 while true; do
   emit_log_line "[$(date)] Starting relay on port $PORT..." || {
-    echo "glider-daemon: AGLOGS start event failed" >&2
+    echo "glider-daemon: log adapter start event failed" >&2
     exit 74
   }
 
@@ -533,7 +538,7 @@ while true; do
   write_pid_record
 
   emit_log_line "[$(date)] Relay exited with code $EXIT_CODE, restarting in 2s..." || {
-    echo "glider-daemon: AGLOGS restart event failed" >&2
+    echo "glider-daemon: log adapter restart event failed" >&2
     exit 74
   }
   sleep 2

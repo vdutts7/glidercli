@@ -43,7 +43,7 @@
     "registry_base": "$GLIDER",
     "resolve": "glider resolve <url> --json",
     "browser": "$GLIDER/config/browser.json",
-    "daemon_log": "AGLOGS namespace glider/relay when GLIDER_AGLOGS_NAMESPACE is set",
+    "daemon_log": "daemon stderr; optional structured sink when GLIDER_AGLOGS_NAMESPACE + GLIDER_AGLOG_BIN are set",
     "cookies_jar": "$GLIDER/cookies/<host>/header.txt",
     "cookies_index": "$GLIDER/cookies/domains.json",
     "cookie_jar_verb": "glider cookie-jar sync|read|list|add|rm|rebuild",

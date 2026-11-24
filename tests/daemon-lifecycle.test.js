@@ -145,7 +145,7 @@ test('daemon rejects an invalid GLIDER_NODE_BIN before starting', () => {
   }
 });
 
-test('daemon routes configured LaunchAgent output to AGLOGS without a plaintext log', async (t) => {
+test('daemon routes configured LaunchAgent output to log adapter without a plaintext log', async (t) => {
   const home = makeTempGliderHome();
   const port = await getFreePort();
   const adapter = path.join(home, 'aglog.sh');
