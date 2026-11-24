@@ -145,6 +145,55 @@ test('daemon rejects an invalid GLIDER_NODE_BIN before starting', () => {
   }
 });
 
+test('daemon routes configured LaunchAgent output to AGLOGS without a plaintext log', async (t) => {
+  const home = makeTempGliderHome();
+  const port = await getFreePort();
+  const adapter = path.join(home, 'aglog.sh');
+  const capture = path.join(home, 'aglog-capture.txt');
+  fs.writeFileSync(adapter, [
+    '#!/bin/bash',
+    '[ "$1" = put ] && [ "$2" = glider/relay ] && [ "$3" = - ] || exit 2',
+    'cat >> "$GLIDER_AGLOG_CAPTURE"',
+    '',
+  ].join('\n'));
+  fs.chmodSync(adapter, 0o700);
+
+  const daemon = spawn('/bin/bash', [DAEMON_PATH], {
+    cwd: REPO_ROOT,
+    env: {
+      ...process.env,
+      GLIDER: home,
+      GLIDER_NODE_BIN: process.execPath,
+      GLIDER_PORT: String(port),
+      GLIDER_AGLOG_BIN: adapter,
+      GLIDER_AGLOGS_NAMESPACE: 'glider/relay',
+      GLIDER_AGLOG_CAPTURE: capture,
+      PATH: '/usr/bin:/bin',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stderr = '';
+  daemon.stderr.on('data', (chunk) => { stderr += chunk; });
+  t.after(async () => {
+    if (daemon.exitCode === null) {
+      daemon.kill('SIGTERM');
+      await new Promise((resolve) => daemon.once('close', resolve));
+    }
+    removeTree(home);
+  });
+
+  await waitForHttp(`http://127.0.0.1:${port}/status`);
+  await waitForFile(capture);
+  assert.equal(fs.existsSync(path.join(home, 'daemon.log')), false);
+  assert.match(fs.readFileSync(capture, 'utf8'), /Starting relay on port/);
+
+  daemon.kill('SIGTERM');
+  const exit = await new Promise((resolve) => {
+    daemon.once('close', (code, signal) => resolve({ code, signal }));
+  });
+  assert.deepEqual(exit, { code: 0, signal: null }, stderr);
+});
+
 test('direct daemon launch adopts a live canonical standalone relay on the same port', async (t) => {
   const home = makeTempGliderHome();
   const port = await getFreePort();

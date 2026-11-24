@@ -131,7 +131,7 @@ glider loop hn-scrape.yaml
 
 | Output | Path |
 |--------|------|
-| daemon log | `~/.glider/daemon.log` |
+| LaunchAgent daemon log | AGLOGS namespace `glider/relay` |
 | domain index | `~/.glider/config/domains.json` |
 | per-host intel | `~/.glider/warch/HOST/glider.json` |
 | explore cache | `~/.glider/bexplore/HOST/` |
@@ -161,6 +161,47 @@ Subscribers export `apiVersion = "headless-subscriber/v1"`, `configure()`, and
 `run()`. The runtime never attaches to, creates, or focuses a tab in the
 operator's GUI browser. Cookie rotation is exported only after the subscriber
 calls `markAuthenticated()`.
+
+Subscribers that set `captureMode: "exhaustive"` receive an append-only
+`cdp-stream.jsonl` journal containing every CDP command, response, and event.
+Obtainable request and response payloads are written as separate hashed files;
+loaded script sources and advertised source-map references are indexed. Set
+`captureAdvertisedSourceMaps: true` to preserve same-origin maps explicitly
+advertised by those scripts as hashed artifacts.
+Set `captureProxyTraffic: true` to add browser-scoped proxy evidence. Glider
+launches pinned mitmproxy 12.3.1 through an installed `mitmdump` or a pinned
+`uv` fallback, binds it only to an ephemeral `127.0.0.1` port, and passes
+`--proxy-server` only to the disposable browser. HTTPS interception trusts only
+the run's ephemeral CA through Chromium's SPKI allowlist; Glider does not alter
+the system proxy, keychain, or trust store and does not use blanket certificate
+error suppression. When standard HTTP proxy environment variables are present,
+the private mitmproxy chains through that upstream without changing system
+settings. The private `proxy/` tree retains the mitmdump log, native
+flow file, HAR, CA confdir, and `exact/` capture. Glider's mitmproxy addon writes
+raw request/response bytes to hashed private artifacts and appends terminal
+`response` or `error` rows to `exact/flows.jsonl`; hashes and lengths are
+validated before reconciliation. Requested proxy startup, addon capture, or
+finalization failure always fails the run closed.
+
+When CDP cannot return a response body or redirect-hop body, the exhaustive
+manifest conservatively correlates validated exact-flow entries by method, URL,
+status, and chronological occurrence. HAR request `postData` is retained only
+as HAR evidence and is never promoted as byte-exact. Ambiguous matches remain
+capture issues. Successful CDP bodies remain authoritative. Only an addon
+terminal `response` can close an unfinished response; terminal `error` rows
+retain partial bytes and error evidence while remaining incomplete. Exact
+failed source-map fetches retain a terminal HTTP disposition and body instead
+of claiming map bytes;
+captured `webpack://` script references are classified as non-fetchable virtual
+references. Neither case is reported as a byte gap, while missing evidence
+still fails completeness. The manifest keeps terminal failures closed by proxy
+evidence under `resolvedIssues`; `issues` contains only unresolved failures, so
+a complete run has both `complete: true` and an empty `issues` array without
+discarding the original failure and resolution trail.
+`context.checkpoint(NAME)` additionally records MHTML, DOM and accessibility
+snapshots, frame/resource trees, browser storage, cookies, form validity, and
+performance state. Set `requireCompleteCapture: true` to fail closed when the
+capture manifest reports an observable payload or script gap.
 
 | Env | Default | Role |
 |-----|---------|------|

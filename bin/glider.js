@@ -115,7 +115,6 @@ const { configPath, gliderHome, stateDir, capturesDir, scratchDir } = require(pa
 const STATE_FILE = path.join(stateDir(), 'glider-state.json');
 const { isBrowserInternalUrl, loadBrowserConfig } = require(path.join(LIB_DIR, 'browser-config.js'));
 const GLIDER = gliderHome();
-const LOG_FILE = path.join(GLIDER, 'relay.log');
 const SESSION_STORE = path.join(GLIDER, 'config', 'active-session.json');
 const { resolveAllowedDomains, assertUrlAllowed, urlAllowed } = require(path.join(LIB_DIR, 'guard.js'));
 const { buildSnapshotExpression, formatSnapshotText } = require(path.join(LIB_DIR, 'bsnapshot.js'));
@@ -1428,7 +1427,7 @@ async function cmdStart({ render = true } = {}) {
 
     child = spawn(process.execPath, [RELAY_ENTRY], {
       detached: true,
-      stdio: ['ignore', fs.openSync(LOG_FILE, 'a'), fs.openSync(LOG_FILE, 'a')],
+      stdio: 'ignore',
     });
     identity = getProcessIdentity(child.pid);
     if (!identity) {
@@ -1954,7 +1953,7 @@ async function cmdInstallDaemon() {
       if (jsonOutput) emitJson(true, { running: true, port: PORT, pid: record.pid, childPid: record.childPid, alreadyRunning });
       log.ok(alreadyRunning ? 'Daemon already running' : 'Daemon started');
       log.info('Relay will auto-restart on crash');
-      log.info(`Logs: ${logDir}/daemon.log`);
+      log.info('Logs: AGLOGS glider/relay');
       log.info(`PID: ${record.pid}`);
       return;
     }

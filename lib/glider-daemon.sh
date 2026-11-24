@@ -1,12 +1,14 @@
 #!/bin/bash
 
-# Glider daemon - respawns one relay forever with log rotation.
+# Glider daemon - respawns one relay forever.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DAEMON_PATH="$SCRIPT_DIR/glider-daemon.sh"
 BSERVE="$SCRIPT_DIR/bserve.js"
 LOG_DIR="${GLIDER:-$HOME/.glider}"
 PORT="${GLIDER_PORT:-${RELAY_PORT:-19988}}"
+AGLOG_NAMESPACE="${GLIDER_AGLOGS_NAMESPACE:-}"
+AGLOG_BIN="${GLIDER_AGLOG_BIN:-${AG:-$HOME/.agents}/tools/lib/aglog.sh}"
 
 case "$PORT" in
   ''|*[!0-9]*|0|0*) echo "glider-daemon: invalid relay port: $PORT" >&2; exit 2 ;;
@@ -29,11 +31,9 @@ process_started_at() {
     | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
 }
 
-LOG_FILE="$LOG_DIR/daemon.log"
 PID_FILE="$LOG_DIR/daemon-$PORT.pid"
 CLAIM_DIR="$LOG_DIR/daemon-$PORT.claim"
 MANAGEMENT_LOCK="$LOG_DIR/daemon-$PORT.management.lock"
-MAX_LOG_SIZE=10485760
 CLAIM_ORPHAN_GRACE_SECONDS=5
 child_pid=""
 child_started=""
@@ -45,13 +45,16 @@ management_lock_owned=0
 
 mkdir -p "$LOG_DIR"
 
-rotate_log() {
-  if [ -f "$LOG_FILE" ] && [ "$(stat -f%z "$LOG_FILE" 2>/dev/null || echo 0)" -gt "$MAX_LOG_SIZE" ]; then
-    /bin/unlink "$LOG_FILE.3" 2>/dev/null || true
-    [ -f "$LOG_FILE.2" ] && mv "$LOG_FILE.2" "$LOG_FILE.3"
-    [ -f "$LOG_FILE.1" ] && mv "$LOG_FILE.1" "$LOG_FILE.2"
-    mv "$LOG_FILE" "$LOG_FILE.1"
-    echo "[$(date)] Log rotated" > "$LOG_FILE"
+if [ -n "$AGLOG_NAMESPACE" ] && [ ! -x "$AGLOG_BIN" ]; then
+  echo "glider-daemon: AGLOGS adapter is unavailable: $AGLOG_BIN" >&2
+  exit 78
+fi
+
+emit_log_line() {
+  if [ -n "$AGLOG_NAMESPACE" ]; then
+    printf '%s\n' "$1" | "$AGLOG_BIN" put "$AGLOG_NAMESPACE" - >/dev/null
+  else
+    printf '%s\n' "$1" >&2
   fi
 }
 
@@ -466,10 +469,16 @@ write_pid_record
 
 initial_handoff=1
 while true; do
-  rotate_log
-  echo "[$(date)] Starting relay on port $PORT..." >> "$LOG_FILE"
+  emit_log_line "[$(date)] Starting relay on port $PORT..." || {
+    echo "glider-daemon: AGLOGS start event failed" >&2
+    exit 74
+  }
 
-  "$NODE_BIN" "$BSERVE" >> "$LOG_FILE" 2>&1 &
+  if [ -n "$AGLOG_NAMESPACE" ]; then
+    "$NODE_BIN" "$BSERVE" > >("$AGLOG_BIN" put "$AGLOG_NAMESPACE" - >/dev/null) 2>&1 &
+  else
+    "$NODE_BIN" "$BSERVE" &
+  fi
   child_pid=$!
   child_started="$(process_started_at "$child_pid")"
   relay_ready=0
@@ -523,6 +532,9 @@ while true; do
   relay_ready=0
   write_pid_record
 
-  echo "[$(date)] Relay exited with code $EXIT_CODE, restarting in 2s..." >> "$LOG_FILE"
+  emit_log_line "[$(date)] Relay exited with code $EXIT_CODE, restarting in 2s..." || {
+    echo "glider-daemon: AGLOGS restart event failed" >&2
+    exit 74
+  }
   sleep 2
 done
