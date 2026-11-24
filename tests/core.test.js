@@ -14,6 +14,10 @@ test('relay config uses one validated port socket across HTTP and WebSocket clie
   assert.equal(relayPort(env), 24444);
   assert.equal(relayHttpUrl(env), 'http://127.0.0.1:24444');
   assert.equal(relayWebSocketUrl(env), 'ws://127.0.0.1:24444/cdp');
+  assert.equal(
+    relayWebSocketUrl(env, 'explore 1'),
+    'ws://127.0.0.1:24444/cdp/explore%201',
+  );
   assert.throws(() => relayPort({ GLIDER_PORT: '0' }), /Invalid relay port/);
   assert.throws(() => relayPort({ GLIDER_PORT: 'abc' }), /Invalid relay port/);
 });

@@ -2682,7 +2682,7 @@ async function cmdWindow(args) {
   } catch (err) {
     log.fail(err.message);
   } finally {
-    wm.close();
+    await wm.close();
   }
 }
 
@@ -4005,11 +4005,15 @@ async function cmdExplore(url, opts = []) {
   if (freshTab) {
     const { WindowManager } = require(path.join(LIB_DIR, 'bwindow.js'));
     const wm = new WindowManager();
-    await wm.connect();
-    await wm.init();
-    log.info(`[explore] Opening fresh tab for capture...`);
-    const result = await wm.createTab(url);
-    freshTargetId = result.targetId;
+    try {
+      await wm.connect();
+      await wm.init();
+      log.info(`[explore] Opening fresh tab for capture...`);
+      const result = await wm.createTab(url);
+      freshTargetId = result.targetId;
+    } finally {
+      await wm.close();
+    }
     await new Promise(r => setTimeout(r, 2500));
     try {
       const targetsRes = await httpGet('/targets');
@@ -4045,10 +4049,14 @@ async function cmdExplore(url, opts = []) {
         try {
           const { WindowManager } = require(path.join(LIB_DIR, 'bwindow.js'));
           const wm = new WindowManager();
-          await wm.connect();
-          await wm.init();
-          await wm.closeTarget(freshTargetId);
-          log.ok(`[explore] fresh-tab closed: ${freshTargetId}`);
+          try {
+            await wm.connect();
+            await wm.init();
+            await wm.closeTarget(freshTargetId);
+            log.ok(`[explore] fresh-tab closed: ${freshTargetId}`);
+          } finally {
+            await wm.close();
+          }
         } catch (e) {
           log.info(`[explore] fresh-tab close failed: ${e.message}`);
         }

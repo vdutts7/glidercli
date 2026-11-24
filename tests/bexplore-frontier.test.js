@@ -4,12 +4,41 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
   pathTemplate,
+  SiteExplorer,
   PATH_TEMPLATE_CAP,
   HYDRA_WIDTH,
   sameOriginUrl,
   createEnqueue,
   harDocumentUrls,
 } = require('../lib/bexplore.js');
+
+test('pinned exploration thaws the background tab before enabling CDP domains', async () => {
+  const explorer = new SiteExplorer({ sessionId: 'session-fresh', depth: 0 });
+  const calls = [];
+  explorer.fetchTargets = async () => [{
+    sessionId: 'session-fresh',
+    targetId: 'target-fresh',
+    url: 'https://fixture.test/',
+  }];
+  explorer.send = async (method, params, options) => {
+    calls.push({ method, params, options });
+    return {};
+  };
+  explorer.enableSession = async (sessionId) => {
+    calls.push({ method: 'enableSession', sessionId });
+  };
+
+  await explorer.init();
+
+  assert.deepEqual(calls.map((call) => call.method), [
+    'Target.setAutoAttach',
+    'Emulation.setFocusEmulationEnabled',
+    'Page.setWebLifecycleState',
+    'enableSession',
+  ]);
+  assert.equal(calls[1].options.sessionId, 'session-fresh');
+  assert.deepEqual(calls[2].params, { state: 'active' });
+});
 
 test('same-origin enqueue keeps start host and drops CNN', () => {
   const seen = new Set();
