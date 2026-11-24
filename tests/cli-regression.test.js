@@ -57,6 +57,7 @@ test('status and diagnostics emit strict JSON and truthful exit codes', async (t
   let body = jsonFromStdout(result.stdout);
   assert.equal(body.ok, true);
   assert.equal(body.observation.targetCount, 1);
+  assert.equal(body.observation.tabCount, 1);
   assert.doesNotMatch(result.stdout, /G L I D E R/);
 
   result = await runCli(['--json', 'test'], { env });
@@ -78,6 +79,91 @@ test('status and diagnostics emit strict JSON and truthful exit codes', async (t
   body = jsonFromStdout(result.stdout);
   assert.equal(body.ok, false);
   assert.equal(body.error, 'extension disconnected');
+});
+
+test('status reports canonical tabs separately from raw CDP targets', async (t) => {
+  const tabs = [
+    {
+      tabId: 10,
+      windowId: 1,
+      index: 0,
+      title: 'Outlook',
+      url: 'https://outlook.example/',
+      attached: true,
+      sessionId: 'outlook-page',
+      targetId: 'outlook-target',
+    },
+    {
+      tabId: 11,
+      windowId: 1,
+      index: 1,
+      title: 'Teams',
+      url: 'https://teams.example/',
+      attached: true,
+      sessionId: 'teams-page',
+      targetId: 'teams-target',
+    },
+  ];
+  const workers = Array.from({ length: 4 }, (_, index) => ({
+    sessionId: `worker-${index}`,
+    targetId: `worker-target-${index}`,
+    targetInfo: {
+      targetId: `worker-target-${index}`,
+      type: index % 2 ? 'service_worker' : 'worker',
+      title: `Worker ${index}`,
+      url: `blob:https://outlook.example/${index}`,
+    },
+  }));
+  const targets = [
+    ...tabs.map((tab) => ({
+      sessionId: tab.sessionId,
+      targetId: tab.targetId,
+      tabId: tab.tabId,
+      targetInfo: {
+        targetId: tab.targetId,
+        tabId: tab.tabId,
+        type: 'page',
+        title: tab.title,
+        url: tab.url,
+      },
+    })),
+    ...workers,
+  ];
+  const relay = await createMockRelay({
+    status: {
+      extension: true,
+      extensionWorkerAlive: true,
+      extensionGeneration: 1,
+      targets: targets.length,
+      clients: 0,
+    },
+    targets,
+    catalog: {
+      focusedWindowId: 1,
+      listTabsOk: true,
+      windows: [{ windowId: 1, current: true, tabs }],
+      attached: [],
+      stale: [],
+      iframes: [],
+      other: workers,
+    },
+  });
+  t.after(() => relay.close());
+  const env = { GLIDER_PORT: String(relay.port) };
+
+  let result = await runCli(['--json', 'status'], { env });
+  assert.equal(result.code, 0, result.stderr);
+  let body = jsonFromStdout(result.stdout);
+  assert.equal(body.observation.tabCount, 2);
+  assert.equal(body.observation.targetCount, 6);
+  assert.equal(body.observation.childTargetCount, 4);
+  assert.equal(body.observation.tabs.length, 2);
+
+  result = await runCli(['status'], { env });
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /2 tab\(s\) connected/);
+  assert.doesNotMatch(result.stdout, /6 tab\(s\) connected/);
+  assert.match(result.stdout, /4 child CDP target\(s\)/);
 });
 
 test('status does not auto-start a relay when the configured port is closed', async () => {

@@ -149,6 +149,7 @@ const { DirectCDP, checkChrome } = require(path.join(LIB_DIR, 'cdp-direct.js'));
 const { resolveDomain } = require(path.join(LIB_DIR, 'domain-resolve.js'));
 const pinMachine = require(path.join(LIB_DIR, 'pin-machine.js'));
 const relayHeal = require(path.join(LIB_DIR, 'relay-heal.js'));
+const statusModel = require(path.join(LIB_DIR, 'status-model.js'));
 const { npmIsNewer } = require(path.join(LIB_DIR, 'pkg-update.js'));
 const { formatCatalogTui } = require(path.join(LIB_DIR, 'tab-tui.js'));
 const tabMap = require(path.join(LIB_DIR, 'tab-map.js'));
@@ -1252,7 +1253,9 @@ async function cmdStatus() {
   const serverOk = relay !== null;
   const extOk = serverOk && extensionReady(relay);
   const targets = serverOk && relay.extension === true ? await getTargets() : [];
-  const healthy = serverOk && extOk && targets.length > 0;
+  const catalog = serverOk && relay.extension === true ? await fetchCatalogQuiet() : null;
+  const targetSummary = statusModel.summarizeStatus(catalog, targets);
+  const healthy = serverOk && extOk && targetSummary.connectedPageCount > 0;
   const healthError = healthy
     ? null
     : !serverOk
@@ -1261,7 +1264,7 @@ async function cmdStatus() {
         ? 'extension disconnected'
         : !extOk
           ? 'extension worker not alive (socket up, no pong; click Glider icon or reload extension)'
-          : 'no attached targets';
+          : 'no attached page targets';
 
   if (jsonOutput) {
     emitJson(healthy, {
@@ -1271,7 +1274,19 @@ async function cmdStatus() {
       extension: !!relay?.extension,
       extensionWorkerAlive: relay?.extensionWorkerAlive ?? null,
       reconnecting: relay?.reconnecting === true,
-      targetCount: targets.length,
+      catalogAvailable: targetSummary.catalogAvailable,
+      tabCount: targetSummary.tabs.length,
+      debuggerOnlyPageCount: targetSummary.debuggerOnlyPages.length,
+      childTargetCount: targetSummary.childTargets.length,
+      staleTargetCount: targetSummary.staleTargets.length,
+      targetCount: targetSummary.rawTargetCount,
+      tabs: targetSummary.tabs.map((tab) => ({
+        tabId: tab.tabId,
+        sessionId: tab.sessionId,
+        targetId: tab.targetId,
+        title: tab.title || '',
+        url: tab.url || '',
+      })),
       targets: targets.map((target) => ({
         sessionId: target.sessionId,
         targetId: target.targetId,
@@ -1293,12 +1308,25 @@ async function cmdStatus() {
     }
     
     if (extOk) {
-      if (targets.length > 0) {
-        console.log(`  ${GREEN}✓${NC} ${targets.length} tab(s) connected:`);
-        targets.forEach(t => {
-          const url = t.targetInfo?.url || 'unknown';
+      if (targetSummary.tabs.length > 0) {
+        console.log(`  ${GREEN}✓${NC} ${targetSummary.tabs.length} tab(s) connected:`);
+        targetSummary.tabs.forEach((tab) => {
+          const url = tab.url || 'unknown';
           console.log(`      ${B5}${url}${NC}`);
         });
+        if (targetSummary.debuggerOnlyPages.length) {
+          console.log(`      ${DIM}${targetSummary.debuggerOnlyPages.length} debugger-only page target(s)${NC}`);
+        }
+        if (targetSummary.childTargets.length) {
+          console.log(`      ${DIM}${targetSummary.childTargets.length} child CDP target(s)${NC}`);
+        }
+      } else if (!targetSummary.catalogAvailable && targetSummary.fallbackPages.length > 0) {
+        console.log(`  ${GREEN}✓${NC} ${targetSummary.fallbackPages.length} page target(s) connected ${DIM}(catalog unavailable)${NC}`);
+        targetSummary.fallbackPages.forEach((target) => {
+          console.log(`      ${B5}${target.targetInfo?.url || target.url || 'unknown'}${NC}`);
+        });
+      } else if (targetSummary.debuggerOnlyPages.length > 0) {
+        console.log(`  ${GREEN}✓${NC} ${targetSummary.debuggerOnlyPages.length} debugger-only page target(s) connected`);
       } else {
         console.log(`  ${YELLOW}⚠${NC} No tabs connected`);
         console.log(`      ${DIM}Run: glider connect${NC}`);

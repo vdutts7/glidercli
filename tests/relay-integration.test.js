@@ -670,3 +670,85 @@ test('GET /catalog empty listTabs does not reap CDP pages with tabIds (status/ta
   assert.equal(after.body.some((row) => row.sessionId === 'session-495273'), true);
   assert.equal(after.body.some((row) => row.sessionId === 'session-495276'), true);
 });
+
+test('relay replaces synthetic tab-<id> with real page target for same tabId', async (t) => {
+  const port = await getFreePort();
+  const relay = spawn(process.execPath, [path.join(REPO_ROOT, 'lib', 'bserve.js')], {
+    cwd: REPO_ROOT,
+    env: { ...process.env, GLIDER_PORT: String(port), GLIDER_RELAY_RECONNECT_GRACE_MS: '0' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(async () => {
+    if (relay.exitCode !== null) return;
+    relay.kill('SIGTERM');
+    await new Promise((resolve) => relay.once('close', resolve));
+  });
+  await waitForHttp(`http://127.0.0.1:${port}/status`);
+
+  const extension = new WebSocket(`ws://127.0.0.1:${port}/extension`);
+  t.after(() => extension.close());
+  await new Promise((resolve, reject) => {
+    extension.once('open', resolve);
+    extension.once('error', reject);
+  });
+  extension.on('message', (raw) => {
+    const message = JSON.parse(raw.toString());
+    if (message.method === 'ping') {
+      extension.send(JSON.stringify({ method: 'pong' }));
+      return;
+    }
+    if (message.id === undefined) return;
+    extension.send(JSON.stringify({ id: message.id, result: {} }));
+  });
+
+  extension.send(JSON.stringify({
+    method: 'forwardCDPEvent',
+    params: {
+      method: 'Target.attachedToTarget',
+      params: {
+        sessionId: 'synthetic-session',
+        tabId: 42,
+        targetInfo: {
+          targetId: 'tab-42',
+          type: 'page',
+          title: '',
+          url: '',
+          tabId: 42,
+          synthetic: true,
+        },
+      },
+    },
+  }));
+  await waitForJson(`http://127.0.0.1:${port}/status`, (body) => body.targets === 1);
+
+  extension.send(JSON.stringify({
+    method: 'forwardCDPEvent',
+    params: {
+      method: 'Target.attachedToTarget',
+      params: {
+        sessionId: 'real-session',
+        tabId: 42,
+        targetInfo: {
+          targetId: 'REAL-TARGET-42',
+          type: 'page',
+          title: 'Outlook',
+          url: 'https://outlook.example/',
+          tabId: 42,
+        },
+      },
+    },
+  }));
+  await waitForJson(
+    `http://127.0.0.1:${port}/targets`,
+    (body) => Array.isArray(body)
+      && body.length === 1
+      && body[0].sessionId === 'real-session'
+      && body[0].targetId === 'REAL-TARGET-42',
+  );
+
+  const targets = await requestJson(`http://127.0.0.1:${port}/targets`);
+  assert.equal(targets.body.length, 1);
+  assert.equal(targets.body[0].sessionId, 'real-session');
+  assert.equal(targets.body[0].targetId, 'REAL-TARGET-42');
+  assert.equal(targets.body.some((row) => row.sessionId === 'synthetic-session'), false);
+});
