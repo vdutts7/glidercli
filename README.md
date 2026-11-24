@@ -276,6 +276,8 @@ CLI 0.4.18 expects an extension with `listTabs` plus `incognito` on tabs/windows
 
 ## Verification
 
+Product capabilities (named browser-fu, not verb synonyms): [`capabilities.json`](capabilities.json).
+
 Scoreboard: [`tests/contract.json`](tests/contract.json) — missing test OK (deferred); wrong/broken test forbidden.
 
 ```bash

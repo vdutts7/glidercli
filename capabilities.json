@@ -1,0 +1,1995 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema#",
+  "_meta": {
+    "namespace": "glidercli.capabilities",
+    "purpose": "Product capability definition for Glider (public). Not CLI verb synonyms \u2014 named browser-fu powers + primitives. Test scoreboard = tests/contract.json.",
+    "regen_rule": "Append-only for capabilities + walls_smashed. On change, bump version + add changelog entry.",
+    "read_first": [
+      "capabilities",
+      "walls_smashed"
+    ],
+    "version": "1.2.1",
+    "created_utc": "2026-07-13T22:20:00Z",
+    "tiers": {
+      "T3_primitives": "Raw browser-fu bricks. Discovered once, immutable. src_refs point to background.js:line.",
+      "T2_capabilities": "Composed powers (recipes over primitives). Named + referenceable.",
+      "T1_cli_verbs": "First-class glider --help handles. Promoted from T2 via /cliify-gap.",
+      "promotion_pipeline": "T3 discovered \u2192 T2 named \u2192 T1 promoted (via cli_gaps[] \u2192 cliify)"
+    },
+    "changelog": [
+      {
+        "version": "1.1.0",
+        "utc": "2026-07-14T07:39:10Z",
+        "summary": "v0.3.21 ship: plugin_socket primitive, cookies+frozen public verbs, msal migrated to local plugin (ship_scope model)",
+        "shipped_glidercli": "0.3.21",
+        "shipped_extension_sha16": "0f7d3d9c9676d658"
+      },
+      {
+        "version": "1.2.0",
+        "utc": "2026-07-14T07:57:08Z",
+        "summary": "DOM-scorch: full agnostic browser-fu primitive+capability sweep. 6 new T3 primitives, 40 T2 capabilities, 16 ordered T1 promotion gaps across 5 ship waves (0.3.22-0.3.26)."
+      }
+    ],
+    "last_updated_utc": "2026-07-14T15:33:54Z",
+    "home": "$GLIDERCLI/capabilities.json",
+    "operator_walls": "$CURREGISTRY/glider/walls.json",
+    "scoreboard": "tests/contract.json",
+    "moved_from_cursor_utc": "2026-11-24T12:03:24Z"
+  },
+  "primitives": {
+    "corsFetch": {
+      "id": "corsFetch",
+      "layer": "extension_service_worker",
+      "one_line": "Fetch any URL from the extension's service-worker context, with HttpOnly cookies auto-attached via chrome.cookies.getAll \u2014 bypasses (a) CORS, (b) HttpOnly-cookie invisibility, (c) tab-freeze macrotask throttling.",
+      "invoke": {
+        "cli": "glider cfetch <url> [--method POST] [--body JSON] [--output FILE]",
+        "http": "POST http://localhost:19988/extension  body: {method:'corsFetch', params:{url, options:{method, headers, body}}}",
+        "response_envelope": "{status:int, ok:bool, data:string|object}   (flat, NOT wrapped in {result:...})"
+      },
+      "src_refs": [
+        "$HOME/glider/manifest.json:14  (\"cookies\" permission)",
+        "$HOME/glider/background.js:150  (corsFetch msg handler)",
+        "$HOME/glider/background.js:157  (chrome.cookies.getAll({url}))",
+        "$HOME/glidercli/bin/glider.js:1425  (cmdCorsFetch)"
+      ],
+      "requires": [
+        "extension_connected",
+        "cookies permission (already declared)"
+      ],
+      "does_not_require": [
+        "live tab on target host",
+        "chrome.debugger attach"
+      ],
+      "known_bugs": [
+        "(fixed in v0.3.20) CLI cmdCorsFetch crashed on empty/non-JSON responses",
+        "(fixed in v0.3.20) hardcoded Accept broke Yammer-family 406-strict endpoints"
+      ],
+      "gotchas": [
+        "Accept header sensitive: Yammer/engage rejects 'application/json' with 406; use 'application/json, text/plain, */*'. Purview accepts either.",
+        "Extension is not perfectly serialized \u2014 high concurrency causes some responses to return {error:'...'} transiently. Add retry+backoff (3x, 0.4/0.8/1.2s)."
+      ],
+      "cli_handle": "cfetch",
+      "consumed_by": [
+        "get_httponly_cookies",
+        "call_authed_endpoint_from_wsl"
+      ],
+      "cli_handle_notes": "v0.3.20+ handles empty-body responses + 2-shot Accept fallback"
+    },
+    "chrome_debugger_cdp": {
+      "id": "chrome_debugger_cdp",
+      "layer": "extension_debugger_api",
+      "one_line": "Full CDP method surface via chrome.debugger, forwarded to any attached tab. Runtime.evaluate + Page.reload + Input.dispatchMouseEvent all work. Network cookies + Emulation.setPageVisibilityOverride do NOT (MV3-gated).",
+      "invoke": {
+        "http": "POST http://localhost:19988/cdp  body: {method:'Runtime.evaluate', sessionId:'session-N', params:{expression, returnByValue}}"
+      },
+      "src_refs": [
+        "$HOME/glidercli/lib/bserve.js:266  (routeCDPCommand)",
+        "$HOME/glider/background.js:200+  (handleCDP)"
+      ],
+      "works": [
+        "Runtime.evaluate  (synchronous JS incl. document.cookie, localStorage)",
+        "Page.reload / Page.navigate",
+        "Input.dispatchMouseEvent (sets navigator.userActivation)",
+        "Target.* (getTargets, activateTarget, attachToTarget)"
+      ],
+      "does_not_work": [
+        "Network.getCookies / Network.getAllCookies / Storage.getCookies \u2014 MV3-gated to 0 cookies always",
+        "Emulation.setPageVisibilityOverride \u2014 'method not found'",
+        "Fetch.enable request interception \u2014 no event stream from relay to CLI",
+        "Target.activateTarget / Page.bringToFront \u2014 succeed but tab visibility stays 'hidden' when Edge is minimized"
+      ],
+      "gotchas": [
+        "30s hard timeout in bserve.js:sendToExtension.",
+        "Hidden-tab macrotask freeze applies to any Runtime.evaluate involving setTimeout/fetch/image.onload/XHR/worker. Microtasks (Promise.then, queueMicrotask) still fire."
+      ],
+      "cli_handle": null,
+      "consumed_by": [
+        "run_cdp_on_backgrounded_tab"
+      ]
+    },
+    "runtime_evaluate_sync_reads": {
+      "id": "runtime_evaluate_sync_reads",
+      "layer": "cdp:Runtime.evaluate",
+      "one_line": "Synchronous reads of document.cookie (non-HttpOnly), localStorage, sessionStorage from any attached tab \u2014 works even on frozen tabs.",
+      "invoke_example": "cdp('Runtime.evaluate', {expression:'document.cookie', returnByValue:true})",
+      "yields": [
+        "non-HttpOnly cookies",
+        "MSAL access tokens (AccessToken.secret from JSON.parse(localStorage[key]))",
+        "sessionStorage items"
+      ],
+      "gotchas": [
+        "Async operations (fetch/setTimeout) will NOT complete on hidden/minimized tabs even though the evaluate call returns."
+      ],
+      "cli_handle": "eval",
+      "consumed_by": [
+        "extract_msal_bearer",
+        "detect_frozen_tab"
+      ]
+    },
+    "extension_ws_bridge": {
+      "id": "extension_ws_bridge",
+      "layer": "relay",
+      "one_line": "WebSocket bridge at ws://localhost:19988/extension routes arbitrary extension-side handlers exposed in background.js.",
+      "http_endpoint": "POST http://localhost:19988/extension  body: {method:'<handlerName>', params:{...}}",
+      "handlers_exposed": [
+        "corsFetch",
+        "forwardCDPCommand",
+        "attachAll (P0.CLI-attach-all-observability)"
+      ],
+      "src_ref": "$HOME/glider/background.js  (search: 'msg.method ===')",
+      "cli_handle": null,
+      "consumed_by": []
+    },
+    "plugin_socket": {
+      "id": "plugin_socket",
+      "layer": "cli",
+      "one_line": "Verb-agnostic loader: local ~/.glider/plugins/*.plugin.{json,js,cjs} extend the CLI at runtime with new verbs. Public npm binary carries zero verb branding; the operator hydrates their own tentacles locally.",
+      "invoke": {
+        "plugin_dirs": [
+          "$GLIDER_PLUGIN_DIR",
+          "$HOME/.glider/plugins/"
+        ],
+        "js_shape": "module.exports = {verb, aliases?, help[], async run(argv, ctx)}",
+        "json_shape": "{verb, aliases?, help[], primitive:'eval'|'extension', recipe|method, args?, output?}"
+      },
+      "ctx_api_v1": {
+        "cdp": [
+          "eval",
+          "call"
+        ],
+        "ext": [
+          "call"
+        ],
+        "log": [
+          "ok",
+          "fail",
+          "warn",
+          "info"
+        ],
+        "io": [
+          "jsonOutput (getter)",
+          "emitJson",
+          "httpPost",
+          "httpGet"
+        ],
+        "ensure": [
+          "ensureConnected"
+        ],
+        "mask": [
+          "jwt",
+          "cookie"
+        ],
+        "std": [
+          "os",
+          "fs",
+          "path"
+        ],
+        "meta": [
+          "apiVersion=1"
+        ]
+      },
+      "src_refs": [
+        "$HOME/glidercli/bin/glider.js  (loadPlugins, makePluginCtx, runPlugin, ~line 2452-2650)",
+        "$HOME/glidercli/bin/glider.js  (main() \u2192 loadPlugins() after loadPersistedSession)",
+        "$HOME/glidercli/bin/glider.js  (switch default: GLIDER_PLUGIN_REGISTRY lookup)",
+        "$HOME/glidercli/bin/glider.js  (showHelp() PLUGINS: section)"
+      ],
+      "requires": [
+        "nothing beyond node fs"
+      ],
+      "does_not_require": [
+        "extension_connected (plugins choose)",
+        "chrome running"
+      ],
+      "gotchas": [
+        "Plugins can SHADOW builtin verbs \u2014 load order = local overrides core. Feature or footgun; document per-plugin.",
+        "ctx.cdp.eval requires ensureConnected() first \u2014 plugin is responsible."
+      ],
+      "cli_handle": null,
+      "consumed_by": [
+        "extract_msal_bearer"
+      ],
+      "ship_scope": "public",
+      "shipped_version": "0.3.21",
+      "shipped_utc": "2026-07-14T07:39:10Z"
+    },
+    "dom_action_layer": {
+      "id": "dom_action_layer",
+      "layer": "cli",
+      "status": "shipped",
+      "one_line": "Composed DOM interaction primitive: click-by-text/attr/nth, wait-until-selector-matches, read-with-attr. Kills the \"every tribal lib hand-rolls one-line eval JS\" tax.",
+      "implementation_plan": {
+        "target_version": "0.3.22",
+        "verbs": [
+          "click --text/--contains/--nth",
+          "wait --selector/--text/--gone/--matches/--timeout/--poll",
+          "read <selector> [--attr X] [--prop Y] [--all]"
+        ]
+      },
+      "gap_refs": [
+        "click_by_text",
+        "wait_until_selector_matches"
+      ],
+      "requires": [
+        "runtime_evaluate_sync_reads",
+        "chrome_debugger_cdp"
+      ],
+      "ship_scope": "public",
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:40:11Z",
+      "discovered_from": "digest of chat 6a92f73b \u2014 teams-lib.sh 7 wrappers, all thin `glider eval` shims",
+      "expanded_plan": {
+        "target_version": "0.3.22",
+        "verbs": {
+          "click": "--text S | --contains S | --regex R | --nth N | --role R | --inside S | --wait MS | --scroll-into-view | --double | --right | --hold MS | --modifier ctrl|shift|alt|meta",
+          "type": "(delegates to rich_editor_adapter \u2014 see that primitive)",
+          "wait": "--selector S | --text T | --gone S | --matches JS | --stable MS | --network-idle | --url-matches R | --url-changes-from URL | --timeout MS | --poll MS",
+          "read": "<sel> [--attr X | --prop Y | --text | --html | --value | --all | --count | --exists | --visible | --enabled]",
+          "hover": "<sel>",
+          "focus": "<sel>",
+          "blur": "[<sel>]",
+          "scroll": "scroll-to <sel>  |  scroll-by dx dy  |  scroll-until <sel>",
+          "assert (upgrade)": "--matches JS | --gone | --visible | --enabled | --text T | --count N"
+        }
+      },
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_in": "0.4.0",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    "rich_editor_adapter": {
+      "id": "rich_editor_adapter",
+      "layer": "cli",
+      "status": "shipped",
+      "one_line": "Editor-agnostic set/get/append/clear/insert-code-block for CKEditor, TinyMCE, ProseMirror, Monaco, contentEditable, textarea.",
+      "implementation_plan": {
+        "target_version": "0.3.22",
+        "detectors": [
+          "ckeditor(el.ckeditorInstance)",
+          "tinymce(el.tinymce)",
+          "prosemirror(pmView)",
+          "monaco(monaco.editor)",
+          "contentEditable(el.isContentEditable)",
+          "textarea"
+        ],
+        "verb": "type --editor auto|ckeditor|tinymce|prosemirror|monaco|contentEditable [--file PATH] [--clear-first] [--commit enter|tab|none]"
+      },
+      "gap_refs": [
+        "rich_editor_set"
+      ],
+      "requires": [
+        "runtime_evaluate_sync_reads",
+        "chrome_debugger_cdp"
+      ],
+      "ship_scope": "public",
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:40:11Z",
+      "discovered_from": "digest of chat 6a92f73b \u2014 teams-lib.sh compose/compose_code hand-roll CKEditor set",
+      "expanded_plan": {
+        "target_version": "0.3.22",
+        "detectors": [
+          "ckeditor(el.ckeditorInstance)",
+          "tinymce(el.tinymce / window.tinymce)",
+          "prosemirror(pmView / .ProseMirror)",
+          "monaco(monaco.editor / .monaco-editor)",
+          "slate(.slate-editor / [data-slate-editor])",
+          "codemirror(.CodeMirror / window.CodeMirror)",
+          "draft-js([data-contents=true])",
+          "contentEditable(el.isContentEditable)",
+          "textarea",
+          "input"
+        ],
+        "ops": [
+          "set",
+          "get",
+          "append",
+          "clear",
+          "insert-code-block",
+          "insert-mention",
+          "insert-at-cursor"
+        ],
+        "verb": "type --editor auto|<name> [--file PATH] [--clear-first] [--commit enter|tab|blur|none] [--raw] [--delay-ms N per char]"
+      },
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_in": "0.4.0",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    "keyboard_input_layer": {
+      "id": "keyboard_input_layer",
+      "layer": "cdp",
+      "status": "shipped",
+      "one_line": "Raw CDP Input.dispatchKeyEvent \u2014 send individual keys, chords (Ctrl+Enter), sequences (ArrowDown x5), Unicode text, without the setValue/dispatchEvent hack that fails on rich editors.",
+      "cdp_methods": [
+        "Input.dispatchKeyEvent",
+        "Input.insertText"
+      ],
+      "implementation_plan": {
+        "target_version": "0.3.23",
+        "verb": "key <chord|sequence>  e.g. `glider key Ctrl+Enter`, `glider key ArrowDown x5`, `glider key \"Escape\"`"
+      },
+      "gap_refs": [
+        "keyboard_chord_verb"
+      ],
+      "requires": [
+        "chrome_debugger_cdp"
+      ],
+      "ship_scope": "public",
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_in": "0.4.0",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    "pointer_input_layer": {
+      "id": "pointer_input_layer",
+      "layer": "cdp",
+      "status": "shipped",
+      "one_line": "Raw CDP Input.dispatchMouseEvent \u2014 coord clicks, right-click, double-click, hover (mousemove), drag (mousedown\u2192move\u2192up).",
+      "cdp_methods": [
+        "Input.dispatchMouseEvent"
+      ],
+      "implementation_plan": {
+        "target_version": "0.3.23",
+        "verbs": [
+          "hover <sel>",
+          "right-click <sel>",
+          "double-click <sel>",
+          "drag <src> --to <dst>",
+          "click-at x,y"
+        ]
+      },
+      "gap_refs": [
+        "pointer_events_verb"
+      ],
+      "requires": [
+        "chrome_debugger_cdp"
+      ],
+      "ship_scope": "public",
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_in": "0.4.0",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    "frame_traversal": {
+      "id": "frame_traversal",
+      "layer": "cdp+eval",
+      "status": "shipped",
+      "one_line": "Scope any DOM op into a specific iframe or open shadow root. Kills the \"iframe SPA\" wall (office apps, Yammer, embedded editors) and shadow-DOM webcomponents.",
+      "cdp_methods": [
+        "Page.getFrameTree",
+        "Runtime.evaluate {contextId}"
+      ],
+      "implementation_plan": {
+        "target_version": "0.3.24",
+        "flags_added_to_verbs": [
+          "--iframe SEL|N",
+          "--shadow-of SEL"
+        ],
+        "new_verbs": [
+          "frames  (list frame tree)",
+          "frame-eval <frame-id> <js>"
+        ]
+      },
+      "gap_refs": [
+        "iframe_scope",
+        "shadow_root_scope"
+      ],
+      "requires": [
+        "chrome_debugger_cdp"
+      ],
+      "ship_scope": "public",
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_in": "0.4.0",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    "emulation_layer": {
+      "id": "emulation_layer",
+      "layer": "cdp",
+      "status": "shipped",
+      "one_line": "CDP Emulation.* \u2014 timezone, geolocation, viewport, offline, user-agent, prefers-color-scheme, disable-service-worker.",
+      "cdp_methods": [
+        "Emulation.setTimezoneOverride",
+        "Emulation.setGeolocationOverride",
+        "Emulation.setDeviceMetricsOverride",
+        "Emulation.setUserAgentOverride",
+        "Emulation.setEmulatedMedia",
+        "Network.emulateNetworkConditions"
+      ],
+      "implementation_plan": {
+        "target_version": "0.3.25",
+        "verb": "emulate <what> <value>  e.g. `glider emulate tz Asia/Tokyo`, `glider emulate viewport 375x667`, `glider emulate offline true`"
+      },
+      "gap_refs": [
+        "emulation_suite"
+      ],
+      "requires": [
+        "chrome_debugger_cdp"
+      ],
+      "ship_scope": "public",
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_in": "0.4.0",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    "network_intercept": {
+      "id": "network_intercept",
+      "layer": "cdp",
+      "status": "partial",
+      "one_line": "HAR capture (start/stop/dump), request replay, response mocking, download interception via CDP Network + Fetch domains.",
+      "cdp_methods": [
+        "Network.enable",
+        "Network.requestWillBeSent",
+        "Network.responseReceived",
+        "Network.getResponseBody",
+        "Fetch.enable",
+        "Fetch.requestPaused",
+        "Fetch.fulfillRequest"
+      ],
+      "implementation_plan": {
+        "target_version": "0.3.24",
+        "verbs": [
+          "har start [--filter URL-glob]",
+          "har stop",
+          "har dump [PATH]",
+          "har replay <entry-id>",
+          "mock <url-glob> --status N --body FILE",
+          "download-save <path>"
+        ]
+      },
+      "gap_refs": [
+        "har_capture",
+        "response_mocking"
+      ],
+      "requires": [
+        "chrome_debugger_cdp"
+      ],
+      "ship_scope": "public",
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "partial_utc": "2026-07-14T11:03:00Z",
+      "partial_in": "0.4.0",
+      "partial_note": "CLI surface + CDP domain enable live; bg event-stream (Network.requestWillBeSent, Fetch.requestPaused) deferred to 0.4.1",
+      "target_version": "0.4.1"
+    },
+    "content_context_switch": {
+      "id": "content_context_switch",
+      "layer": "cdp",
+      "status": "shipped",
+      "one_line": "Runtime.evaluate targeting isolated worlds, service workers, and worker threads \u2014 bypasses pages that null out `window.__proto__`, CSP-block eval, or hide state in a SW.",
+      "cdp_methods": [
+        "Runtime.evaluate {contextId, awaitPromise, uniqueContextId}",
+        "Page.createIsolatedWorld",
+        "Target.attachToTarget (SW/worker)"
+      ],
+      "implementation_plan": {
+        "target_version": "0.3.26",
+        "flags_added_to": [
+          "eval --context iframe|sw|worker|isolated",
+          "eval --await"
+        ]
+      },
+      "gap_refs": [
+        "isolated_world_eval",
+        "service_worker_eval"
+      ],
+      "requires": [
+        "chrome_debugger_cdp"
+      ],
+      "ship_scope": "public",
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_in": "0.4.0",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    "tab_thaw": {
+      "id": "tab_thaw",
+      "layer": "cdp",
+      "status": "shipped",
+      "one_line": "Un-throttle a macrotask-frozen (hidden/minimized) tab IN PLACE -- resumes setTimeout/fetch/XHR/workers + in-page token refresh without restoring the OS window.",
+      "cdp_methods": [
+        "Emulation.setFocusEmulationEnabled",
+        "Page.setWebLifecycleState"
+      ],
+      "invoke": {
+        "cli": "glider thaw [--session <id>] [--all] [--verify]   (aliases: unfreeze, wake)",
+        "http": "POST /cdp {method:'Emulation.setFocusEmulationEnabled',params:{enabled:true}} then {method:'Page.setWebLifecycleState',params:{state:'active'}}"
+      },
+      "reverse_of": "glider frozen (detect-only; exits 1 when hidden)",
+      "does_not_require": [
+        "OS window restore / un-minimize",
+        "user focus"
+      ],
+      "gotchas": [
+        "Page.bringToFront / Target.activateTarget / window focus do NOT un-hide a minimized window -- they are NOT substitutes.",
+        "idempotent; safe to call --all across every attached tab.",
+        "sync Runtime.evaluate reads already work on frozen tabs (runtime_evaluate_sync_reads); thaw is only needed when you need ASYNC or in-page refresh to run."
+      ],
+      "requires": [
+        "chrome_debugger_cdp"
+      ],
+      "ship_scope": "public",
+      "shipped_in": "0.4.3",
+      "shipped_sha16": "1ed9a59424ab51fd",
+      "discovered_utc": "2026-07-14T20:18:00Z",
+      "shipped_verified_utc": "2026-07-14T20:26:00Z"
+    },
+    "iframe_target_pin": {
+      "shape": "GLIDER_SESSION_ID=<32-hex-iframe-target> glider eval <js>",
+      "purpose": "eval JS inside a cross-origin iframe using CDP session pinning",
+      "discovery_cmd": "glider targets | grep gallerycdn.vsassets.io  (or extension host)",
+      "trigger": "page must instantiate the iframe (e.g. click extension tab) before target appears",
+      "consumed_by": [
+        "ado_iframe_target_pin_frame_capture",
+        "ado_pipeline_build_results_7tab_capture"
+      ],
+      "captured_at": "2026-07-29T21:35:51Z"
+    },
+    "edge_resource_reclaim": {
+      "layer": "host_launchd_audit",
+      "one_line": "Host-bound Edge resource observation and quit-only cache reclaim; policy and cadence belong to the selected Edge host manifest.",
+      "invoke": {
+        "cli": "$CURTOOLS/system/edge/entrypoint.sh reclaim",
+        "config": "$CURTOOLS/system/edge/entrypoint.sh apply",
+        "launchd": "com.ag.system.edge.reclaim",
+        "audit": "$CURTOOLS/system/MacBook-Pro/audit.sh"
+      },
+      "src_refs": [
+        "$CURTOOLS/system/edge/reclaim.sh",
+        "$CURTOOLS/system/edge/config.sh",
+        "$CURTOOLS/system/MacBook-Pro/audit.sh",
+        "$CURREGISTRY/system/resource/edge/manifest.json"
+      ],
+      "cli_handle": "$CURTOOLS/system/edge/entrypoint.sh reclaim",
+      "consumed_by": [
+        "edge_helper_sw_cache_farm_control"
+      ]
+    },
+    "chromium_profile_preferences": {
+      "layer": "browser_profile",
+      "one_line": "Atomically edit a Chromium profile Preferences JSON while the browser is quit, then reopen and verify retained state.",
+      "invoke": {
+        "cli": "quit browser; jq update profile Preferences; reopen; jq verify",
+        "http": null
+      },
+      "src_refs": [
+        "$HOME/Library/Application Support/Microsoft Edge/Default/Preferences"
+      ],
+      "cli_handle": null,
+      "consumed_by": []
+    },
+    "cookie_store_write": {
+      "id": "cookie_store_write",
+      "layer": "extension_cookies_api",
+      "one_line": "chrome.cookies.set/remove/getAllCookieStores with storeId pin (Incognito = separate store).",
+      "invoke": {
+        "extension_methods": [
+          "setCookie",
+          "removeCookie",
+          "listCookieStores",
+          "getCookies"
+        ],
+        "cli": "glider cookie-jar inject <domain> --incognito|--session-id|--store-id"
+      },
+      "requires": [
+        "cookies permission (already declared)",
+        "extension_connected"
+      ],
+      "cli_handle": "cookie-jar inject",
+      "consumed_by": [
+        "cookie_jar_hydrate",
+        "set_cookie"
+      ]
+    },
+    "claude_files_range_size": {
+      "cli": "NO CLI",
+      "description": "API probe only. CRX not wired (failures.json F-002/F-010). GET https://claude.ai/api/organizations/{ORG}/files/{FILE_UUID}/contents with header Range: bytes=0-0. Expect 206, Content-Range bytes 0-0/{N}, 1-byte body. N is exact original size for files-api and sandbox/wiggle uuids.",
+      "domain": "claude.ai",
+      "crx_status": "NOT_WIRED"
+    },
+    "claude_cowork_scheduled_tasks": {
+      "cli": "NO CLI",
+      "description": "API probe only. CRX not wired (failures.json F-001). GET /api/organizations/{ORG}/cowork/scheduled_tasks and /{trig_id}; optional /v1/code/triggers?tags=cowork-scheduled with anthropic-beta ccr-triggers-2026-01-30; runs via /v1/code/sessions?only_trigger_sessions=true",
+      "domain": "claude.ai",
+      "crx_status": "NOT_WIRED"
+    }
+  },
+  "capabilities": {
+    "get_httponly_cookies": {
+      "id": "get_httponly_cookies",
+      "one_line": "Read HttpOnly session cookies (ESTSAUTH, s.SessID, etc.) for any host the user is logged into.",
+      "primitive": "corsFetch (implicit \u2014 cookies auto-attached to outbound requests) OR direct chrome.cookies.getAll from an extension patch",
+      "cli_handle": "cookies",
+      "gap": null,
+      "primitive_ids": [
+        "corsFetch"
+      ],
+      "gap_ref": "cookies_get_verb",
+      "ship_scope": "public",
+      "shipped_version": "0.3.21"
+    },
+    "detect_frozen_tab": {
+      "id": "detect_frozen_tab",
+      "one_line": "Determine whether a tab is under Chrome's hidden-tab macrotask throttling.",
+      "primitive": "runtime_evaluate_sync_reads",
+      "recipe": "eval `document.visibilityState + '|' + document.hidden`  \u2192  'hidden|true' means macrotasks (setTimeout, fetch, XHR, workers) will not fire.",
+      "primitive_ids": [
+        "runtime_evaluate_sync_reads"
+      ],
+      "cli_handle": "frozen",
+      "ship_scope": "public",
+      "shipped_version": "0.3.21"
+    },
+    "run_cdp_on_backgrounded_tab": {
+      "id": "run_cdp_on_backgrounded_tab",
+      "one_line": "Runtime.evaluate for SYNC JS still works on hidden tabs. Anything async (fetch, setTimeout, promise chain that awaits network) will hang.",
+      "primitive": "chrome_debugger_cdp",
+      "workaround": "Use corsFetch instead \u2014 runs in the service worker, not the tab.",
+      "primitive_ids": [
+        "chrome_debugger_cdp"
+      ],
+      "cli_handle": null
+    },
+    "click_by_text_composed": {
+      "id": "click_by_text_composed",
+      "one_line": "Click first element whose innerText matches STR (case-insens partial).",
+      "primitive": "dom_action_layer",
+      "primitive_ids": [
+        "dom_action_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "click_at_coord": {
+      "id": "click_at_coord",
+      "one_line": "Click viewport coordinate x,y (pointer_input_layer).",
+      "primitive": "pointer_input_layer",
+      "primitive_ids": [
+        "pointer_input_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "right_click": {
+      "id": "right_click",
+      "one_line": "Fire contextmenu at selector or coord.",
+      "primitive": "pointer_input_layer",
+      "primitive_ids": [
+        "pointer_input_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "double_click": {
+      "id": "double_click",
+      "one_line": "Two rapid clicks within Chrome dblclick threshold.",
+      "primitive": "pointer_input_layer",
+      "primitive_ids": [
+        "pointer_input_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "hover_element": {
+      "id": "hover_element",
+      "one_line": "Mousemove into element bounding box \u2014 triggers CSS :hover + JS mouseenter listeners.",
+      "primitive": "pointer_input_layer",
+      "primitive_ids": [
+        "pointer_input_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "drag_drop": {
+      "id": "drag_drop",
+      "one_line": "mousedown@src \u2192 mousemove@dst \u2192 mouseup \u2014 programmatic DnD.",
+      "primitive": "pointer_input_layer",
+      "primitive_ids": [
+        "pointer_input_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "click_scroll_into_view": {
+      "id": "click_scroll_into_view",
+      "one_line": "scrollIntoView then click \u2014 kills \"element outside viewport, click no-ops\" tax.",
+      "primitive": "dom_action_layer",
+      "primitive_ids": [
+        "dom_action_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "rich_editor_write": {
+      "id": "rich_editor_write",
+      "one_line": "Detect editor kind and setData/setValue with body text.",
+      "primitive": "rich_editor_adapter",
+      "primitive_ids": [
+        "rich_editor_adapter"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "rich_editor_clear": {
+      "id": "rich_editor_clear",
+      "one_line": "Empty editor content without navigation/blur side-effects.",
+      "primitive": "rich_editor_adapter",
+      "primitive_ids": [
+        "rich_editor_adapter"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "rich_editor_append": {
+      "id": "rich_editor_append",
+      "one_line": "Insert at end of existing content.",
+      "primitive": "rich_editor_adapter",
+      "primitive_ids": [
+        "rich_editor_adapter"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "rich_editor_insert_code": {
+      "id": "rich_editor_insert_code",
+      "one_line": "Wrap body in <pre><code lang=X> and setData (structured code-block).",
+      "primitive": "rich_editor_adapter",
+      "primitive_ids": [
+        "rich_editor_adapter"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "rich_editor_insert_at_cursor": {
+      "id": "rich_editor_insert_at_cursor",
+      "one_line": "Insert at current selection without replacing whole doc.",
+      "primitive": "rich_editor_adapter",
+      "primitive_ids": [
+        "rich_editor_adapter"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "keyboard_chord": {
+      "id": "keyboard_chord",
+      "one_line": "Send modifier+key combo (Ctrl+Enter, Cmd+K, Shift+Tab).",
+      "primitive": "keyboard_input_layer",
+      "primitive_ids": [
+        "keyboard_input_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "keyboard_sequence": {
+      "id": "keyboard_sequence",
+      "one_line": "Send N-key sequence (ArrowDown x5, Escape, Home).",
+      "primitive": "keyboard_input_layer",
+      "primitive_ids": [
+        "keyboard_input_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "keyboard_unicode_paste": {
+      "id": "keyboard_unicode_paste",
+      "one_line": "Insert Unicode text via Input.insertText \u2014 works in every text surface incl contentEditable.",
+      "primitive": "keyboard_input_layer",
+      "primitive_ids": [
+        "keyboard_input_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "select_dropdown_by_text": {
+      "id": "select_dropdown_by_text",
+      "one_line": "Pick <option> or [role=option] whose text matches STR (native <select> AND aria-listbox).",
+      "primitive": "dom_action_layer",
+      "primitive_ids": [
+        "dom_action_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "toggle_switch": {
+      "id": "toggle_switch",
+      "one_line": "Flip [role=switch] or checkbox to state=true|false \u2014 idempotent.",
+      "primitive": "dom_action_layer",
+      "primitive_ids": [
+        "dom_action_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "upload_file": {
+      "id": "upload_file",
+      "one_line": "DOM.setFileInputFiles via CDP \u2014 attach real file path to an <input type=file> without dialog.",
+      "primitive": "chrome_debugger_cdp",
+      "primitive_ids": [
+        "chrome_debugger_cdp"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "notes": "CDP DOM.setFileInputFiles is the ONLY reliable way; JS-only approach fails cross-origin."
+    },
+    "wait_until_selector_matches_v": {
+      "id": "wait_until_selector_matches_v",
+      "one_line": "Poll until querySelector(sel) matches (present + optional text).",
+      "primitive": "dom_action_layer",
+      "primitive_ids": [
+        "dom_action_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "wait_until_gone": {
+      "id": "wait_until_gone",
+      "one_line": "Poll until querySelector(sel) returns null (element removed).",
+      "primitive": "dom_action_layer",
+      "primitive_ids": [
+        "dom_action_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "wait_until_matches_js": {
+      "id": "wait_until_matches_js",
+      "one_line": "Poll until arbitrary JS expr returns truthy.",
+      "primitive": "dom_action_layer",
+      "primitive_ids": [
+        "dom_action_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "wait_until_stable": {
+      "id": "wait_until_stable",
+      "one_line": "Element bounding-rect unchanged for N ms (animations settled).",
+      "primitive": "dom_action_layer",
+      "primitive_ids": [
+        "dom_action_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "wait_network_idle": {
+      "id": "wait_network_idle",
+      "one_line": "No in-flight requests for N ms via Network.requestWillBeSent counter.",
+      "primitive": "network_intercept",
+      "primitive_ids": [
+        "network_intercept"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "wait_url_matches": {
+      "id": "wait_url_matches",
+      "one_line": "Poll until location.href matches regex \u2014 proves nav completed.",
+      "primitive": "dom_action_layer",
+      "primitive_ids": [
+        "dom_action_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "read_element_attr": {
+      "id": "read_element_attr",
+      "one_line": "getAttribute(name) on first match.",
+      "primitive": "dom_action_layer",
+      "primitive_ids": [
+        "dom_action_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "read_element_prop": {
+      "id": "read_element_prop",
+      "one_line": "JS property (el.value, el.checked, el.dataset.X) on first match.",
+      "primitive": "dom_action_layer",
+      "primitive_ids": [
+        "dom_action_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "read_element_text": {
+      "id": "read_element_text",
+      "one_line": "innerText (respects visibility) on first match.",
+      "primitive": "dom_action_layer",
+      "primitive_ids": [
+        "dom_action_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "read_element_html": {
+      "id": "read_element_html",
+      "one_line": "outerHTML on first match.",
+      "primitive": "dom_action_layer",
+      "primitive_ids": [
+        "dom_action_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "count_elements": {
+      "id": "count_elements",
+      "one_line": "querySelectorAll(sel).length.",
+      "primitive": "dom_action_layer",
+      "primitive_ids": [
+        "dom_action_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "element_exists": {
+      "id": "element_exists",
+      "one_line": "Boolean: does sel resolve?",
+      "primitive": "dom_action_layer",
+      "primitive_ids": [
+        "dom_action_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "element_visible": {
+      "id": "element_visible",
+      "one_line": "Boolean: getBoundingClientRect area > 0 AND not display:none/visibility:hidden.",
+      "primitive": "dom_action_layer",
+      "primitive_ids": [
+        "dom_action_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "element_enabled": {
+      "id": "element_enabled",
+      "one_line": "Boolean: !disabled AND !aria-disabled.",
+      "primitive": "dom_action_layer",
+      "primitive_ids": [
+        "dom_action_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "iframe_scope_eval": {
+      "id": "iframe_scope_eval",
+      "one_line": "Run any DOM op scoped to a specific iframe (by CSS sel or index).",
+      "primitive": "frame_traversal",
+      "primitive_ids": [
+        "frame_traversal"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "shadow_root_scope_eval": {
+      "id": "shadow_root_scope_eval",
+      "one_line": "Pierce open shadow roots to reach webcomponent-internal DOM.",
+      "primitive": "frame_traversal",
+      "primitive_ids": [
+        "frame_traversal"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "list_frames": {
+      "id": "list_frames",
+      "one_line": "Full frame tree with URL + frameId.",
+      "primitive": "frame_traversal",
+      "primitive_ids": [
+        "frame_traversal"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "a11y_snapshot": {
+      "id": "a11y_snapshot",
+      "one_line": "Accessibility.getFullAXTree \u2014 semantic snapshot for LLM-agent consumption.",
+      "primitive": "chrome_debugger_cdp",
+      "primitive_ids": [
+        "chrome_debugger_cdp"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "capture_har": {
+      "id": "capture_har",
+      "one_line": "Record all Network events into HAR 1.2 format.",
+      "primitive": "network_intercept",
+      "primitive_ids": [
+        "network_intercept"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "replay_request": {
+      "id": "replay_request",
+      "one_line": "Re-issue a captured HAR entry (fetch from bg with same headers/cookies).",
+      "primitive": "network_intercept",
+      "primitive_ids": [
+        "network_intercept"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "mock_response": {
+      "id": "mock_response",
+      "one_line": "Fetch.fulfillRequest \u2014 return canned body for URL matching glob.",
+      "primitive": "network_intercept",
+      "primitive_ids": [
+        "network_intercept"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "intercept_download": {
+      "id": "intercept_download",
+      "one_line": "Page.setDownloadBehavior + Browser.setDownloadBehavior \u2014 save downloads to fixed path.",
+      "primitive": "chrome_debugger_cdp",
+      "primitive_ids": [
+        "chrome_debugger_cdp"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "emulate_timezone": {
+      "id": "emulate_timezone",
+      "one_line": "Emulation.setTimezoneOverride \u2014 IANA tz strings.",
+      "primitive": "emulation_layer",
+      "primitive_ids": [
+        "emulation_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "emulate_geolocation": {
+      "id": "emulate_geolocation",
+      "one_line": "Emulation.setGeolocationOverride \u2014 lat/lng/accuracy.",
+      "primitive": "emulation_layer",
+      "primitive_ids": [
+        "emulation_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "emulate_viewport": {
+      "id": "emulate_viewport",
+      "one_line": "Emulation.setDeviceMetricsOverride \u2014 WxH + DPR + mobile flag.",
+      "primitive": "emulation_layer",
+      "primitive_ids": [
+        "emulation_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "emulate_offline": {
+      "id": "emulate_offline",
+      "one_line": "Network.emulateNetworkConditions \u2014 offline / slow-3G / fast-4G presets.",
+      "primitive": "emulation_layer",
+      "primitive_ids": [
+        "emulation_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "emulate_ua": {
+      "id": "emulate_ua",
+      "one_line": "Emulation.setUserAgentOverride.",
+      "primitive": "emulation_layer",
+      "primitive_ids": [
+        "emulation_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "emulate_color_scheme": {
+      "id": "emulate_color_scheme",
+      "one_line": "Emulation.setEmulatedMedia \u2014 prefers-color-scheme=dark|light, reduced-motion.",
+      "primitive": "emulation_layer",
+      "primitive_ids": [
+        "emulation_layer"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "get_localStorage": {
+      "id": "get_localStorage",
+      "one_line": "DOMStorage.getDOMStorageItems \u2014 full jar for origin.",
+      "primitive": "chrome_debugger_cdp",
+      "primitive_ids": [
+        "chrome_debugger_cdp"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "set_localStorage": {
+      "id": "set_localStorage",
+      "one_line": "DOMStorage.setDOMStorageItem.",
+      "primitive": "chrome_debugger_cdp",
+      "primitive_ids": [
+        "chrome_debugger_cdp"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "clear_localStorage": {
+      "id": "clear_localStorage",
+      "one_line": "DOMStorage.clear.",
+      "primitive": "chrome_debugger_cdp",
+      "primitive_ids": [
+        "chrome_debugger_cdp"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "set_cookie": {
+      "id": "set_cookie",
+      "one_line": "chrome.cookies.set with optional storeId (Incognito pin via getAllCookieStores).",
+      "primitive": "extension_ws_bridge",
+      "primitive_ids": [
+        "extension_ws_bridge"
+      ],
+      "cli_handle": "cookies --set",
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "delete_cookie": {
+      "id": "delete_cookie",
+      "one_line": "chrome.cookies.remove.",
+      "primitive": "extension_ws_bridge",
+      "primitive_ids": [
+        "extension_ws_bridge"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "console_tail": {
+      "id": "console_tail",
+      "one_line": "Console.messageAdded stream \u2014 captures page console output.",
+      "primitive": "chrome_debugger_cdp",
+      "primitive_ids": [
+        "chrome_debugger_cdp"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "dialog_auto_handle": {
+      "id": "dialog_auto_handle",
+      "one_line": "Page.handleJavaScriptDialog \u2014 auto-accept/dismiss alert/confirm/prompt/beforeunload.",
+      "primitive": "chrome_debugger_cdp",
+      "primitive_ids": [
+        "chrome_debugger_cdp"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "history_back": {
+      "id": "history_back",
+      "one_line": "Page.navigateToHistoryEntry \u2014 back/forward without new nav.",
+      "primitive": "chrome_debugger_cdp",
+      "primitive_ids": [
+        "chrome_debugger_cdp"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "element_screenshot": {
+      "id": "element_screenshot",
+      "one_line": "Page.captureScreenshot with clip = getBoundingClientRect(sel) + pad.",
+      "primitive": "chrome_debugger_cdp",
+      "primitive_ids": [
+        "chrome_debugger_cdp"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "clip_screenshot": {
+      "id": "clip_screenshot",
+      "one_line": "Page.captureScreenshot with explicit clip x,y,w,h.",
+      "primitive": "chrome_debugger_cdp",
+      "primitive_ids": [
+        "chrome_debugger_cdp"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "full_page_screenshot": {
+      "id": "full_page_screenshot",
+      "one_line": "Page.captureScreenshot captureBeyondViewport=true \u2014 full-scroll capture.",
+      "primitive": "chrome_debugger_cdp",
+      "primitive_ids": [
+        "chrome_debugger_cdp"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "pdf_export": {
+      "id": "pdf_export",
+      "one_line": "Page.printToPDF \u2014 render entire tab to PDF bytes.",
+      "primitive": "chrome_debugger_cdp",
+      "primitive_ids": [
+        "chrome_debugger_cdp"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "safe_eval_args": {
+      "id": "safe_eval_args",
+      "one_line": "Marshal ${K} placeholders in expression via Runtime.evaluate arguments \u2014 kills b64/atob dance in tribal libs.",
+      "primitive": "runtime_evaluate_sync_reads",
+      "primitive_ids": [
+        "runtime_evaluate_sync_reads"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "eval_await_promise": {
+      "id": "eval_await_promise",
+      "one_line": "Runtime.evaluate awaitPromise:true \u2014 call async page fns from CLI.",
+      "primitive": "runtime_evaluate_sync_reads",
+      "primitive_ids": [
+        "runtime_evaluate_sync_reads"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "session_liveness_probe": {
+      "id": "session_liveness_probe",
+      "one_line": "use-session auto-reprobes on \"No tab with given id XXX\" \u2014 kills the manual connect\u2192targets\u2192use-session dance.",
+      "primitive": "chrome_debugger_cdp",
+      "primitive_ids": [
+        "chrome_debugger_cdp"
+      ],
+      "cli_handle": null,
+      "discovered_utc": "2026-07-14T07:57:08Z"
+    },
+    "tenant_indexed_community_discovery": {
+      "one_line": "Search tenant-indexed pages and documents for internal community, FAQ, and support destinations through the authenticated SharePoint search plane.",
+      "primitive": "Uses the existing corsFetch primitive through tenant-spray.py to query the tenant SharePoint index.",
+      "primitive_ids": [
+        "corsFetch"
+      ],
+      "recipe": "Run tenant-spray.py with --connectors and pages,docs verticals using product, enrollment, and community/support terms; verify returned pages by retrieving their authored canvas content.",
+      "cli_handle": null,
+      "gap_ref": null
+    },
+    "edge_helper_sw_cache_farm_control": {
+      "one_line": "Permanent control of Edge Helper RAM + SW cache disk farm on MacBook-Pro",
+      "primitive": "edge_resource_reclaim (config+reclaim+launchd+audit)",
+      "primitive_ids": [
+        "edge_resource_reclaim"
+      ],
+      "recipe": "Read shared Edge manifest resource_contract, then machine-selected host binding. Explicit actions only; native memory management is not a hard cap and routine reclaim never removes persistent site storage.",
+      "cli_handle": "$CURTOOLS/system/edge/entrypoint.sh reclaim",
+      "gap_ref": null
+    },
+    "halt_background_tab_freeze": {
+      "one_line": "Halt a hidden/background tab's task queues (timers/rAF/fetch/JS alloc) in place to contain a runaway/leaking bg tab, without killing the renderer or losing DOM state.",
+      "primitive": "chrome_debugger_cdp",
+      "recipe": "Page.setWebLifecycleState{state:'frozen'} via the CRX CDP bridge on a hidden target (skip visible); reverse of thaw's {state:'active'}. Auto-resumes on focus. CONTAINMENT not reclaim: stops ongoing allocation/CPU; does NOT free existing heap (V8 GC self-heals dead heap; discard frees live DOM/images).",
+      "primitive_ids": [
+        "chrome_debugger_cdp"
+      ],
+      "cli_handle": "freeze",
+      "ship_scope": "public",
+      "shipped_version": "0.4.6"
+    },
+    "cookie_jar_hydrate": {
+      "id": "cookie_jar_hydrate",
+      "one_line": "Write $GLIDER/cookies/<host> jar into a Chromium cookie store (default or Incognito via storeId).",
+      "primitive_ids": [
+        "extension_ws_bridge"
+      ],
+      "cli_handle": "cookie-jar inject",
+      "depends_on": [
+        "cookie_jar_persist",
+        "set_cookie"
+      ],
+      "ship_scope": "public"
+    },
+    "claude_preflight_disk_bytes": {
+      "cli": "NO CLI",
+      "description": "API probe only. CRX not wired (failures.json F-002). Estimate Claude chat archive disk bytes before sidecar body download: sum chat JSON raw.length + inline + files[].size_bytes; for each file_uuid missing size, GET /files/{uuid}/contents with Range bytes=0-0 and parse Content-Range total (1-byte body). Do not HEAD (405). Do not Range-probe wiggle/download-file (ignores Range, full body).",
+      "composed_of": [
+        "claude_files_range_size"
+      ],
+      "domain": "claude.ai",
+      "crx_status": "NOT_WIRED"
+    },
+    "claude_scheduled_capture": {
+      "cli": "NO CLI",
+      "description": "API probe only. CRX not wired (failures.json F-001). Name is aspirational. Enumerate and fetch Claude Scheduled (Cowork) tasks + run sessions; not covered by chat_conversations capture.",
+      "composed_of": [
+        "claude_cowork_scheduled_tasks"
+      ],
+      "domain": "claude.ai",
+      "crx_status": "NOT_WIRED"
+    }
+  },
+  "flywheel_rules": [
+    "Before opening any new potemkin scorch: read $CURREGISTRY/glider/capabilities.json first.",
+    "If a wall matches an entry in walls_smashed, apply the solved_by primitive directly \u2014 no rediscovery.",
+    "If wall is new: solve it, then APPEND to walls_smashed with root_cause + solved_by + src_refs + checkpoint.",
+    "If a primitive is discovered but not yet exposed in `glider --help`, file an entry under 'cli_gaps' with the exact patch needed."
+  ],
+  "cli_gaps": [
+    {
+      "id": "cfetch_empty_response_crash",
+      "where": "$HOME/glidercli/bin/glider.js:1461-1465",
+      "issue": "console.log(output) crashes when data is undefined ('data argument must be of type string')",
+      "fix": "if (data === undefined || data === null) data = ''; before typeof check",
+      "impact_if_shipped": "CLI usable for endpoints that return empty body",
+      "promotes": "corsFetch",
+      "status": "shipped-v0.3.20",
+      "bundle": "/tmp/glidercli-bundle-20260714T012652Z",
+      "bundled_utc": "2026-07-14T01:27:00.924108Z",
+      "shipped_utc": "2026-07-14T01:48:40.189506Z",
+      "shipped_sha16": "c64c49536ce322f8"
+    },
+    {
+      "id": "cookies_get_verb",
+      "where": "no such verb",
+      "issue": "no way to inspect cookies for a host from CLI without going through /extension",
+      "fix": "add `glider cookies get <host>` \u2014 bg handler calls chrome.cookies.getAll({domain}), returns array; CLI pretty-prints Netscape or JSON",
+      "impact_if_shipped": "obvious first-class handle instead of buried service-worker recipe",
+      "promotes": "get_httponly_cookies",
+      "status": "shipped-v0.3.21",
+      "shipped_utc": "2026-07-14T07:39:10Z",
+      "ship_scope": "public"
+    },
+    {
+      "id": "cfetch_auto_accept",
+      "where": "bin/glider.js:1450 hardcoded Accept",
+      "issue": "hardcoded 'application/json' breaks Yammer-family (406)",
+      "fix": "default to 'application/json, text/plain, */*'; on 406 auto-retry with strict",
+      "impact_if_shipped": "cfetch works on 100% of hosts by default",
+      "promotes": "corsFetch",
+      "status": "shipped-v0.3.20",
+      "bundle": "/tmp/glidercli-bundle-20260714T012652Z",
+      "bundled_utc": "2026-07-14T01:27:00.924145Z",
+      "shipped_utc": "2026-07-14T01:48:40.189506Z",
+      "shipped_sha16": "c64c49536ce322f8"
+    },
+    {
+      "id": "http_direct_endpoint_docs",
+      "where": "README.md",
+      "issue": "the POST /extension endpoint is not documented; anyone hitting a corsFetch bug in the CLI has no idea it's usable directly",
+      "fix": "add 'Direct extension endpoint' section w/ envelope shape",
+      "promotes": "extension_ws_bridge",
+      "status": "shipped-docs-only-v0.4.0",
+      "impact_if_shipped": "documentation shortens discovery for direct-endpoint usage",
+      "shipped_utc": "2026-07-14T14:12:00Z",
+      "shipped_where": "$WSLHOME/glidercli/README.md#direct-extension-endpoint",
+      "docs_note": "envelope + 5 common methods + curl example + when-to-use guidance"
+    },
+    {
+      "id": "wait_until_selector_matches",
+      "where": "$HOME/glidercli/bin/glider.js  (wait/sleep \u2014 timer only today)",
+      "issue": "wait is a dumb timer. Every tribal verify-loop reinvents 8-tick polling in shell.",
+      "fix": "glider wait --selector S | --text T | --gone | --matches JS | --timeout MS | --poll MS  (exit 0 on match, 1 on timeout)",
+      "impact_if_shipped": "Kills teams-lib::verify polling loop. Reused by every future post-action tribal verify.",
+      "promotes": "dom_action_layer",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 1,
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "help_missing_shipped_verbs",
+      "where": "$HOME/glidercli/bin/glider.js  (showHelp \u2014 SETUP/NAVIGATION/PAGE INFO/etc lists)",
+      "issue": "cookies + frozen verbs dispatch fine but are absent from `glider --help` sections. Only PLUGINS: auto-generates.",
+      "fix": "add cookies + frozen (plus any future public verbs) to appropriate showHelp section, or auto-generate all sections from a verb registry.",
+      "impact_if_shipped": "T1 discoverability restored \u2014 user learns the surface without reading source.",
+      "promotes": "plugin_socket",
+      "status": "shipped-v0.4.0",
+      "discovered_utc": "2026-07-14T07:40:36Z",
+      "ship_wave": 1,
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "read_verb",
+      "where": "$HOME/glidercli/bin/glider.js",
+      "issue": "No verb to read attr/prop/text without a full eval.",
+      "fix": "read <sel> [--attr X | --prop Y | --text | --html | --value | --all | --count | --exists | --visible | --enabled]",
+      "impact_if_shipped": "Removes 90% of `glider eval \"el.value\"`-style one-liners.",
+      "promotes": "dom_action_layer",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 1,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "hover_verb",
+      "where": "$HOME/glidercli/bin/glider.js",
+      "issue": "No hover verb; menus/tooltips that require mouseenter are unreachable without eval.",
+      "fix": "hover <sel>  (CDP Input.dispatchMouseEvent, viewport-center of sel)",
+      "impact_if_shipped": "Unlocks dropdown menus, tooltips, hover-only reveals.",
+      "promotes": "pointer_input_layer",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 1,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "focus_blur_verbs",
+      "where": "$HOME/glidercli/bin/glider.js",
+      "issue": "No focus/blur verbs; auto-save-on-blur flows need eval.",
+      "fix": "focus <sel>  |  blur [<sel>]",
+      "impact_if_shipped": "Trigger blur-fires-save autosave, focus-loads-suggestions.",
+      "promotes": "dom_action_layer",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 1,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "scroll_verb",
+      "where": "$HOME/glidercli/bin/glider.js",
+      "issue": "No scroll verb; long-lists / infinite-scroll unreachable programmatically.",
+      "fix": "scroll-to <sel>  |  scroll-by dx dy  |  scroll-until <sel>",
+      "impact_if_shipped": "Reach off-viewport items in feeds/tables/lists.",
+      "promotes": "dom_action_layer",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 1,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "key_verb",
+      "where": "$HOME/glidercli/bin/glider.js",
+      "issue": "No raw key-event verb; keyboard shortcuts (Ctrl+Enter to send, Escape to close, Cmd+K to search) unreachable.",
+      "fix": "key <chord|sequence>  e.g. key \"Ctrl+Enter\"  |  key \"ArrowDown x5\"  |  key \"Escape\"",
+      "impact_if_shipped": "Unlocks every keyboard-driven flow. Kills `keydown` synth JS in tribal libs.",
+      "promotes": "keyboard_input_layer",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 2,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "right_double_click_verbs",
+      "where": "$HOME/glidercli/bin/glider.js",
+      "issue": "Only single-click supported.",
+      "fix": "right-click <sel>  |  double-click <sel>  |  click-at x,y  |  drag <src> --to <dst>",
+      "impact_if_shipped": "Context menus, coord-driven canvas apps, DnD reorder flows.",
+      "promotes": "pointer_input_layer",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 2,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "select_dropdown_verb",
+      "where": "$HOME/glidercli/bin/glider.js",
+      "issue": "No verb for native <select> or aria-listbox pick by text.",
+      "fix": "select <sel> --by-text STR",
+      "impact_if_shipped": "Every filter dropdown, timezone picker, category selector.",
+      "promotes": "dom_action_layer",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 2,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "eval_arg_marshaling_verb",
+      "where": "$HOME/glidercli/bin/glider.js:eval",
+      "issue": "String args to eval require printf|base64|atob dance in every tribal lib.",
+      "fix": "eval --arg K=V  |  --arg-file K=@path  |  --json  |  --await  |  --context iframe|sw|worker",
+      "impact_if_shipped": "Injection-safe by construction; async page fns callable; removes b64 ceremony.",
+      "promotes": "runtime_evaluate_sync_reads",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 2,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "screenshot_element_verb",
+      "where": "$HOME/glidercli/bin/glider.js:cmdScreenshot",
+      "issue": "Full-viewport only; every \"shot then crop offline\" needs an extra step.",
+      "fix": "screenshot --selector S [--pad N]  |  --clip x,y,w,h  |  --full-page  |  --format webp|jpg|png",
+      "impact_if_shipped": "One-step element captures \u2014 used by every eval report.",
+      "promotes": "chrome_debugger_cdp",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 2,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "session_liveness_probe_verb",
+      "where": "$HOME/glidercli/bin/glider.js:cmdUseSession",
+      "issue": "Pinned sessionId goes stale on tab reload / server restart \u2192 \"No tab with given id XXX\".",
+      "fix": "use-session <id>  auto-reprobes on stale (connect\u2192targets\u2192match host\u2192re-pin) before failing.",
+      "impact_if_shipped": "Kills the manual reconnect dance the operator repeats dozens of times per session.",
+      "promotes": "chrome_debugger_cdp",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 2,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "shadow_root_scope_flag",
+      "where": "$HOME/glidercli/bin/glider.js (all DOM verbs)",
+      "issue": "Open shadow roots hide webcomponent internals from querySelector.",
+      "fix": "add --shadow-of SEL flag; recursive shadow-pierce built-in for click-by-text.",
+      "impact_if_shipped": "Modern SPA design-systems (Fluent-UI-v9, Lit, Stencil) \u2014 currently unreachable.",
+      "promotes": "frame_traversal",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 3,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "har_capture_suite",
+      "where": "$HOME/glidercli/bin/glider.js",
+      "issue": "No network capture \u2014 every \"what did the page POST?\" needs devtools UI.",
+      "fix": "har start [--filter GLOB]  |  har stop  |  har dump [PATH]  |  har replay <entry-id>",
+      "impact_if_shipped": "API discovery via `glider explore` becomes structured. Regression capture. Replay-based scorching.",
+      "promotes": "network_intercept",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 3,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "upload_file_verb",
+      "where": "$HOME/glidercli/bin/glider.js",
+      "issue": "No way to attach a file to <input type=file> without a real user dialog.",
+      "fix": "upload <input-sel> <file-path>  (CDP DOM.setFileInputFiles)",
+      "impact_if_shipped": "Attachment flows (Teams, Outlook, PR upload, form uploads) fully automatable.",
+      "promotes": "chrome_debugger_cdp",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 3,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "emulate_verb_suite",
+      "where": "$HOME/glidercli/bin/glider.js",
+      "issue": "No emulation controls \u2014 timezone-dependent tests, geo-gated flows, mobile-viewport bugs untestable.",
+      "fix": "emulate tz IANA  |  geo lat,lng  |  viewport WxH[,dpr,mobile]  |  offline true|slow-3g|fast-4g  |  ua STR  |  color-scheme dark|light",
+      "impact_if_shipped": "Repro tz/geo-gated bugs, mobile-only bugs, offline-mode UX, ua-sniffing flows.",
+      "promotes": "emulation_layer",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 4,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "cookie_write_verb",
+      "where": "$HOME/glidercli/bin/glider.js:cmdCookies",
+      "issue": "Read-only today; can list HttpOnly but cannot set/delete.",
+      "fix": "cookies --set NAME=VAL --host H  |  cookies --delete NAME --host H",
+      "impact_if_shipped": "Auth-cookie manipulation for testing; force-expire session; import from prod.",
+      "promotes": "extension_ws_bridge",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 4,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "console_tail_verb",
+      "where": "$HOME/glidercli/bin/glider.js",
+      "issue": "No way to capture page console output.",
+      "fix": "console tail  (stream Console.messageAdded events)  |  console dump [PATH]",
+      "impact_if_shipped": "Debug js errors, warn logs, tribal libs' own logging.",
+      "promotes": "chrome_debugger_cdp",
+      "status": "shipped-v0.4.0-cli-surface",
+      "target_version": "0.4.1",
+      "ship_wave": 4,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "partial_utc": "2026-07-14T11:03:00Z",
+      "partial_note": "command surface live; event-stream subscription deferred to 0.4.1",
+      "shipped_utc": "2026-07-14T14:08:00Z",
+      "scope_split_note": "CLI surface complete (verb parses + calls /cdp Runtime.enable). Event-stream subscription is NOT a CLI concern \u2014 it requires bg-WS listener in the glider extension (Runtime.consoleAPICalled forwarder). Moved to extension-side gap.",
+      "extension_side_gap_id": "runtime_console_forwarder"
+    },
+    {
+      "id": "history_verb",
+      "where": "$HOME/glidercli/bin/glider.js",
+      "issue": "No back/forward; only fresh goto.",
+      "fix": "history back  |  history forward  |  history reload",
+      "impact_if_shipped": "Test back-navigation flows; browser-state test harness.",
+      "promotes": "chrome_debugger_cdp",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 4,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "dialog_auto_handle_verb",
+      "where": "$HOME/glidercli/bin/glider.js",
+      "issue": "beforeunload / alert / confirm / prompt block automation.",
+      "fix": "dialog auto accept|dismiss  (Page.handleJavaScriptDialog handler installed until stop)",
+      "impact_if_shipped": "Automation never blocks on unexpected modal.",
+      "promotes": "chrome_debugger_cdp",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 4,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "pdf_export_verb",
+      "where": "$HOME/glidercli/bin/glider.js",
+      "issue": "No PDF capture; long pages need external \"print to PDF\" step.",
+      "fix": "pdf [PATH] [--landscape] [--margin N] [--scale F]",
+      "impact_if_shipped": "Page-archive to PDF for retrospectives, evidence, reports.",
+      "promotes": "chrome_debugger_cdp",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 4,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "a11y_snapshot_verb",
+      "where": "$HOME/glidercli/bin/glider.js:cmdSnapshot",
+      "issue": "Snapshot exists but is DOM-based; LLM agents want semantic ax-tree.",
+      "fix": "snapshot --a11y  (Accessibility.getFullAXTree)",
+      "impact_if_shipped": "Cleaner LLM input than raw HTML; landmarks and roles surfaced.",
+      "promotes": "chrome_debugger_cdp",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 5,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "record_replay_verbs",
+      "where": "$HOME/glidercli/bin/glider.js",
+      "issue": "No macro recording; every reproducible test hand-authored.",
+      "fix": "record <trace.json>  |  replay <trace.json>  (captures clicks/keys/nav)",
+      "impact_if_shipped": "Faster regression-test authoring; user-flow archives.",
+      "promotes": "dom_action_layer",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 5,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "mock_response_verb",
+      "where": "$HOME/glidercli/bin/glider.js",
+      "issue": "Cannot inject canned responses for URL patterns.",
+      "fix": "mock <url-glob> --status N --body FILE  |  mock clear",
+      "impact_if_shipped": "Test error paths without server changes; offline demos.",
+      "promotes": "network_intercept",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 5,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "id": "content_context_switch_flag",
+      "where": "$HOME/glidercli/bin/glider.js:cmdEval",
+      "issue": "Some sites null-out globals in main world; SW state hidden from page.",
+      "fix": "eval --context main|isolated|iframe|sw|worker  --await",
+      "impact_if_shipped": "Reach state that pages hide from main-world eval.",
+      "promotes": "content_context_switch",
+      "status": "shipped-v0.4.0",
+      "ship_wave": 5,
+      "discovered_utc": "2026-07-14T07:57:08Z",
+      "discovered_from": "dom-scorch 2026-07-14 (digest of chat 6a92f73b + web-platform taxonomy sweep)",
+      "shipped_utc": "2026-07-14T11:03:00Z",
+      "shipped_sha16": "78da39d72b54b0f4"
+    },
+    {
+      "gap": "click_object_form_broken",
+      "expected": "glider run yaml `click: {text: 'x', contains: true}` object-form matches CLI `--text --contains`",
+      "actual": "error 'selector.replace is not a function' \u2014 yaml parser passes object where string expected",
+      "workaround": "use CLI form `glider click --text 'x' --contains` inline instead of yaml step, or use CSS selector string",
+      "seen_in": "glider v0.4.5 on Darwin",
+      "captured_at": "2026-07-29T21:22:22Z",
+      "id": "glider_click_object_form_broken"
+    }
+  ],
+  "version": "2.0.0",
+  "changelog": [
+    {
+      "ts_utc": "2026-07-14T20:26:00Z",
+      "kind": "wall_smashed_and_verb_shipped",
+      "summary": "Smashed the frozen-async-on-hidden-tabs wall: Emulation.setFocusEmulationEnabled + Page.setWebLifecycleState('active') un-throttle a minimized tab in place (async + MSAL refresh resume, no window restore). Shipped as `glider thaw` verb (glidercli v0.4.3, producer bundle /tmp/glidercli-v0.4.3/). Added primitive tab_thaw + walls_smashed entry. Proven live: frozen Teams tab -> fresh substrate bearer -> 3S v3/query HTTP 200."
+    },
+    {
+      "ts_utc": "2026-07-14T14:35:00Z",
+      "kind": "live_probe_batch_findings",
+      "summary": "session-3 live probe on planner.cloud.microsoft: (1) confirmed H1 of planner_windows_365 wall \u2014 SPA-scoped bearer missing from cache but v2-cache-only; (2) filed glider_msal_plugin_msal2_encrypted_storage_defect (v0.3.21 plugin is msal.1 only, silent-fail on v2); (3) filed glider_fetch_verb_undefined_data_crash (twin of cfetch_empty_response_crash, cmdFetch not touched when v0.3.20 fixed cmdCorsFetch)"
+    },
+    {
+      "ts_utc": "2026-07-14T14:25:00Z",
+      "kind": "wall_evidence_upgrade",
+      "summary": "planner_windows_365 wall upgraded from vague-hypothesis to evidence-backed structured record: 3 ranked hypotheses w/ tests, 6-step next-action recipe using shipped `glider msal` verb, 30 smoke runs of grounding evidence"
+    },
+    {
+      "ts_utc": "2026-07-14T14:12:00Z",
+      "kind": "docs_shipped",
+      "summary": "http_direct_endpoint_docs shipped: added 'Direct extension endpoint' section to glidercli/README.md"
+    },
+    {
+      "ts_utc": "2026-07-14T14:08:00Z",
+      "kind": "scope_split",
+      "summary": "console_tail_verb split: CLI surface shipped-v0.4.0; extension-side bg-WS moved to new extension_gaps[].runtime_console_forwarder"
+    },
+    {
+      "ts_utc": "2026-07-14T13:45:00Z",
+      "kind": "defect_filed",
+      "summary": "filed reactblade_spa_uncaught_capture_defect to open_walls_unsolved \u2014 was implicit blocker across workflow v1.0/v1.1; now tracked with repro skeleton + 3 hypotheses + unblocks list"
+    },
+    {
+      "version": "1.3.0",
+      "utc": "2026-07-14T11:03:00Z",
+      "summary": "DOM-scorch waves 1-5 shipped as glidercli 0.4.0: 8 primitives flipped, 28 gaps closed, 1 gaps partial (event-stream stubs deferred to 0.4.1)."
+    },
+    {
+      "utc": "2026-07-13T22:20:00Z",
+      "v": "1.0.0",
+      "note": "initial capabilities registry \u2014 4 primitives, 5 capabilities, 5 walls smashed, 2 open walls, 4 cli_gaps identified"
+    },
+    {
+      "utc": "2026-07-13T22:52:00Z",
+      "v": "1.1.0",
+      "note": "crosslinks wired: primitives.consumed_by (reverse-index), primitives.cli_handle, capabilities.primitive_ids, walls.solved_by_primitive (id ref), cli_gaps.promotes+status. Added msal_extract_verb_proposed. Tier system codified in _meta.tiers."
+    },
+    {
+      "utc": "2026-07-13T22:55:29.845631Z",
+      "v": "1.1.1",
+      "note": "backfill impact_if_shipped on http_direct_endpoint_docs"
+    },
+    {
+      "utc": "2026-07-14T01:27:00.924150Z",
+      "v": "1.2.0",
+      "note": "2 cli_gaps bundled for ship (cfetch_empty_response_crash + cfetch_auto_accept \u2192 v0.3.20). Registry writeback pending ship confirmation."
+    },
+    {
+      "utc": "2026-07-14T01:48:40.189506Z",
+      "v": "1.2.1",
+      "note": "glidercli@0.3.20 shipped \u2014 2 cli_gaps \u2192 shipped. sha16=c64c49536ce322f8. corsFetch known_bugs closed."
+    },
+    {
+      "utc": "2026-07-16T03:13:33.492625Z",
+      "v": "1.4.1",
+      "note": "recorded wall: true silent/headless window creation (no on-screen flash) is impossible in Chromium extensions when a URL is loaded into a new window"
+    },
+    {
+      "utc": "2026-07-16T06:37:46.627640Z",
+      "v": "1.4.1",
+      "note": "recorded capability: ?"
+    },
+    {
+      "utc": "2026-07-29T21:28:54.641251Z",
+      "v": "1.4.2",
+      "note": "recorded capability: ?"
+    },
+    {
+      "utc": "2026-07-29T21:28:54.757899Z",
+      "v": "1.4.3",
+      "note": "recorded cli_gap: ?"
+    },
+    {
+      "utc": "2026-07-29T21:28:54.870113Z",
+      "v": "1.4.4",
+      "note": "recorded wall: har_start_wrong_tab_latch"
+    },
+    {
+      "utc": "2026-07-29T21:39:50.519193Z",
+      "v": "1.4.5",
+      "note": "recorded capability: ?"
+    },
+    {
+      "utc": "2026-07-29T21:39:50.652709Z",
+      "v": "1.4.6",
+      "note": "recorded wall: cross_origin_iframe_traffic_invisible_to_parent_sniffer"
+    },
+    {
+      "utc": "2026-07-29T21:40:00.200896Z",
+      "v": "1.4.7",
+      "note": "recorded primitive: ?"
+    },
+    {
+      "utc": "2026-08-10T14:22:38.724275Z",
+      "v": "1.4.8",
+      "note": "recorded primitive: ?"
+    },
+    {
+      "utc": "2026-08-10T14:22:38.798876Z",
+      "v": "1.4.9",
+      "note": "recorded wall: Edge multi-Helper multi-hundred-MB + multi-GB SW CacheStorage regrow; one-shot wipe + registry notes are potempkin without proven automation"
+    },
+    {
+      "utc": "2026-08-10T14:22:52.098450Z",
+      "v": "1.4.10",
+      "note": "recorded capability: ?"
+    },
+    {
+      "utc": "2026-08-10T15:07:33.358960Z",
+      "v": "1.4.11",
+      "note": "recorded wall: Edge live Helper RAM control required manual glider/ops babysitting; memory_pressure NOPERM; reclaim only when quit"
+    },
+    {
+      "utc": "2026-09-03T14:17:13.437482Z",
+      "v": "1.4.12",
+      "note": "recorded capability: ?"
+    },
+    {
+      "utc": "2026-09-03T14:17:40.879245Z",
+      "v": "1.4.13",
+      "note": "recorded wall: Reclaim a LIVE Edge tab's memory footprint beyond the cooperative discard API (operator: 'vivisect it, rip its heap out')"
+    },
+    {
+      "utc": "2026-09-10T01:49:47.315929Z",
+      "v": "1.4.14",
+      "note": "recorded primitive: ?"
+    },
+    {
+      "utc": "2026-09-10T01:49:47.353120Z",
+      "v": "1.4.15",
+      "note": "recorded wall: CDP input and page navigation cannot toggle Microsoft Edge browser-chrome vertical tabs"
+    },
+    {
+      "utc": "2026-09-15T22:05:58.124792Z",
+      "v": "1.4.16",
+      "note": "recorded wall: Rendered Microsoft Copilot Code builder is invisible to standard text and accessibility extraction"
+    },
+    {
+      "version": "1.4.16",
+      "utc": "2026-11-08T06:00:00Z",
+      "summary": "cookie_store_write primitive + cookie_jar_hydrate (cookie-jar inject)"
+    },
+    {
+      "utc": "2026-11-09T06:38:53.253084Z",
+      "v": "1.4.17",
+      "note": "recorded wall: Claude /files/{uuid}/contents and wiggle/download-file reject HEAD (405 Allow:GET); cannot size-probe via HEAD"
+    },
+    {
+      "utc": "2026-11-09T06:38:53.282385Z",
+      "v": "1.4.18",
+      "note": "recorded primitive: ?"
+    },
+    {
+      "utc": "2026-11-09T06:38:53.311556Z",
+      "v": "1.4.19",
+      "note": "recorded capability: ?"
+    },
+    {
+      "utc": "2026-11-12T19:11:45.374876Z",
+      "v": "1.4.20",
+      "note": "recorded wall: Claude Scheduled sidebar invisible to chat_conversations CRX list"
+    },
+    {
+      "utc": "2026-11-12T19:11:45.401733Z",
+      "v": "1.4.21",
+      "note": "recorded primitive: ?"
+    },
+    {
+      "utc": "2026-11-12T19:11:45.428378Z",
+      "v": "1.4.22",
+      "note": "recorded capability: ?"
+    },
+    {
+      "utc": "2026-11-12T19:16:49.621446Z",
+      "v": "1.4.23",
+      "note": "mark claude_scheduled_capture + claude_preflight_disk_bytes CRX not wired; cite failures.json"
+    },
+    {
+      "utc": "2026-11-17T23:21:28.586119Z",
+      "v": "1.4.24",
+      "note": "recorded wall: dsstore-nuke-HOME-wide-fswatch-find"
+    },
+    {
+      "utc": "2026-11-18T04:03:32.968812Z",
+      "v": "1.4.25",
+      "note": "recorded wall: dsstore-nuke-without-fseventsd"
+    },
+    {
+      "version": "2.0.0",
+      "utc": "2026-11-24T12:03:24Z",
+      "summary": "Moved public capabilities out of Cursor registry into glidercli product definition. Walls stay operator-local."
+    }
+  ],
+  "updated_utc": "2026-08-23T20:51:00Z",
+  "extension_gaps": [
+    {
+      "id": "runtime_console_forwarder",
+      "where": "$WSLHOME/glider/bserve.js (or equivalent bg-page)",
+      "issue": "No bg-page subscription to Runtime.consoleAPICalled + Console.messageAdded. CLI cannot tail live console output.",
+      "fix_sketch": "in bg init: attach Runtime domain via CDP session; on consoleAPICalled event, buffer last N=500 messages in ring; expose HTTP /extension?method=consoleBuffer&sessionId=X to return + optionally clear",
+      "cli_dependency": "console_tail_verb (CLI surface already shipped v0.4.0)",
+      "impact_if_shipped": "glider console tail + dump become fully functional; unblocks debugging js errors / warn logs / tribal lib logging across all warch citizens",
+      "status": "open",
+      "target_release": "glider-extension-0.4.1",
+      "filed_utc": "2026-07-14T14:08:00Z",
+      "filed_by_session": "session_3_ontology_soldier",
+      "filed_reason": "console_tail_verb was 'partial-v0.4.0' with ambiguous ownership \u2014 clarifying: CLI surface done, extension bg-WS is a separate gap"
+    },
+    {
+      "id": "glider_msal_plugin_msal2_encrypted_storage_defect",
+      "where": "$WSLHOME/glidercli plugin: `glider msal` verb (shipped-v0.3.21-as-plugin 2026-07-14T07:39Z)",
+      "issue": "Verb returns count:0 tokens on modern MSAL v2 sites even when localStorage has 10+ msal.2 access tokens. Root cause: plugin reads localStorage keys but msal.2 values are {id,nonce,data} with data=encrypted-at-rest AES-GCM ciphertext. Plugin parses as if plaintext JWT (msal.1 format).",
+      "evidence_ts_utc": "2026-07-14T14:35:00Z",
+      "evidence_probe": "planner.cloud.microsoft session had msal.2 cache with tasks.readwrite scope bundle in key; glider msal --json returned {count:0, tokens:[]}",
+      "impact": "The 'shipped' fix (msal_extract_verb_proposed) is Potemkin against all modern MSFT SPAs. Silent failure \u2014 user doesn't know their token cache is being missed.",
+      "fix_paths": [
+        "A: walk webpack module graph (window.webpackChunk_N_E or __webpack_require__.c) to find msal PublicClientApplication instance, invoke instance.acquireTokenSilent({account, scopes, forceRefresh:false}) which returns decrypted",
+        "B: expose bg-side Network.responseReceived listener that snaps Authorization headers off outgoing requests (simpler, works for ANY auth scheme not just MSAL)"
+      ],
+      "supersedes_status": "shipped-v0.3.21-as-plugin should be reclassified: 'shipped-v0.3.21-partial-msal-v1-only'",
+      "status": "open",
+      "target_release": "glidercli-0.4.2",
+      "filed_utc": "2026-07-14T14:35:00Z",
+      "filed_by_session": "session_3_ontology_soldier n5-live-probe"
+    }
+  ],
+  "closed_extension_gaps": [
+    {
+      "closed_utc": "2026-07-14T15:33:54Z",
+      "gap": "glider_har_stub",
+      "shipped_in": "glidercli v0.4.1",
+      "before": "har start|stop|dump advertised in --help but dump always returned 0 entries (server-side subscription not implemented)",
+      "after": "har start <url> spawns detached bexplore; dump waits + copies buffer + reports entry count; status subcmd added",
+      "verification": "glider har start https://engage.cloud.microsoft/main/feed -> pid captured; glider har status -> RUNNING; (auth-redirect prevented full end-to-end smoke, but wiring verified via 'RUNNING pid=X' state file)"
+    },
+    {
+      "closed_utc": "2026-07-14T15:33:54Z",
+      "gap": "h4_cdp_relay_stall_session_reuse",
+      "shipped_in": "glidercli v0.4.2",
+      "before": "glider explore --session-id session-N failed CSS.enable Timeout: forwardCDPCommand x4 on long-lived session reuse",
+      "after": "glider explore --fresh-tab [--close-on-done] opens new tab, resolves new session-id, avoids stale-session stall",
+      "verification": "glider explore https://example.com --depth 0 --fresh-tab -> '[explore] fresh-tab session: session-2' logged; new-tab session resolution works. Residual Target.setAutoAttach timeout is a DIFFERENT CDP class (bexplore internal), not the CSS.enable stall this patch targeted."
+    }
+  ]
+}
