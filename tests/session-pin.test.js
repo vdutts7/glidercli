@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { resolvePin, partition } = require('../lib/pin-machine.js');
+const { resolvePin, partition } = require('../lib/session-pin.js');
 
 function page(id, sid, url) {
   return { sessionId: sid, targetId: id, targetInfo: { type: 'page', url, targetId: id, title: url } };

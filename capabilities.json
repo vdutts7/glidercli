@@ -14,7 +14,8 @@
       "T3_primitives": "Raw browser-fu bricks. Discovered once, immutable. src_refs point to background.js:line.",
       "T2_capabilities": "Composed powers (recipes over primitives). Named + referenceable.",
       "T1_cli_verbs": "First-class glider --help handles. Promoted from T2 via /cliify-gap.",
-      "promotion_pipeline": "T3 discovered \u2192 T2 named \u2192 T1 promoted (via cli_gaps[] \u2192 cliify)"
+      "promotion_pipeline": "T3 discovered \u2192 T2 named \u2192 T1 promoted (via cli_gaps[] \u2192 cliify)",
+      "numbering_note": "T3=raw primitives, T2=composed capabilities, T1=CLI verbs. Numbers climb DOWN as the surface is polished (promotion_pipeline). Not inverted by accident \u2014 annotate-only; do not rename keys."
     },
     "changelog": [
       {
@@ -41,7 +42,7 @@
       "layer": "extension_service_worker",
       "one_line": "Fetch any URL from the extension's service-worker context, with HttpOnly cookies auto-attached via chrome.cookies.getAll \u2014 bypasses (a) CORS, (b) HttpOnly-cookie invisibility, (c) tab-freeze macrotask throttling.",
       "invoke": {
-        "cli": "glider cfetch <url> [--method POST] [--body JSON] [--output FILE]",
+        "cli": "glider auth-fetch <url> [--method POST] [--body JSON] [--output FILE]  (alias: cfetch)",
         "http": "POST http://localhost:19988/extension  body: {method:'corsFetch', params:{url, options:{method, headers, body}}}",
         "response_envelope": "{status:int, ok:bool, data:string|object}   (flat, NOT wrapped in {result:...})"
       },
@@ -67,12 +68,15 @@
         "Accept header sensitive: Yammer/engage rejects 'application/json' with 406; use 'application/json, text/plain, */*'. Purview accepts either.",
         "Extension is not perfectly serialized \u2014 high concurrency causes some responses to return {error:'...'} transiently. Add retry+backoff (3x, 0.4/0.8/1.2s)."
       ],
-      "cli_handle": "cfetch",
+      "cli_handle": "auth-fetch",
       "consumed_by": [
         "get_httponly_cookies",
         "call_authed_endpoint_from_wsl"
       ],
-      "cli_handle_notes": "v0.3.20+ handles empty-body responses + 2-shot Accept fallback"
+      "cli_handle_notes": "v0.3.20+ handles empty-body responses + 2-shot Accept fallback",
+      "cli_aliases": [
+        "cfetch"
+      ]
     },
     "chrome_debugger_cdp": {
       "id": "chrome_debugger_cdp",
@@ -138,79 +142,6 @@
       "src_ref": "$HOME/glider/background.js  (search: 'msg.method ===')",
       "cli_handle": null,
       "consumed_by": []
-    },
-    "plugin_socket": {
-      "id": "plugin_socket",
-      "layer": "cli",
-      "one_line": "Verb-agnostic loader: local ~/.glider/plugins/*.plugin.{json,js,cjs} extend the CLI at runtime with new verbs. Public npm binary carries zero verb branding; the operator hydrates their own tentacles locally.",
-      "invoke": {
-        "plugin_dirs": [
-          "$GLIDER_PLUGIN_DIR",
-          "$HOME/.glider/plugins/"
-        ],
-        "js_shape": "module.exports = {verb, aliases?, help[], async run(argv, ctx)}",
-        "json_shape": "{verb, aliases?, help[], primitive:'eval'|'extension', recipe|method, args?, output?}"
-      },
-      "ctx_api_v1": {
-        "cdp": [
-          "eval",
-          "call"
-        ],
-        "ext": [
-          "call"
-        ],
-        "log": [
-          "ok",
-          "fail",
-          "warn",
-          "info"
-        ],
-        "io": [
-          "jsonOutput (getter)",
-          "emitJson",
-          "httpPost",
-          "httpGet"
-        ],
-        "ensure": [
-          "ensureConnected"
-        ],
-        "mask": [
-          "jwt",
-          "cookie"
-        ],
-        "std": [
-          "os",
-          "fs",
-          "path"
-        ],
-        "meta": [
-          "apiVersion=1"
-        ]
-      },
-      "src_refs": [
-        "$HOME/glidercli/bin/glider.js  (loadPlugins, makePluginCtx, runPlugin, ~line 2452-2650)",
-        "$HOME/glidercli/bin/glider.js  (main() \u2192 loadPlugins() after loadPersistedSession)",
-        "$HOME/glidercli/bin/glider.js  (switch default: GLIDER_PLUGIN_REGISTRY lookup)",
-        "$HOME/glidercli/bin/glider.js  (showHelp() PLUGINS: section)"
-      ],
-      "requires": [
-        "nothing beyond node fs"
-      ],
-      "does_not_require": [
-        "extension_connected (plugins choose)",
-        "chrome running"
-      ],
-      "gotchas": [
-        "Plugins can SHADOW builtin verbs \u2014 load order = local overrides core. Feature or footgun; document per-plugin.",
-        "ctx.cdp.eval requires ensureConnected() first \u2014 plugin is responsible."
-      ],
-      "cli_handle": null,
-      "consumed_by": [
-        "extract_msal_bearer"
-      ],
-      "ship_scope": "public",
-      "shipped_version": "0.3.21",
-      "shipped_utc": "2026-07-14T07:39:10Z"
     },
     "dom_action_layer": {
       "id": "dom_action_layer",
@@ -588,6 +519,82 @@
       "description": "API probe only. CRX not wired (failures.json F-001). GET /api/organizations/{ORG}/cowork/scheduled_tasks and /{trig_id}; also /v1/code/triggers?tags=cowork-scheduled with anthropic-beta ccr-triggers-2026-01-30; runs via /v1/code/sessions?only_trigger_sessions=true",
       "domain": "claude.ai",
       "crx_status": "NOT_WIRED"
+    },
+    "plugin_registry": {
+      "id": "plugin_registry",
+      "layer": "cli",
+      "one_line": "Verb-agnostic loader: local ~/.glider/plugins/*.plugin.{json,js,cjs} extend the CLI at runtime with new verbs. Public npm binary carries zero verb branding; the operator hydrates their own tentacles locally.",
+      "invoke": {
+        "plugin_dirs": [
+          "$GLIDER_PLUGIN_DIR",
+          "$HOME/.glider/plugins/"
+        ],
+        "js_shape": "module.exports = {verb, aliases?, help[], async run(argv, ctx)}",
+        "json_shape": "{verb, aliases?, help[], primitive:'eval'|'extension', recipe|method, args?, output?}"
+      },
+      "ctx_api_v1": {
+        "cdp": [
+          "eval",
+          "call"
+        ],
+        "ext": [
+          "call"
+        ],
+        "log": [
+          "ok",
+          "fail",
+          "warn",
+          "info"
+        ],
+        "io": [
+          "jsonOutput (getter)",
+          "emitJson",
+          "httpPost",
+          "httpGet"
+        ],
+        "ensure": [
+          "ensureConnected"
+        ],
+        "mask": [
+          "jwt",
+          "cookie"
+        ],
+        "std": [
+          "os",
+          "fs",
+          "path"
+        ],
+        "meta": [
+          "apiVersion=1"
+        ]
+      },
+      "src_refs": [
+        "$HOME/glidercli/bin/glider.js  (loadPlugins, makePluginCtx, runPlugin, ~line 2452-2650)",
+        "$HOME/glidercli/bin/glider.js  (main() \u2192 loadPlugins() after loadPersistedSession)",
+        "$HOME/glidercli/bin/glider.js  (switch default: GLIDER_PLUGIN_REGISTRY lookup)",
+        "$HOME/glidercli/bin/glider.js  (showHelp() PLUGINS: section)"
+      ],
+      "requires": [
+        "nothing beyond node fs"
+      ],
+      "does_not_require": [
+        "extension_connected (plugins choose)",
+        "chrome running"
+      ],
+      "gotchas": [
+        "Plugins can SHADOW builtin verbs \u2014 load order = local overrides core. Feature or footgun; document per-plugin.",
+        "ctx.cdp.eval requires ensureConnected() first \u2014 plugin is responsible."
+      ],
+      "cli_handle": null,
+      "consumed_by": [
+        "extract_msal_bearer"
+      ],
+      "ship_scope": "public",
+      "shipped_version": "0.3.21",
+      "shipped_utc": "2026-07-14T07:39:10Z",
+      "aliases": [
+        "plugin_socket"
+      ]
     }
   },
   "capabilities": {
@@ -1364,7 +1371,7 @@
       "issue": "cookies + frozen verbs dispatch fine but are absent from `glider --help` sections. Only PLUGINS: auto-generates.",
       "fix": "add cookies + frozen (plus any future public verbs) to appropriate showHelp section, or auto-generate all sections from a verb registry.",
       "impact_if_shipped": "T1 discoverability restored \u2014 user learns the surface without reading source.",
-      "promotes": "plugin_socket",
+      "promotes": "plugin_registry",
       "status": "shipped-v0.4.0",
       "discovered_utc": "2026-07-14T07:40:36Z",
       "ship_wave": 1,

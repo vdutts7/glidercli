@@ -435,6 +435,7 @@
       "runner": "tests/live-browser.smoke.js",
       "status": "implemented",
       "covers": [
+        "auth-fetch",
         "cfetch"
       ]
     },

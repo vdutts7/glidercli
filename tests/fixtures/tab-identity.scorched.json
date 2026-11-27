@@ -12,7 +12,7 @@
     "tab_map_js": "lib/tab-map.js",
     "tab_catalog_js": "lib/tab-catalog.js",
     "tab_tui_js": "lib/tab-tui.js",
-    "pin_machine_js": "lib/pin-machine.js",
+    "session_pin_js": "lib/session-pin.js",
     "bserve_js": "lib/bserve.js",
     "bwindow_js": "lib/bwindow.js",
     "glider_bin": "bin/glider.js",
@@ -162,12 +162,12 @@
     },
     {
       "id": "iframes",
-      "source": "pin-machine.partition type iframe",
+      "source": "session-pin.partition type iframe",
       "in_tab_map": false
     },
     {
       "id": "pages",
-      "source": "pin-machine.partition type page",
+      "source": "session-pin.partition type page",
       "in_tab_map": false
     },
     {
@@ -430,7 +430,7 @@
     },
     {
       "flag": "--url",
-      "binds": "pinMachine host",
+      "binds": "sessionPin host",
       "global": false,
       "command": "use / use-session"
     },
@@ -798,7 +798,7 @@
     },
     {
       "type": "artifact",
-      "value": "lib/pin-machine.js",
+      "value": "lib/session-pin.js",
       "source_span": "function resolvePin"
     },
     {
@@ -1826,7 +1826,7 @@
       },
       {
         "name": "--url",
-        "purpose": "pinMachine host",
+        "purpose": "sessionPin host",
         "dimensions": [
           "use-session"
         ],

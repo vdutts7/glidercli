@@ -151,7 +151,7 @@ if (fs.existsSync(REGISTRY_FILE)) {
 // Direct CDP module
 const { DirectCDP, checkChrome } = require(path.join(LIB_DIR, 'cdp-direct.js'));
 const { resolveDomain } = require(path.join(LIB_DIR, 'domain-resolve.js'));
-const pinMachine = require(path.join(LIB_DIR, 'pin-machine.js'));
+const sessionPin = require(path.join(LIB_DIR, 'session-pin.js'));
 const relayHeal = require(path.join(LIB_DIR, 'relay-heal.js'));
 const statusModel = require(path.join(LIB_DIR, 'status-model.js'));
 const { npmIsNewer } = require(path.join(LIB_DIR, 'pkg-update.js'));
@@ -872,7 +872,7 @@ function httpPostRaw(urlPath, payload) {
 async function pickLiveSessionId() {
   const targets = await getTargets();
   const want = readPinStore();
-  const resolved = pinMachine.resolvePin({
+  const resolved = sessionPin.resolvePin({
     targets,
     host: want.host || '',
     targetId: want.targetId || '',
@@ -882,15 +882,15 @@ async function pickLiveSessionId() {
     persistPin(resolved.pin);
     return resolved.pin.sessionId;
   }
-  const part = pinMachine.partition(targets);
+  const part = sessionPin.partition(targets);
   if (part.pages.length === 1) {
     const page = part.pages[0];
     persistPin({
       sessionId: page.sessionId,
       targetId: page.targetId,
-      type: pinMachine.PAGE,
+      type: sessionPin.PAGE,
       url: page.url,
-      host: pinMachine.hostFromUrl(page.url),
+      host: sessionPin.hostFromUrl(page.url),
       reason: 'heal_only_page',
     });
     return page.sessionId;
@@ -2866,7 +2866,7 @@ async function cmdSnapshot(opts = []) {
 
 async function cmdTargets() {
   const raw = await httpGet('/targets');
-  const part = pinMachine.partition(raw);
+  const part = sessionPin.partition(raw);
   const targets = part.rows.map((t) => ({
     sessionId: t.sessionId,
     targetId: t.targetId,
@@ -2948,8 +2948,8 @@ async function cmdUseSession(arg, opts = []) {
     process.exit(1);
   }
   const raw = await httpGet('/targets');
-  const host = parsed.url ? (pinMachine.hostFromUrl(parsed.url.includes('://') ? parsed.url : `https://${parsed.url}`) || parsed.url) : '';
-  const resolved = pinMachine.resolvePin({
+  const host = parsed.url ? (sessionPin.hostFromUrl(parsed.url.includes('://') ? parsed.url : `https://${parsed.url}`) || parsed.url) : '';
+  const resolved = sessionPin.resolvePin({
     targets: Array.isArray(raw) ? raw : [],
     host,
     sessionId: requestedSession || '',
@@ -3034,7 +3034,7 @@ async function cmdFetch(url, opts = []) {
 // CORS-bypassing fetch via extension context
 async function cmdCorsFetch(url, opts = []) {
   if (!url) {
-    log.fail('Usage: glider cfetch <url> [--output file] [--method POST] [--body JSON]');
+    log.fail('Usage: glider auth-fetch|cfetch <url> [--output file] [--method POST] [--body JSON]');
     process.exit(1);
   }
 
@@ -6142,6 +6142,7 @@ async function main() {
     case 'fetch':
       await cmdFetch(args[1], args.slice(2));
       break;
+    case 'auth-fetch':
     case 'cfetch':
       await cmdCorsFetch(args[1], args.slice(2));
       break;
