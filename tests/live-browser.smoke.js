@@ -449,7 +449,7 @@ async function main() {
       assert.equal(body.observation.data.ok, true);
     });
     await record('extension_cors_fetch', async () => {
-      const { body } = await runJson(['cfetch', `${fixture.baseUrl}/api`]);
+      const { body } = await runJson(['auth-fetch', `${fixture.baseUrl}/api`]);
       assert.equal(body.observation.status, 200);
       assert.equal(body.observation.data.ok, true);
     });

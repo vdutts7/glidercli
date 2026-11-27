@@ -3034,12 +3034,12 @@ async function cmdFetch(url, opts = []) {
 // CORS-bypassing fetch via extension context
 async function cmdCorsFetch(url, opts = []) {
   if (!url) {
-    log.fail('Usage: glider auth-fetch|cfetch <url> [--output file] [--method POST] [--body JSON]');
+    log.fail('Usage: glider auth-fetch <url> [--output file] [--method POST] [--body JSON]');
     process.exit(1);
   }
 
   try {
-    assertUrlAllowed(url, allowedDomainList, 'cfetch');
+    assertUrlAllowed(url, allowedDomainList, 'auth-fetch');
   } catch (error) {
     if (jsonOutput) emitJson(false, null, error.message);
     log.fail(error.message);
@@ -6143,7 +6143,6 @@ async function main() {
       await cmdFetch(args[1], args.slice(2));
       break;
     case 'auth-fetch':
-    case 'cfetch':
       await cmdCorsFetch(args[1], args.slice(2));
       break;
     case 'frozen':

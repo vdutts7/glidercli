@@ -436,7 +436,7 @@
       "status": "implemented",
       "covers": [
         "auth-fetch",
-        "cfetch"
+        "auth-fetch"
       ]
     },
     {

@@ -286,14 +286,14 @@ test('plugin socket hydrates local verbs from GLIDER without package branding', 
   assert.equal(jsonFromStdout(result.stdout).observation, 42);
 });
 
-test('cfetch honors the configured relay port, equals forms, and short aliases', async (t) => {
+test('auth-fetch honors the configured relay port, equals forms, and short aliases', async (t) => {
   const relay = await createMockRelay();
   t.after(() => relay.close());
   const env = { GLIDER_PORT: String(relay.port) };
 
   let result = await runCli([
     '--json',
-    'cfetch',
+    'auth-fetch',
     'http://fixture.test/api',
     '--method=POST',
     '--body={"ok":true}',
@@ -305,7 +305,7 @@ test('cfetch honors the configured relay port, equals forms, and short aliases',
 
   result = await runCli([
     '--json',
-    'cfetch',
+    'auth-fetch',
     'http://fixture.test/api',
     '-X',
     'POST',
@@ -317,7 +317,7 @@ test('cfetch honors the configured relay port, equals forms, and short aliases',
   assert.equal(request.body.params.options.body, '{"short":true}');
 });
 
-test('cfetch emits strict JSON when the extension request fails', async (t) => {
+test('auth-fetch emits strict JSON when the extension request fails', async (t) => {
   const relay = await createMockRelay({
     handler: async ({ req, res }) => {
       if (req.url === '/extension' && req.method === 'POST') {
@@ -331,7 +331,7 @@ test('cfetch emits strict JSON when the extension request fails', async (t) => {
   t.after(() => relay.close());
   const result = await runCli([
     '--json',
-    'cfetch',
+    'auth-fetch',
     'http://fixture.test/api',
   ], { env: { GLIDER_PORT: String(relay.port) } });
   assert.equal(result.code, 1);
@@ -349,7 +349,7 @@ test('cold-relay auto-start does not emit a second JSON document', async (t) => 
 
   const result = await runCli([
     '--json',
-    'cfetch',
+    'auth-fetch',
     'http://fixture.test/api',
   ], { env });
   assert.equal(result.code, 1);

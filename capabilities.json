@@ -42,7 +42,7 @@
       "layer": "extension_service_worker",
       "one_line": "Fetch any URL from the extension's service-worker context, with HttpOnly cookies auto-attached via chrome.cookies.getAll \u2014 bypasses (a) CORS, (b) HttpOnly-cookie invisibility, (c) tab-freeze macrotask throttling.",
       "invoke": {
-        "cli": "glider auth-fetch <url> [--method POST] [--body JSON] [--output FILE]  (alias: cfetch)",
+        "cli": "glider auth-fetch <url> [--method POST] [--body JSON] [--output FILE]",
         "http": "POST http://localhost:19988/extension  body: {method:'corsFetch', params:{url, options:{method, headers, body}}}",
         "response_envelope": "{status:int, ok:bool, data:string|object}   (flat, NOT wrapped in {result:...})"
       },
@@ -73,10 +73,7 @@
         "get_httponly_cookies",
         "call_authed_endpoint_from_wsl"
       ],
-      "cli_handle_notes": "v0.3.20+ handles empty-body responses + 2-shot Accept fallback",
-      "cli_aliases": [
-        "cfetch"
-      ]
+      "cli_handle_notes": "v0.3.20+ handles empty-body responses + 2-shot Accept fallback"
     },
     "chrome_debugger_cdp": {
       "id": "chrome_debugger_cdp",
@@ -591,10 +588,7 @@
       ],
       "ship_scope": "public",
       "shipped_version": "0.3.21",
-      "shipped_utc": "2026-07-14T07:39:10Z",
-      "aliases": [
-        "plugin_socket"
-      ]
+      "shipped_utc": "2026-07-14T07:39:10Z"
     }
   },
   "capabilities": {
